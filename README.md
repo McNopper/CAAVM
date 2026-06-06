@@ -16,6 +16,27 @@ Requirements ───────────────► Acceptance / SW-In
 Each backlog item runs one full **V-pass** (design top-down, verify bottom-up),
 and the V repeats every iteration — that's the *cyclic agile* part.
 
+## How it's used
+
+CAAVM is a **drop-in kit you ship inside your own project**, not a separate place where your
+code lives. Copy these files into your project root, next to your source, and commit them with it:
+
+```
+your-project/
+├── INPUT.md                       # you write here
+├── OUTPUT.md                      # the process writes here
+├── config/caav-model.config.yaml  # defaults + your overrides
+├── docs/caav-model.*.md           # plan + process spec
+├── .claude/workflows/caav-model.js
+├── .gitattributes
+└── src/ … (your actual code)
+```
+
+**This repository (`McNopper/CAAVM`) is the upstream** that maintains and improves those kit
+files. Your project vendors a copy; to get fixes and new features later, pull the updated
+`config/`, `docs/`, and `.claude/workflows/` files from here (your `INPUT.md`/`OUTPUT.md` and your
+source are untouched). Treat the kit like a versioned dependency you periodically refresh.
+
 ## Features
 
 - 🔁 **Cyclic V-Model** — requirements↔acceptance, architecture↔integration, design↔component, implementation↔unit.
@@ -39,19 +60,23 @@ docs/caav-model.process.md        # portable step-by-step spec (any tool)
 
 ## The interface: `INPUT.md` ⇄ `OUTPUT.md`
 
-You don't have to edit YAML to use CAAVM — you talk to it through two markdown files:
+You don't have to edit YAML to use CAAVM — you talk to it through two markdown files with
+**strict ownership**:
 
-- **[`INPUT.md`](INPUT.md)** — write plain sentences, anytime (even while it runs): the language,
-  design, tools, gates, and feature ideas. The **Intake** step reads it and **updates the project
-  files to match** — high-level choices are written into `config/caav-model.config.yaml`, and
-  feature ideas become backlog increments. It can be **super minimal**: the config already holds
-  defaults (C++23, CMake+Ninja, clang-tidy/clang-format/cppcheck, GoogleTest, hexagonal design…),
-  so you only write what should *differ* — even a single sentence is a valid input.
-- **[`OUTPUT.md`](OUTPUT.md)** — the process overwrites this after each increment with a short,
-  structured checklist: per-increment status, stage reached, gate result, the five test levels,
-  open debt, and the next action. (Don't hand-edit it.)
+- **[`INPUT.md`](INPUT.md) — human-only (the process only ever *reads* it; never writes it).**
+  Write plain sentences, anytime (even while it runs): the language, design, tools, gates, and
+  feature ideas. The **Intake** step reads it and **rewrites the project files to match** —
+  high-level choices go into `config/caav-model.config.yaml`, feature ideas become backlog
+  increments. It can be **super minimal**: the config already holds defaults (C++23, CMake+Ninja,
+  clang-tidy/clang-format/cppcheck, GoogleTest, hexagonal design…), so you only write what should
+  *differ* — even a single sentence is a valid input.
+- **[`OUTPUT.md`](OUTPUT.md) — process-only (you never hand-edit it).** Everything the process
+  understands, derives, creates, or updates lands here: what it captured from `INPUT.md`, the
+  resolved configuration, and after each increment a short status checklist (per-increment status,
+  stage reached, gate result, the five test levels, open debt, next action).
 
 So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → jot more in `INPUT.md`._
+The process never edits your `INPUT.md`; you never edit its `OUTPUT.md`.
 
 ## Quick start
 

@@ -23,19 +23,24 @@
 ## Interface: `INPUT.md` → process → `OUTPUT.md`
 
 The human drives the whole loop through two markdown files at the project root
-(`${config.interface.input}` / `${config.interface.output}`):
+(`${config.interface.input}` / `${config.interface.output}`). **Strict ownership:**
+`INPUT.md` is **human-only** (the process only ever *reads* it, never writes it);
+`OUTPUT.md` is **process-only** (the human never edits it). Everything the process
+creates, derives, or updates is recorded in `OUTPUT.md`.
 
-- **`INPUT.md` (you write, anytime — even mid-run).** Plain sentences: the language,
+- **`INPUT.md` (human writes, anytime — even mid-run).** Plain sentences: the language,
   design style, tools, gates, docs level, and feature ideas. It can be **super minimal** —
   the config already holds defaults, so you write only what should differ. A single
   sentence is a valid input.
-- **Stage 0 — Intake (process).** Read `INPUT.md` and **update the project files to match**:
-  map high-level choices into `${config.x}` (language, toolchain, quality_gates,
-  toggles.documentation, models, …) and turn feature ideas into backlog increments. Record
-  what was captured back in `INPUT.md`; never delete the human's prose.
-- **`OUTPUT.md` (process writes).** After each increment, overwrite it with a short, structured
-  status checklist (per-increment checkbox + stage + gate + the five test levels + debt + next
-  action). The human reads state here; the loop re-checks `INPUT.md` for new ideas every cycle.
+- **Stage 0 — Intake (process).** *Read* `INPUT.md` and **rewrite the project files to match**:
+  map high-level choices into `config/caav-model.config.yaml` (language, toolchain,
+  quality_gates, toggles.documentation, models, …) and turn feature ideas into backlog
+  increments. Then **write the captured record into `OUTPUT.md`** (what was read, the config
+  changes made, the backlog created). Never write to `INPUT.md`.
+- **`OUTPUT.md` (process writes).** Intake seeds it; after each increment Report overwrites it
+  with a short, structured status checklist (per-increment checkbox + stage + gate + the five
+  test levels + debt + next action) plus the captured/resolved-config record. The loop re-reads
+  `INPUT.md` (read only) for new ideas every cycle.
 
 ## Recommended model per phase
 

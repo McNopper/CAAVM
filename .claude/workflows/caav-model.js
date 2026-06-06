@@ -351,16 +351,18 @@ let backlog = (cfg.project.backlog && cfg.project.backlog.length) ? cfg.project.
 phase('Intake')
 const intake = await agent(
   `You are the Intake agent — the bridge between the human's free-form ${inputFile} and the project.
-Use your file tools to READ ${inputFile} at the project root (it holds loose ideas, requirements, and
-changes the human may add at any time). Then:
+OWNERSHIP RULE (strict): ${inputFile} is HUMAN-ONLY — READ it, NEVER write to or modify it.
+${outputFile} is PROCESS-ONLY — the human never edits it; everything you create or derive is recorded there.
+Use your file tools to READ ${inputFile} at the project root (loose ideas/requirements/changes — possibly
+just one sentence). Then:
 1. Turn feature/requirement ideas into vertical-slice backlog increments (id INC-NNN, title, acceptance),
    merged with the existing backlog ${JSON.stringify(backlog)} WITHOUT duplicating.
-2. If the input implies CONFIGURATION or process changes, UPDATE the project files accordingly and
-   minimally — primarily config/caav-model.config.yaml: language/standard, toolchain tools,
-   quality_gates thresholds, toggles.documentation, models.* routing, project.backlog. Stay consistent;
-   never invent changes the input does not ask for.
-3. In ${inputFile}, append a row to the "Captured" table for each idea you ingested (idea -> increment),
-   without deleting the human's prose.
+2. If the input implies CONFIGURATION/process changes, REWRITE config/caav-model.config.yaml accordingly
+   and minimally — language/standard, toolchain tools, quality_gates, toggles.documentation, models.*,
+   project.backlog. Leave everything else at its default; never invent changes the input does not ask for.
+3. WRITE ${outputFile} with the initial state: an "Intake" section recording what you captured from
+   ${inputFile} (the config changes you made + the backlog you created) and the increment checklist
+   (all 'queued'). Do NOT touch ${inputFile}.
 Return the full merged backlog.`,
   { label: 'intake', phase: 'Intake', schema: BACKLOG_SCHEMA, model: modelFor('intake') })
 if (intake && intake.backlog && intake.backlog.length) backlog = intake.backlog
@@ -388,13 +390,14 @@ while (i < backlog.length) {
   phase('Report')
   const sync = await agent(
     `You are the Reporting agent. Use your file tools.
+OWNERSHIP RULE (strict): ${inputFile} is HUMAN-ONLY — READ it, NEVER modify it. ${outputFile} is PROCESS-ONLY.
 1. OVERWRITE ${outputFile} at the project root with a SHORT, structured checklist of the CURRENT state:
    one line per backlog increment with a checkbox + status (queued / in-progress / passed / failed), the
    V-Model stage reached, the gate result, the five test levels for the latest increment, open debt, and a
    single "next action". Keep it minimal & effective.
-2. RE-READ ${inputFile} for any NEW or changed ideas not already represented in the backlog
-   ${JSON.stringify(backlog.map(b => b.id))}; return them as new_items (empty array if none) and add their
-   rows to the ${inputFile} "Captured" table.
+2. RE-READ ${inputFile} (read only) for any NEW or changed ideas not already represented in the backlog
+   ${JSON.stringify(backlog.map(b => b.id))}; return them as new_items (empty array if none) and note them
+   in ${outputFile}. Do NOT write to ${inputFile}.
 Current results so far: ${JSON.stringify(results)}.`,
     { label: `report:${res.tag}`, phase: 'Report', schema: SYNC_SCHEMA, model: modelFor('report') })
   if (sync && sync.new_items && sync.new_items.length) {
