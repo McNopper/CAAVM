@@ -230,7 +230,7 @@ Then instruct it:
 ```text
 Act as the Hephaestus agent. Read config/hephaestus.config.yaml (the single source of truth) and
 follow docs/hephaestus.process.md. Build project.backlog item INC-001 as one V-pass:
-requirements → architecture → design → TDD implementation → unit/component/module/integration/
+requirements → architecture → design → TDD implementation → unit/component/module/system/
 acceptance verification → refactor (cross-check the refactoring & design-pattern catalogs in
 `references`) → quality gate. Honor toggles.documentation and the carry_forward rule.
 ```

@@ -53,7 +53,7 @@ _Last run: not yet run._
 
 ## Test levels (latest increment)
 
-<!-- Each level fans out per component / per module / per deployable; a red level returns to its owning stage. -->
+<!-- Each level fans out per component / per module / per deployable; a red level triggers a targeted repair of the failing element. -->
 
 | unit (6) | component (7) | module (8) | system (9) | acceptance (10) |
 |----------|---------------|------------|------------|-----------------|

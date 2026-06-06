@@ -20,7 +20,7 @@
 | **Cyclic**  | The full V is re-run for *each* backlog increment, not once for the whole project. |
 | **Agentic** | Each stage is executed by a dedicated agent with a single responsibility; verification is adversarial (separate agents try to break the work). |
 | **Agile**   | Small vertical slices, working software every iteration, refactoring as a first-class step. |
-| **V-Model** | Strict traceability: requirements ↔ acceptance, architecture ↔ integration, design ↔ component, implementation ↔ unit. |
+| **V-Model** | Strict traceability: requirements ↔ acceptance, software system ↔ system, architecture ↔ module, design ↔ component, implementation ↔ unit. |
 
 The classic V-Model's weakness is that it is waterfall — one giant pass. Hephaestus
 keeps the V-Model's traceability discipline but **folds it into the agile loop**:

@@ -344,8 +344,8 @@ increment report (what shipped, gate results, refactors applied, debt logged).
 
 **Traceability matrix (one row per requirement):**
 
-| REQ ID | Requirement | Module | Component | Unit tests | Component tests | Integration tests | Acceptance test | Status |
-|--------|-------------|--------|-----------|-----------|-----------------|--------------------|-----------------|--------|
+| REQ ID | Requirement | Module | Component | Unit tests | Component tests | Module tests | System tests | Acceptance test | Status |
+|--------|-------------|--------|-----------|------------|-----------------|--------------|--------------|-----------------|--------|
 
 **ADR (one per significant decision):**
 

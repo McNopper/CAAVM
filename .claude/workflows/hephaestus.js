@@ -1,6 +1,6 @@
 export const meta = {
   name: 'hephaestus',
-  description: 'Cyclic Agentic Agile V-Model with an MVP maturity ladder: ONE run advances the product by one maturity level (loop) across the backlog — re-run to deepen until INPUT.md is fully resolved. Per increment it runs a full V-pass (requirements->architecture->design->implementation, mirrored by acceptance/integration/component/unit tests) with TDD, adversarial verification, a clean-code refactor pass, and quality gates, committing each phase onto the working branch. Language/toolchain are fully config-driven (default: C++).',
+  description: 'Cyclic Agentic Agile V-Model with an MVP maturity ladder: ONE run advances the product by one maturity level (loop) across the backlog — re-run to deepen until INPUT.md is fully resolved. Per increment it runs a full V-pass (requirements->software-system->architecture->design->implementation, mirrored by acceptance/system/module/component/unit tests) with TDD, adversarial verification, a clean-code refactor pass, and quality gates, committing each phase onto the working branch. Language/toolchain are fully config-driven (default: C++).',
   whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Re-runnable: each invocation is one MVP/deepening loop. Pass the parsed config/hephaestus.config.yaml as args (or rely on the built-in C++ defaults).',
   phases: [
     { title: 'Setup' },
@@ -15,7 +15,7 @@ export const meta = {
     { title: 'Component Tests', model: 'haiku' },        // 7  → falls back to 4 (needs mocking)
     { title: 'Module Tests', model: 'haiku' },           // 8  → falls back to 3 (needs mocking)
     { title: 'System Tests', model: 'haiku' },           // 9  → falls back to 2 (deployables run together)
-    { title: 'Acceptance', model: 'sonnet' },            // 10 → falls back to 1 (run the system, e.g. screenshots / E2E)
+    { title: 'Acceptance', model: 'haiku' },             // 10 → falls back to 1 (run the system, e.g. screenshots / E2E) — runs on models.verification
     { title: 'Iteration Gate', model: 'opus' },
     { title: 'Report', model: 'sonnet' },
   ],
@@ -50,21 +50,28 @@ const DEFAULTS = {
     docs: { tool: 'doxygen', config_file: 'Doxyfile' },
   },
   v_model: {
+    composition: {
+      unit_to_component: 'one or more units : one component',
+      component_to_module: 'one or more components : one module (a component may be reused across modules, built once)',
+      module_to_software: 'one or more modules : one software (executable/deployable)',
+      software_to_system: 'one or more softwares (executables) : one software system (topology, e.g. client-server)',
+    },
     requirements: { verifies_with: 'acceptance test (whole running system, end-to-end)' },
-    architecture: { verifies_with: 'module integration test' },
-    design: { verifies_with: 'component test' },
+    software_system: { verifies_with: 'system test (deployables run together)' },
+    architecture: { verifies_with: 'module / integration test (mocked)' },
+    design: { verifies_with: 'component test (mocked)' },
     implementation: { verifies_with: 'unit test' },
-    system: { verifies_with: 'system test (deployables run together)' },
     test_execution_order: ['unit', 'component', 'module', 'system', 'acceptance'],
   },
   agile: {
     iteration_name: 'sprint', tdd: true, max_refactor_rounds: 2, max_gate_retries: 2, max_fix_rounds: 2,
     definition_of_done: [
-      'All five test levels green (unit, component, module, integration, acceptance).',
-      'All quality_gates satisfied.',
-      'Requirements <-> tests traceability matrix complete.',
+      'All five test levels green (unit, component, module, system, acceptance) for the requirements IN SCOPE at this maturity level.',
+      "The EFFECTIVE quality_gates for this maturity level satisfied (strict gates with the level's relaxations merged on top).",
+      'Requirements <-> tests traceability matrix complete for the in-scope requirements.',
       'No new linter/formatter/sanitizer findings.',
-      'Public API documented.',
+      'Public API documented (minimal & effective; coverage scaled by the maturity level).',
+      'Each phase committed on the working branch with its per-phase trace file written; increment report written and living artifacts updated.',
     ],
   },
   quality_gates: {
@@ -210,7 +217,8 @@ const commitDirective = (tag, level, n, phaseName) => {
 // Refactoring is ON-DEMAND inside every (code-producing) phase, not a separate
 // numbered phase: when an agent spots a smell while working, it applies the
 // matching technique immediately and keeps tests green (red → green → refactor).
-const refactorOnDemand = `REFACTORING IS ON-DEMAND (part of this phase, not a separate phase): whenever you spot a smell from the catalog while working, apply the matching technique right away and keep all tests green. Smells ${JSON.stringify((refs.refactoring || {}).smells || [])}; techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}; honor clean-code rules ${cc}.`
+const maxRefactorRounds = (cfg.agile && cfg.agile.max_refactor_rounds != null) ? cfg.agile.max_refactor_rounds : 2
+const refactorOnDemand = `REFACTORING IS ON-DEMAND (part of this phase, not a separate phase): whenever you spot a smell from the catalog while working, apply the matching technique right away and keep all tests green. Keep it bounded — at most ${maxRefactorRounds} focused refactor pass(es) within this phase (YAGNI; don't gold-plate). Smells ${JSON.stringify((refs.refactoring || {}).smells || [])}; techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}; honor clean-code rules ${cc}.`
 
 // ---- schemas -------------------------------------------------------------
 const BACKLOG_ITEM = { type: 'object', additionalProperties: false, required: ['id', 'title'], properties: { id: { type: 'string' }, title: { type: 'string' }, acceptance: { type: 'string' } } }
