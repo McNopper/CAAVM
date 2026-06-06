@@ -28,43 +28,49 @@ one short, complete V per increment.
 
 ## 2. The shape of one increment (one V-pass)
 
+The V has **five left stages** (decompose, top-down) each paired with the **test level
+that verifies it** (right, bottom-up). Phase **0** is the MVP loop that wraps the whole V
+(§2b); refactoring and integration are **on-demand**, not fixed phases (§2c).
+
 ```
- LEFT ARM (decompose & design)                         RIGHT ARM (verify, bottom-up)
- ──────────────────────────────                        ────────────────────────────
-                                                                   ┌────────────────┐
- (1) Software Requirements ───────────────────────────────────────► Acceptance /    │
-        │  what & why, acceptance criteria                          │ System /        │
-        │                                                           │ SW-Integration  │
-        ▼                                                           │ Test  (final)   │
- (2) Software Architecture ──────────────────────────────►┌────────┴────────┐       │
-        │  modules, boundaries, ADRs                       │ Module /         │       │
-        │                                                  │ Integration Test │       │
-        ▼                                                  └────────┬─────────┘       │
- (3) Software Design ─────────────────────────►┌──────────────────┐│                 │
-        │  components, interfaces, patterns     │ Component Test    ││                 │
-        │                                       └─────────┬─────────┘│                 │
-        ▼                                                 │          │                 │
- (4) Software Implementation ─►┌──────────────┐           │          │                 │
-        code (TDD)             │  Unit Test    │           │          │                 │
-                               └──────┬────────┘           │          │                 │
-                                      │                     │          │                 │
-                                      ▼                     ▼          ▼                 ▼
-                                    GREEN ───────────────► GREEN ───► GREEN ──────────► GREEN
-                                      └──────────────► (5) REFACTOR pass ◄──────────────┘
-                                                             │  clean code / SOLID / smells
-                                                             ▼
-                                                      (6) ITERATION GATE
-                                                          quality gates + DoD
-                                                          pass ▸ next increment
-                                                          fail ▸ re-loop (bounded)
+ LEFT ARM (decompose & design)                              RIGHT ARM (verify, bottom-up)
+ ─────────────────────────────                              ─────────────────────────────
+ (1) Requirements ─────────────────────────────────────────► (10) Acceptance test
+        │  what & why, acceptance criteria                          run the whole system, end-to-end
+        ▼                                                           (e.g. screenshots / E2E)
+ (2) Software System ──────────────────────────────────────► ( 9) System test
+        │  topology + deployables (executables),                   deployables run together in the topology
+        │  e.g. client-server → client + server                    ▲
+        ▼                                                          │
+ (3) Architecture ─────────────────────────────────────────► ( 8) Module test (mocked)
+        │  PER deployable: pattern + modules                       modules compose into the deployable
+        ▼                                                          ▲
+ (4) Design ───────────────────────────────────────────────► ( 7) Component test (mocked)
+        │  PER component: interface + units                        component honors its contract
+        ▼                                                          ▲
+ (5) Implementation ───────────────────────────────────────► ( 6) Unit test
+        code (TDD), PER component                                  each unit is correct
+                                                                   ▲
+   on demand: Integrate (assemble bottom-up) · Refactor (any phase) · then ITERATION GATE
+   gate pass ▸ next increment ·  gate fail ▸ re-loop (bounded)
 ```
 
-**Left arm** flows top-down; each stage refines the previous and *also designs the
-test* that will later verify it. **Right arm** executes bottom-up: units first,
-then components, then modules, then the final software-integration/acceptance
-test — exactly the order in `config.v_model.test_execution_order`. Between the left
-and right arms sits an **Integrate** step that merges the parallel implementation
-worktrees back onto the working branch (see §2c).
+The composition hierarchy these stages build (each *one or more*):
+
+```
+software system ─┬─ software (executable) ─┬─ module ─┬─ component ─┬─ unit
+  (topology)     │   e.g. client, server   │          │            │
+  e.g. client-   └─ (Software System,       └─ (Arch,  └─ (Design,  └─ (Impl, phase 5)
+       server         phase 2)                 phase 3)   phase 4)
+```
+
+**Left arm** flows top-down; each stage refines the previous, defines the *interface/contract*
+of the next, and *also designs the test* that verifies it. **Right arm** executes bottom-up
+in the order `config.v_model.test_execution_order`. The decomposition is **interface-first**,
+so once a level's contracts exist the work below runs **highly in parallel** (§3b, §4): each
+deployable is architected on its own, each component is designed-then-implemented independently,
+and each test level fans out per sibling. An **Integrate** step assembles it back bottom-up —
+units → components → modules → deployables → system (§2c).
 
 ---
 
@@ -97,48 +103,120 @@ the ladder and enforce strict gates from loop 1.
 This is the MVP discipline folded into the cycle: prove the core works first, then
 deepen — never gold-plate ahead of need (YAGNI), never ship throwaway architecture.
 
-## 2c. Commit-per-phase — progress lands on `main` incrementally
+## 2c. On-demand integration & refactoring; commit-per-phase
 
-Every phase commits its content onto the working branch as it finishes
-(`config.git.commit_per_phase`), so `main` advances incrementally and a run is
-**resumable**. Implementation parallelizes in **isolated git worktrees**; the
-**Integrate** phase then merges those branches back onto the working branch
-(`git merge --no-ff`, conflicts resolved so no component is dropped) and confirms the
-assembled code still builds — before verification climbs the V. In addition, **every
-phase writes a small trace file** (`config.living_artifacts.phase_trace`,
-e.g. `docs/caav-model/trace/<INC>/<level>/04-implementation.md`) **regardless of the
-documentation toggle** — a file-level trail of the run that also keeps each per-phase
-commit non-empty. The trace is process telemetry; `minimal`/`off` only scale the
-*product* documentation, never this trail.
+**Integration is on-demand and bottom-up.** It happens when there is something to merge: the
+parallel per-component implementations (each in an **isolated git worktree**) are merged back onto
+the working branch (`git merge --no-ff`, conflicts resolved so no component is dropped) and the build
+**assembles the hierarchy** — units → components → modules → deployables (executables) → system — then
+confirms every executable still builds, before verification climbs the V.
+
+**Refactoring is on-demand inside every phase** (not a separate numbered phase): whenever an agent
+spots a smell from the catalog while working, it applies the matching technique and keeps tests green
+(red → green → refactor). The clean-code thresholds are still enforced at the Iteration Gate.
+
+**Commit-per-phase.** Every phase commits its content onto the working branch as it finishes
+(`config.git.commit_per_phase`), so `main` advances incrementally and a run is **resumable**. Every
+phase also writes a small **trace file** (`config.living_artifacts.phase_trace`,
+e.g. `docs/caav-model/trace/<INC>/<level>/05-implementation.md`) **regardless of the documentation
+toggle** — a file-level trail that also keeps each commit non-empty. The trace is process telemetry;
+`minimal`/`off` only scale the *product* documentation, never this trail.
 
 ---
 
 ## 3. Stages, artifacts, and the test paired with each
 
-| # | Left stage (design) | Primary artifacts | Paired test level (right) | Verifies |
-|---|---------------------|-------------------|---------------------------|----------|
-| 1 | **Requirements**    | User stories, acceptance criteria, non-functional reqs, traceability IDs | **Acceptance / System / final SW-Integration test** | The increment does what the user asked, end to end. |
-| 2 | **Architecture**    | Module decomposition, boundaries, dependency rule, ADRs, interface contracts | **Module / Integration test** | Modules collaborate correctly across boundaries. |
-| 3 | **Design**          | Component interfaces, data structures, applied patterns, sequence/flow | **Component test** | Each component honors its contract in isolation. |
-| 4 | **Implementation**  | Production code (`${config.layout.source_dir}`), following `${config.clean_code.*}` | **Unit test** | Each unit (function/class) is correct. |
+| # | Left stage (design) | Primary artifacts | Paired test (right) | Verifies |
+|---|---------------------|-------------------|---------------------|----------|
+| 1 | **Requirements**     | User stories, acceptance criteria, non-functional reqs, traceability IDs | **(10) Acceptance test** | The system does what the user asked, end to end. |
+| 2 | **Software System**  | Topology (e.g. client-server) + the deployable executables, context, external interfaces | **(9) System test** | The executables compose and run together in the topology. |
+| 3 | **Architecture**     | Per-deployable pattern + module decomposition, boundaries, dependency rule, ADRs | **(8) Module test** (mocked) | Modules collaborate correctly inside their deployable. |
+| 4 | **Design**           | Per-component interface contracts, data structures, applied patterns, units | **(7) Component test** (mocked) | Each component honors its contract in isolation. |
+| 5 | **Implementation**   | Production code (`${config.layout.source_dir}`), following `${config.clean_code.*}` | **(6) Unit test** | Each unit (function/class) is correct. |
 
 Traceability is mandatory: every requirement ID must reach ≥1 acceptance test
 (`config.quality_gates.traceability`). The workflow emits a matrix each increment.
 
+### 3b. The composition hierarchy (made explicit, visible, and tested)
+
+The five left-arm stages build a strict **composition hierarchy** (`config.v_model.composition`),
+each tier *one or more* of the tier below, and each tier has its **own test level**:
+
+```
+   software system  ◄── (10) acceptance test  — run the whole system end-to-end
+      ▲ one or more
+   software (executable / deployable)  ◄── (9) system test  — deployables run together (topology)
+      ▲ one or more
+   module(s)        ◄── (8) module test (mocked)  — per module
+      ▲ one or more
+   component(s)     ◄── (7) component test (mocked)  — per component
+      ▲ one or more
+   unit(s)          ◄── (6) unit test  — per component's units
+```
+
+- **unit → component:** a unit belongs to **exactly one** component.
+- **component → module:** a component may serve **one or more** modules — a shared component is
+  **reused, implemented once**, not duplicated.
+- **module → software (executable):** an executable is composed of its modules.
+- **software → software system:** the system (its *topology*, e.g. client-server) is composed of its
+  executables (e.g. a client and a server).
+
+Making the hierarchy explicit buys three things: each element is **visible** (it appears in
+`OUTPUT.md` and the per-phase traces), each element is **independently tested** at its level, and —
+because siblings are independent — the work runs **highly in parallel** (§4).
+
+### 3c. How the names map to standard terminology
+
+The composition hierarchy isn't standardized identically across the industry (the same words —
+*module*, *component*, *unit* — are used differently project to project), but CAAVM's chain lines up
+with widely-used definitions and the classic V-Model:
+
+| CAAVM term | Standard alignment |
+|------------|--------------------|
+| **unit** | ISTQB *unit/component test* target; ISO 26262 *software unit* (the lowest design piece). |
+| **component** (one or more units) | ISO 26262: "a software component gathers one or more software units." |
+| **module** (one or more components) | Common definition: "a module is a set of components with specific interfaces." |
+| **software / executable** (one or more modules) | A deliverable build artifact — the *subsystem/application* level. |
+| **software system** (one or more executables) | The top *system* element; its **topology** (e.g. client-server) is the arrangement of executables. |
+
+Test-level mapping to the classic V-Model (ISTQB: *unit → integration → system → acceptance*): CAAVM's
+**unit** and **acceptance** match directly; the V-Model's **integration testing** is split by tier into
+**component** (units within a component, mocked), **module** (components within a module, mocked) and
+**system** (executables running together) tests; **system** and **acceptance** match the V-Model's
+system and acceptance levels.
+
 ---
 
-## 4. Test-Driven flow on the right arm
+## 4. Forward decomposition, clear gates, targeted repair
 
-For each unit in the increment, agents follow **red → green → refactor**:
+The left arm flows **forward only** — Requirements → Software System → Architecture → (per-component)
+Design → Implementation. There is **no backward jump** from one design stage to its predecessor: a
+stage does its best with what it has, because any real gap will surface concretely in the **test
+phases**. This keeps the decomposition simple and lets it run in parallel without speculative rework.
 
-1. **Red** — write the failing test from the design's contract first.
-2. **Green** — write the minimum production code to pass.
-3. **Refactor** — clean it up (see §6) with tests staying green.
+Each test level is a **clear gate** (a barrier): the climb to the next level proceeds only once the
+current level is green. When a gate goes red, CAAVM applies a **targeted repair** — it repeats the
+build loop **only for the failing element** and re-verifies, bounded by `config.agile.max_fix_rounds`:
 
-Then climb the V: component tests, module/integration tests, and finally the
-acceptance test that closes the loop back to the requirement. Test frameworks,
-sanitizers, and coverage tools are whatever `config.toolchain.test_frameworks`,
-`config.toolchain.sanitizers`, and `config.toolchain.coverage` name.
+> This is **abstract and the same at every level**. If one unit fails, only that unit's
+> red→green→refactor loop (plus refactoring) is repeated — the other units of the component are
+> already green and are left untouched. The identical rule applies one tier up: if a component fails
+> its (mocked) test, only that component is repaired; if a module fails, only that module's wiring; if
+> a deployable fails the system test, only that deployable — never a wholesale re-implementation.
+
+| Gate (test level) | Targeted repair — repeat the loop for… |
+|-------------------|----------------------------------------|
+| unit (6)        | the failing **unit(s)** |
+| component (7)   | the failing **component(s)** (the units behind the contract failure) |
+| module (8)      | the failing **module(s)** (the component wiring at that boundary) |
+| system (9)      | the failing **deployable(s)** (how its modules assemble in the topology) |
+| acceptance (10) | the specific behavior the scenario exercises, across the running system |
+
+**Already-passing siblings are never re-implemented.** Only if a level stays red after
+`config.agile.max_fix_rounds` does the climb stop and the increment fail its gate — then it re-loops
+per `config.agile.max_gate_retries`, the coarse safety net. Test frameworks, sanitizers, and coverage
+tools are whatever `config.toolchain.test_frameworks`, `config.toolchain.sanitizers`, and
+`config.toolchain.coverage` name.
 
 ---
 
@@ -162,8 +240,9 @@ persistent failure is surfaced, never silently passed.
 
 ## 6. Clean code & refactoring discipline
 
-Refactoring is a **named, mandatory step** every increment, not an afterthought.
-The refactor pass runs adversarial review lenses drawn from `config.clean_code`:
+Refactoring is **on-demand inside every phase** (the *refactor* of red→green→refactor), not a
+separate stage: whenever an agent spots a smell while working, it applies the matching technique
+immediately and keeps tests green. The lenses it draws on, from `config.clean_code`:
 
 - **Principles:** SOLID, DRY, KISS, YAGNI, Law of Demeter, composition > inheritance.
 - **Architecture:** `config.clean_code.architecture` (default Ports & Adapters) with
@@ -173,8 +252,8 @@ The refactor pass runs adversarial review lenses drawn from `config.clean_code`:
   and removed while tests stay green.
 - **Boy-Scout rule:** leave touched code cleaner than found; no new warnings.
 
-Refactors are bounded by `config.agile.max_refactor_rounds` per increment so the
-loop always converges.
+The clean-code **thresholds** (complexity, function length, dependency rule, zero warnings) are
+**enforced at the Iteration Gate**, so quality is gated even though refactoring itself is on-demand.
 
 ## 6b. Reference catalogs (authority sources)
 

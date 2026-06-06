@@ -41,12 +41,23 @@ _Last run: not yet run._
 
 - [ ] **INC-001** — _title_ — `queued` — rung reached: —
   - stage reached: — · gate: — · debt / deferred to next loop: —
+  - hierarchy: — deployable(s) ◄ — module(s) ◄ — component(s) ◄ — unit(s) · topology: —
+
+## Composition hierarchy (latest increment)
+
+<!-- system → software(executable) → module → component → unit. A component shared across modules is listed once. -->
+
+| deployable (executable) | module | components | units |
+|-------------------------|--------|-----------|-------|
+| —                       | —      | —         | —     |
 
 ## Test levels (latest increment)
 
-| unit | component | module | software-integration | acceptance |
-|------|-----------|--------|----------------------|------------|
-| —    | —         | —      | —                    | —          |
+<!-- Each level fans out per component / per module / per deployable; a red level returns to its owning stage. -->
+
+| unit (6) | component (7) | module (8) | system (9) | acceptance (10) |
+|----------|---------------|------------|------------|-----------------|
+| —        | —             | —          | —          | —               |
 
 ## Next action
 

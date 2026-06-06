@@ -6,19 +6,63 @@
 > language by editing config.
 
 ```
-Requirements ───────────────► Acceptance / SW-Integration test
-   Architecture ────────────► Module / Integration test
-      Design ───────────────► Component test
-         Implementation ──┬─► Unit test
-            (worktrees) ──┘ integrate ► refactor ► quality gate ► next increment
-                  └► commit every phase onto main ─ re-run to deepen (mvp→harden→complete)
+ 0. MVP loop (INPUT.md ⇄ OUTPUT.md, re-run to deepen)
+ 1. Requirements ───────────────────────────────► 10. Acceptance test   (run the system; screenshots/E2E)
+ 2. Software System (topology + executables) ───►  9. System test       (deployables run together)
+ 3. Architecture (per executable: modules) ─────►  8. Module test        (mocked)
+ 4. Design (per component: interface + units) ──►  7. Component test     (mocked)
+ 5. Implementation (per component: units, TDD) ─►  6. Unit test
+        on demand: integrate (assemble bottom-up) · refactor (any phase) · then quality gate
+        commit every phase onto main · re-run to deepen (mvp → harden → complete)
 ```
 
-Each backlog item runs one full **V-pass** (design top-down, verify bottom-up),
+Each backlog item runs one full **V-pass** (decompose top-down, verify bottom-up),
 and the V repeats every iteration — that's the *cyclic agile* part. CAAVM builds an
 **MVP first** and is **re-run to deepen**: one run advances the product by one maturity
 rung across the backlog, so `INPUT.md` is resolved over several meaningful loops. Every
 phase **commits onto `main`** as it finishes (and writes a file-level trace).
+
+## The mental model — how the V is structured
+
+Read the V as a **composition relationship**: each tier is built from *one or more* of the tier
+below it, and each tier is **verified by its own test level**.
+
+```
+ software system   — the whole product and its TOPOLOGY (e.g. "client-server")
+   └─ software(s)  — one or more executables/deployables (e.g. a client.exe AND a server.exe)
+       └─ module(s)     — each executable is architected into modules (e.g. the client is
+       │                  Layered with three modules; the server has its own pattern)
+           └─ component(s)  — each module is built from components (each with a clear interface)
+               └─ unit(s)   — each component is built from units (functions/classes)
+```
+
+Spelled out as relationships (each "one or more"):
+
+- **a software system** consists of one or more **executables** (the *topology* — e.g. client-server
+  yields two executables); it is verified by the **acceptance test** (run the whole system) and the
+  **system test** (the executables run together).
+- **an executable (a "software")** consists of one or more **modules**; verified by the **module test**.
+- **a module** consists of one or more **components**; verified by the **component test** (mocked).
+- **a component** consists of one or more **units**; verified by the **unit test**.
+- **a unit** belongs to exactly **one** component. (A component may be *reused* by several modules —
+  it is built once.)
+
+The left arm decides this top-down (**phases 1→5**); the right arm verifies it bottom-up
+(**phases 6→10**), each test level paired with the stage that produced its tier.
+
+**Why it parallelizes.** The decomposition is **interface-first**: as soon as a tier's interfaces
+exist, the work beneath it is decoupled. So each executable is architected on its own, each component
+is *designed-then-implemented* independently (a component can be implementing while another is still
+being designed), and every test level fans out per sibling (per component, per module, per executable).
+Work is assembled back **bottom-up** — units → components → modules → executables → system — merging
+automatically as each tier comes together. It is **highly parallel**.
+
+**Forward decomposition, clear gates, targeted repair.** The left arm flows **forward only** — no
+backward jumps between design stages. Gaps surface in the **test phases**, which are clear gates. When
+a gate goes red, CAAVM repeats the build loop for **only the failing element** (a unit, a component, a
+module, a deployable — the rule is the same at every level) plus refactoring, then re-verifies —
+bounded by `max_fix_rounds`. **Already-passing siblings are never re-implemented.** If it can't go
+green within the budget, the increment fails its gate and re-loops (the coarse safety net).
 
 ## How it's used
 
@@ -43,12 +87,15 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 
 ## Features
 
-- 🔁 **Cyclic V-Model** — requirements↔acceptance, architecture↔integration, design↔component, implementation↔unit.
+- 🔁 **Cyclic V-Model (5↔5)** — requirements↔acceptance, software-system↔system, architecture↔module, design↔component, implementation↔unit.
+- 🧱 **Explicit composition hierarchy** — `system → software(executable) → module → component → unit` (each *one or more*; a unit in exactly one component; a component reusable across modules). Every element is **visible** (in `OUTPUT.md` + traces) and **independently tested** at its level.
+- ⚡ **Highly parallel, interface-first** — once a tier's interfaces exist the work decouples: each executable is architected on its own, each component is *designed-then-implemented* in a pipeline (one can implement while another still designs), and every test level fans out per sibling. Assembled back **bottom-up**.
+- 🚥 **Clear gates + targeted repair** — the left arm flows forward only (no backward jumps); each test level is a gate. A red gate repeats the build loop for **only the failing element** (same rule at every level — unit, component, module, deployable) + refactor, then re-verifies. Passing siblings are never re-implemented. Bounded by `max_fix_rounds`.
 - 🪜 **MVP maturity ladder** — one run = one rung (`mvp → harden → complete`); **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
-- 🌳 **Commit-per-phase on `main`** — every phase persists + commits its content; parallel implementation runs in isolated git worktrees, merged back in an **Integrate** step. A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
+- 🌳 **Commit-per-phase on `main`** — every phase persists + commits its content; parallel implementation runs in isolated git worktrees, merged back **on demand** (bottom-up assembly). A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
 - 🤖 **Agentic** — a dedicated agent per stage; *independent* agents verify (adversarial).
-- 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → integration → acceptance`.
-- 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting, bounded refactor pass every increment.
+- 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → system → acceptance`.
+- 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting; refactoring is **on-demand inside every phase** (red→green→refactor), with thresholds enforced at the gate.
 - 🚦 **Quality gates** — coverage, complexity, zero-warning lint/format, sanitizers, doc coverage, traceability.
 - 🎚️ **Per-phase model routing** — run each phase on a different model tier (`opus`/`sonnet`/`haiku`), e.g. Opus for architecture/design/gate, Haiku for mechanical verification.
 - 🛠️ **One-file config** — language, version, tools (clang-format, clang-tidy, cmake, GoogleTest, …), toggles and models are all plain data.
@@ -123,12 +170,12 @@ Run the caav-model workflow using config/caav-model.config.yaml as args.
 ```
 
 Claude parses the YAML, hands it in as `args` (merged over built-in defaults), and runs every
-increment end-to-end at **this loop's maturity rung**: requirements → architecture → design → TDD
-implementation (parallel, in worktrees) → **integrate** (merge worktrees onto `main`) → 5-level
-verification (independent agents) → bounded refactor pass → quality gate, committing each phase as
-it finishes and returning a per-increment report + traceability matrix. The carry-forward ledger
-feeds each increment into the next; **re-run the workflow to climb to the next rung** until
-`INPUT.md` is fully resolved.
+increment end-to-end at **this loop's maturity rung**: requirements → software system → architecture
+→ per-component design+implementation (parallel pipeline, in worktrees) → **integrate** (assemble
+bottom-up onto `main`) → 5 test gates (unit→component→module→system→acceptance, independent agents,
+refactoring on demand) → quality gate, committing each phase as it finishes and returning a
+per-increment report + traceability matrix. The carry-forward ledger feeds each increment into the
+next; **re-run the workflow to climb to the next rung** until `INPUT.md` is fully resolved.
 
 > ⚠️ This spawns many subagents and can use significant tokens — run it when you've opted into
 > multi-agent orchestration (say "use a workflow").
@@ -150,13 +197,13 @@ cheaper tiers:
 ```yaml
 models:
   default: sonnet
-  architecture: opus     # pattern choice, boundaries, ADRs
-  design: opus           # interfaces + design patterns
+  system: opus           # topology + deployables (executables)
+  architecture: opus     # per-deployable pattern, modules, boundaries, ADRs
+  design: opus           # component interfaces + design patterns
   gate: opus             # final Definition-of-Done judgment
-  implementation: sonnet # high-volume parallel TDD
+  implementation: sonnet # high-volume parallel TDD (per component)
   requirements: sonnet
-  refactor: sonnet
-  verification: haiku    # mechanical: run tests, report pass/fail
+  verification: haiku     # mechanical: run the unit/component/module/system/acceptance tests
 ```
 
 Edit any phase to taste; unset phases fall back to `default`, and with no `models` block at all

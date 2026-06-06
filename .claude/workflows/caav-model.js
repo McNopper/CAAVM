@@ -5,13 +5,17 @@ export const meta = {
   phases: [
     { title: 'Setup' },
     { title: 'Intake', model: 'sonnet' },
-    { title: 'Requirements', model: 'sonnet' },
-    { title: 'Architecture', model: 'opus' },
-    { title: 'Design', model: 'opus' },
-    { title: 'Implementation (TDD)', model: 'sonnet' },
-    { title: 'Integrate', model: 'sonnet' },
-    { title: 'Verification', model: 'haiku' },
-    { title: 'Refactor', model: 'sonnet' },
+    { title: 'Requirements', model: 'sonnet' },          // 1  (validated by 10)
+    { title: 'Software System', model: 'opus' },         // 2  topology + deployables/executables (validated by 9)
+    { title: 'Architecture', model: 'opus' },            // 3  modules define each deployable (validated by 8)
+    { title: 'Design', model: 'opus' },                  // 4  components define modules (validated by 7)
+    { title: 'Implementation (TDD)', model: 'sonnet' },  // 5  units define components (validated by 6)
+    { title: 'Integrate', model: 'sonnet' },             // on demand: assemble components→modules→deployables→system
+    { title: 'Unit Tests', model: 'haiku' },             // 6  → falls back to 5
+    { title: 'Component Tests', model: 'haiku' },        // 7  → falls back to 4 (needs mocking)
+    { title: 'Module Tests', model: 'haiku' },           // 8  → falls back to 3 (needs mocking)
+    { title: 'System Tests', model: 'haiku' },           // 9  → falls back to 2 (deployables run together)
+    { title: 'Acceptance', model: 'sonnet' },            // 10 → falls back to 1 (run the system, e.g. screenshots / E2E)
     { title: 'Iteration Gate', model: 'opus' },
     { title: 'Report', model: 'sonnet' },
   ],
@@ -46,14 +50,15 @@ const DEFAULTS = {
     docs: { tool: 'doxygen', config_file: 'Doxyfile' },
   },
   v_model: {
-    requirements: { verifies_with: 'acceptance / system / final software-integration test' },
+    requirements: { verifies_with: 'acceptance test (whole running system, end-to-end)' },
     architecture: { verifies_with: 'module integration test' },
     design: { verifies_with: 'component test' },
     implementation: { verifies_with: 'unit test' },
-    test_execution_order: ['unit', 'component', 'module', 'software-integration', 'acceptance'],
+    system: { verifies_with: 'system test (deployables run together)' },
+    test_execution_order: ['unit', 'component', 'module', 'system', 'acceptance'],
   },
   agile: {
-    iteration_name: 'sprint', tdd: true, max_refactor_rounds: 2, max_gate_retries: 2,
+    iteration_name: 'sprint', tdd: true, max_refactor_rounds: 2, max_gate_retries: 2, max_fix_rounds: 2,
     definition_of_done: [
       'All five test levels green (unit, component, module, integration, acceptance).',
       'All quality_gates satisfied.',
@@ -118,6 +123,7 @@ const DEFAULTS = {
   models: {
     default: 'sonnet',
     requirements: 'sonnet',
+    system: 'opus',
     architecture: 'opus',
     design: 'opus',
     implementation: 'sonnet',
@@ -201,6 +207,11 @@ const commitDirective = (tag, level, n, phaseName) => {
   return trace + commit
 }
 
+// Refactoring is ON-DEMAND inside every (code-producing) phase, not a separate
+// numbered phase: when an agent spots a smell while working, it applies the
+// matching technique immediately and keeps tests green (red → green → refactor).
+const refactorOnDemand = `REFACTORING IS ON-DEMAND (part of this phase, not a separate phase): whenever you spot a smell from the catalog while working, apply the matching technique right away and keep all tests green. Smells ${JSON.stringify((refs.refactoring || {}).smells || [])}; techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}; honor clean-code rules ${cc}.`
+
 // ---- schemas -------------------------------------------------------------
 const BACKLOG_ITEM = { type: 'object', additionalProperties: false, required: ['id', 'title'], properties: { id: { type: 'string' }, title: { type: 'string' }, acceptance: { type: 'string' } } }
 const RESOLUTION_ITEM = { type: 'object', additionalProperties: false, required: ['input', 'status'], properties: { input: { type: 'string' }, status: { type: 'string', enum: ['resolved', 'partial', 'queued'] }, note: { type: 'string' } } }
@@ -235,32 +246,67 @@ const REQ_SCHEMA = {
     acceptance_tests: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['req_ids', 'given', 'when', 'then'], properties: { req_ids: { type: 'array', items: { type: 'string' } }, given: { type: 'string' }, when: { type: 'string' }, then: { type: 'string' } } } },
   },
 }
-const ARCH_SCHEMA = {
+// Software System owns the TOP tier: the system topology and the deployable
+// executables it decomposes into (e.g. client-server → a client + a server exe).
+const SYSTEM_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['modules', 'adrs', 'integration_test_plan', 'req_to_module'],
+  required: ['topology', 'deployables'],
   properties: {
-    modules: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'responsibility', 'interfaces'], properties: { name: { type: 'string' }, responsibility: { type: 'string' }, interfaces: { type: 'array', items: { type: 'string' } } } } },
-    adrs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'decision', 'consequences'], properties: { title: { type: 'string' }, decision: { type: 'string' }, consequences: { type: 'string' } } } },
-    integration_test_plan: { type: 'array', items: { type: 'string' } },
-    req_to_module: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['req_id', 'module'], properties: { req_id: { type: 'string' }, module: { type: 'string' } } } },
+    topology: { type: 'string' },                                          // e.g. "standalone", "client-server", "service + CLI"
+    deployables: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'responsibility'], properties: { name: { type: 'string' }, kind: { type: 'string' }, responsibility: { type: 'string' } } } }, // e.g. { client, executable, ... }, { server, executable, ... }
+    context: { type: 'string' },
+    external_interfaces: { type: 'array', items: { type: 'string' } },
+    quality_scenarios: { type: 'array', items: { type: 'string' } },
   },
 }
-const DESIGN_SCHEMA = {
+// Architecture owns the MODULE layer — PER DEPLOYABLE: each executable gets its own
+// architecture pattern and modules (the client may be layered with 3 modules; the
+// server its own). Modules compose into their deployable; deployables into the system.
+const ARCH_SCHEMA = {
   type: 'object', additionalProperties: false,
-  required: ['components'],
+  required: ['deployable_patterns', 'modules', 'adrs', 'module_test_plan', 'system_test_plan', 'req_to_module', 'component_plan'],
   properties: {
-    components: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'module', 'interface', 'patterns', 'component_test_spec'], properties: { name: { type: 'string' }, module: { type: 'string' }, interface: { type: 'string' }, patterns: { type: 'array', items: { type: 'string' } }, component_test_spec: { type: 'string' } } } },
+    // Per deployable: the architecture pattern chosen for that executable (e.g. client → Layered).
+    deployable_patterns: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['deployable', 'pattern'], properties: { deployable: { type: 'string' }, pattern: { type: 'string' }, justification: { type: 'string' } } } },
+    // Modules belong to a deployable (the executable they compose into).
+    modules: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'deployable', 'responsibility', 'interfaces'], properties: { name: { type: 'string' }, deployable: { type: 'string' }, responsibility: { type: 'string' }, interfaces: { type: 'array', items: { type: 'string' } } } } },
+    adrs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'decision', 'consequences'], properties: { title: { type: 'string' }, decision: { type: 'string' }, consequences: { type: 'string' } } } },
+    module_test_plan: { type: 'array', items: { type: 'string' } },              // components -> module (per module)
+    system_test_plan: { type: 'array', items: { type: 'string' } },              // deployables -> system (topology runs together)
+    req_to_module: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['req_id', 'module'], properties: { req_id: { type: 'string' }, module: { type: 'string' } } } },
+    // The component WORK-LIST (coarse) that seeds the per-component design→implement
+    // pipeline. Design details each; a component may serve one or more modules.
+    component_plan: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'modules', 'responsibility'], properties: { name: { type: 'string' }, modules: { type: 'array', minItems: 1, items: { type: 'string' } }, responsibility: { type: 'string' } } } },
+  },
+}
+// Design owns the COMPONENT and UNIT layers, designed ONE COMPONENT AT A TIME so
+// the per-component design→implement pipeline can overlap. HIERARCHY (explicit):
+//   unit(s) -> component  : a unit belongs to EXACTLY ONE component (units nested under it)
+//   component(s) -> module: a component may be assigned to ONE OR MORE modules (modules[] >= 1)
+const COMPONENT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['name', 'modules', 'interface', 'patterns', 'units', 'component_test_spec'],
+  properties: {
+    name: { type: 'string' },
+    modules: { type: 'array', minItems: 1, items: { type: 'string' } },        // M:N — a component can serve several modules
+    interface: { type: 'string' },                                             // the CONTRACT that decouples parallel work
+    patterns: { type: 'array', items: { type: 'string' } },
+    units: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'unit_test_spec'], properties: { name: { type: 'string' }, unit_test_spec: { type: 'string' } } } },  // 1 unit : 1 component
+    component_test_spec: { type: 'string' },
   },
 }
 const IMPL_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['files_changed', 'unit_tests_added', 'summary'],
-  properties: { files_changed: { type: 'array', items: { type: 'string' } }, unit_tests_added: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' } },
+  properties: {
+    component: { type: 'string' }, units_implemented: { type: 'array', items: { type: 'string' } },
+    files_changed: { type: 'array', items: { type: 'string' } }, unit_tests_added: { type: 'array', items: { type: 'string' } }, summary: { type: 'string' },
+  },
 }
 const VERIFY_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['level', 'passed', 'details'],
-  properties: { level: { type: 'string' }, passed: { type: 'boolean' }, details: { type: 'string' }, coverage_pct: { type: 'number' } },
+  properties: { level: { type: 'string' }, scope: { type: 'string' }, passed: { type: 'boolean' }, details: { type: 'string' }, coverage_pct: { type: 'number' } },
 }
 const REVIEW_SCHEMA = {
   type: 'object', additionalProperties: false,
@@ -297,9 +343,14 @@ debt with a short reason) so a later loop picks it up — do not build it now. E
 gates for this level (relaxations already merged over the strict gates): ${effGates}.`
   log(`▼ Increment ${tag} @ ${level}: ${item.title}`)
 
-  // ---- LEFT ARM (sequential: each stage refines the previous) ----
-  phase('Requirements')
-  const reqs = await agent(
+  // ---- LEFT ARM — straight, forward decomposition (NO backward jumps) -------
+  // The decomposition flows forward only: requirements → system → architecture →
+  // (per-component) design → implement. We do NOT bounce a stage back to its
+  // predecessor; any real gap surfaces in the TEST PHASES (right arm), where the
+  // fix is a TARGETED repeat of the failing element's build loop (see below).
+  const dp = refs.design_patterns || {}
+
+  const runRequirements = () => agent(
     `You are the Requirements Analyst in a V-Model. Backlog item: ${JSON.stringify(item)}.
 ${mvpBanner}
 Carry-forward context from prior increments (stay consistent; treat logged decisions and
@@ -308,120 +359,242 @@ Produce functional + non-functional requirements with stable IDs (REQ-${tag}-n) 
 acceptance tests (Given/When/Then) for ${tf.acceptance.tool}. Capture ONLY the requirements
 needed at the "${level}" level; mark the rest as deferred. Do NOT design a solution.${commitDirective(tag, level, 1, 'Requirements')}`,
     { label: `req:${tag}`, phase: 'Requirements', schema: REQ_SCHEMA, model: modelFor('requirements') })
-  if (!reqs) return { tag, status: 'aborted', stage: 'requirements' }
 
-  phase('Architecture')
-  const arch = await agent(
-    `You are the Architect. Requirements: ${JSON.stringify(reqs)}. Prior ADRs/decisions to honor: ${carry}.
+  // Software System (2): topology + deployable executables — the TOP tier.
+  const runSystem = (reqsArg) => agent(
+    `You are the Systems Architect. Requirements: ${JSON.stringify(reqsArg)}. Prior decisions to honor: ${carry}.
 ${mvpBanner}
-Choose an architecture pattern from this catalog and justify it: ${JSON.stringify((refs.software_architecture_patterns || {}).catalog || [])}.
-Decompose into modules with boundaries honoring "${cfg.clean_code.architecture}" and the rule
-"${cfg.clean_code.dependency_rule}". At the "${level}" level keep the decomposition as small as
-delivers the slice, but EXTENSIBLE so later loops deepen it without rework. Define interface
-contracts and ADRs. ${docInstruction}
-Produce an integration/module test plan for ${tf.integration.tool}, and map every REQ id to a module.${commitDirective(tag, level, 2, 'Architecture')}`,
+Define the SOFTWARE SYSTEM as a whole — the TOP of the composition hierarchy:
+  • topology: choose the system style (e.g. standalone, client-server, service + CLI) and justify it briefly.
+  • deployables: the concrete DELIVERABLES the system decomposes into — e.g. a client-server topology
+    yields TWO executables (a client and a server). Give each {name, kind (executable/service/library), responsibility}.
+  • context, external_interfaces, and key quality_scenarios.
+At the "${level}" level keep this minimal but EXTENSIBLE. Each deployable will be architected into modules next.${commitDirective(tag, level, 2, 'Software-System')}`,
+    { label: `system:${tag}`, phase: 'Software System', schema: SYSTEM_SCHEMA, model: modelFor('system') })
+
+  // Architecture (3): PER DEPLOYABLE — pattern + modules; modules compose the deployable.
+  const runArchitecture = (reqsArg, sysArg) => agent(
+    `You are the Architect. Requirements: ${JSON.stringify(reqsArg)}.
+Software system (topology + deployables): ${JSON.stringify(sysArg)}. Prior ADRs to honor: ${carry}.
+${mvpBanner}
+Architect EACH DEPLOYABLE on its own: for every deployable, choose its architecture pattern from this
+catalog and justify it (record in deployable_patterns): ${JSON.stringify((refs.software_architecture_patterns || {}).catalog || [])}
+— e.g. a client might be Layered with three modules; the server its own pattern.
+Decompose each deployable into MODULES (set each module's "deployable") honoring "${cfg.clean_code.architecture}"
+and the rule "${cfg.clean_code.dependency_rule}". At the "${level}" level keep it small but EXTENSIBLE.
+COMPOSITION HIERARCHY: modules compose their deployable; deployables compose the system. Define each
+module's interface contract and ADRs. ${docInstruction}
+Produce TWO test plans: (1) module_test_plan — how each module's components compose into the module
+(${tf.integration.tool}); (2) system_test_plan — how the deployables run together as the topology.
+Map every REQ id to a module. Also produce the component_plan: the coarse WORK-LIST of components per
+module — {name, modules (one or more it serves), one-line responsibility}; a component shared by several
+modules is listed ONCE. Design details each component.${commitDirective(tag, level, 3, 'Architecture')}`,
     { label: `arch:${tag}`, phase: 'Architecture', schema: ARCH_SCHEMA, model: modelFor('architecture') })
-  if (!arch) return { tag, status: 'aborted', stage: 'architecture' }
 
-  phase('Design')
-  const dp = refs.design_patterns || {}
-  const design = await agent(
-    `You are the Designer. Architecture: ${JSON.stringify(arch)}.
+  // Design ONE component (interface-first) — the contract it returns is what lets
+  // implementation + collaborators proceed in parallel (others mock this interface).
+  const designComponent = (plan) => agent(
+    `You are the Designer detailing ONE component from the architecture's work-list: ${JSON.stringify(plan)}.
+Architecture context (modules, boundaries, ADRs): ${JSON.stringify({ modules: arch.modules, adrs: arch.adrs })}.
 ${mvpBanner}
-For each module, specify components: public interface, data structures, and design patterns
-chosen ONLY from this catalog (justify each by the problem it solves; no gratuitous patterns —
-honor YAGNI at the "${level}" level):
-creational ${JSON.stringify(dp.creational || [])}, structural ${JSON.stringify(dp.structural || [])},
+INTERFACE-FIRST: define this component's public INTERFACE/contract precisely — that contract is what
+lets its implementation and its collaborators proceed IN PARALLEL (collaborators mock this interface).
+Then make the lower hierarchy explicit:
+  • units: list the UNITS that compose this component, each with a unit_test_spec. A unit belongs to
+    EXACTLY ONE component.
+  • modules: the module(s) this component serves (one or more), from ${JSON.stringify(plan.modules || [])}.
+Choose design patterns ONLY from this catalog (justify each by the problem it solves; YAGNI at the
+"${level}" level): creational ${JSON.stringify(dp.creational || [])}, structural ${JSON.stringify(dp.structural || [])},
 behavioral ${JSON.stringify(dp.behavioral || [])}. Specify error handling
 ("${cfg.clean_code.error_handling}") and ownership ("${cfg.clean_code.resource_management}").
-Give a component-test spec per component (deps mocked with ${tf.unit.mock || 'a mock framework'}).${commitDirective(tag, level, 3, 'Design')}`,
-    { label: `design:${tag}`, phase: 'Design', schema: DESIGN_SCHEMA, model: modelFor('design') })
-  if (!design) return { tag, status: 'aborted', stage: 'design' }
+Give the component_test_spec (collaborators mocked with ${tf.unit.mock || 'a mock framework'}).${commitDirective(tag, level, 4, `Design-${plan.name}`)}`,
+    { label: `design:${plan.name}`, phase: 'Design', schema: COMPONENT_SCHEMA, model: modelFor('design') })
 
-  // ---- RIGHT ARM: implement each component via TDD (parallel, isolated) ----
-  phase('Implementation (TDD)')
-  const components = (design.components || [])
-  const impls = (await parallel(components.map(c => () =>
-    agent(
-      `You are the Implementer using TDD in ${lang}. Implement component "${c.name}" (module ${c.module}).
+  // Implement ONE component (interface-first, in an isolated worktree).
+  const implementComponent = (c) => agent(
+    `You are the Implementer using TDD in ${lang}. Implement component "${c.name}", which belongs to
+module(s) [${(c.modules || []).join(', ')}] and is composed of these UNITS: ${JSON.stringify((c.units || []).map(u => u.name))}.
 ${mvpBanner}
 Interface/contract: ${c.interface}. Patterns: ${(c.patterns || []).join(', ')}.
-For each unit: write the FAILING ${tf.unit.tool} test first, then minimal code to pass, then tidy.
-At the "${level}" level implement only what the slice needs; leave clearly-marked TODO+debt notes
-for deferred behavior rather than building it. Honor clean-code rules ${cc}. Put code under
+HIGHLY PARALLEL + PARTIAL STATE: components are designed/implemented CONCURRENTLY, and across loops the
+codebase is partial — some units/components already exist while others do not. INSPECT the current code
+first; REUSE and EXTEND what is there, implement only the units that are missing or need deepening at
+this level, and keep existing tests green. Do not rebuild or duplicate. Code ONLY against the interfaces
+(mock collaborators) and touch only THIS component's files so concurrent work does not collide.
+Implement UNIT BY UNIT (each unit belongs to this component alone): write the FAILING ${tf.unit.tool}
+test first (from its unit_test_spec), then minimal code to pass, then tidy. Also run this component's
+unit + component self-tests (collaborators mocked) so it is green in isolation. Unit specs: ${JSON.stringify(c.units || [])}.
+At the "${level}" level implement only what the slice needs; defer the rest as TODO+debt. Put code under
 ${cfg.layout.source_dir}/${cfg.layout.include_dir}, tests under ${cfg.layout.test_dir}.
+${refactorOnDemand}
+Return your "component" name and "units_implemented".
 Run ${fmt} and ${linters} on touched files. Build with ${cfg.toolchain.build_system.tool}.
-You are working in an ISOLATED git worktree: commit your component on the current (worktree)
-branch — \`git add -A\` and \`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\` — so
-the Integrate phase can merge it back. Do NOT create extra branches or touch other worktrees.`,
-      { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, isolation: 'worktree', model: modelFor('implementation') })
-  ))).filter(Boolean)
+You are in an ISOLATED git worktree: commit on the current (worktree) branch — \`git add -A\` and
+\`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\` — so Integrate can merge it back.
+Do NOT create extra branches or touch other worktrees.`,
+    { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, isolation: 'worktree', model: modelFor('implementation') })
 
-  // ---- INTEGRATE: merge the parallel worktree branches back onto main --------
-  phase('Integrate')
-  if (commitsOn && git.worktree_merge !== false) {
+  // Forward pass through the upper-left stages.
+  phase('Requirements');     const reqs = await runRequirements();       if (!reqs) return { tag, status: 'aborted', stage: 'requirements' }
+  phase('Software System');  const sys = await runSystem(reqs);          if (!sys) return { tag, status: 'aborted', stage: 'system' }
+  phase('Architecture');     const arch = await runArchitecture(reqs, sys); if (!arch) return { tag, status: 'aborted', stage: 'architecture' }
+
+  // ---- HIERARCHY (explicit): unit -> component -> module -> deployable -> system
+  let components, moduleNames, totalUnits
+  const componentsInModule = (m) => components.filter(c => (c.modules || []).includes(m))
+  const deriveHierarchy = (designed) => {
+    components = designed
+    moduleNames = ((arch.modules || []).map(m => m.name).length)
+      ? (arch.modules || []).map(m => m.name)
+      : [...new Set(components.flatMap(c => c.modules || []))]
+    totalUnits = components.reduce((n, c) => n + ((c.units || []).length), 0)
+    log(`  hierarchy: ${moduleNames.length} module(s) ◄ ${components.length} component(s) ◄ ${totalUnits} unit(s)`)
+  }
+
+  // ---- MIDDLE: per-component DESIGN → IMPLEMENT pipeline (interface-first) ----
+  // Architecture emitted the modules AND the component work-list. Each component
+  // flows design → implement INDEPENDENTLY (pipeline, NO barrier between the two):
+  // once a component's interface is designed its implementation can start while
+  // OTHER components are still being designed. Forward only — failures are caught
+  // in the test phases and fixed there (targeted), not by jumping back to design.
+  phase('Design')
+  const plan = (arch.component_plan || [])
+  if (!plan.length) { log(`No component_plan from architecture for ${tag}.`); return { tag, status: 'aborted', stage: 'architecture' } }
+  const built = (await pipeline(plan,
+    (p) => designComponent(p),                                            // stage 4: design this component
+    (comp) => comp ? implementComponent(comp).then(impl => ({ comp, impl })) : null,  // stage 5: implement it
+  )).filter(Boolean)
+  deriveHierarchy(built.map(b => b.comp).filter(Boolean))
+  const impls = built.map(b => b.impl).filter(Boolean)
+
+  // ---- INTEGRATE (on demand): merge whatever needs merging, assemble hierarchy
+  // Runs only when there is something to merge (parallel worktrees were used).
+  const needsIntegration = commitsOn && git.worktree_merge !== false && components.length > 0
+  if (needsIntegration) {
+    phase('Integrate')
+    const moduleMap = (arch.modules || []).map(m => ({ module: m.name, deployable: m.deployable, components: componentsInModule(m.name).map(c => c.name) }))
+    const deployables = (sys.deployables || []).map(d => d.name)
     await agent(
-      `You are the Integrator for increment ${tag} @ ${level}. The implementers above each worked in
-an ISOLATED git worktree and committed on its own branch. Bring it all onto the working branch:
-1. Discover the worktrees/branches with \`git worktree list --porcelain\` (and \`git branch\`).
-2. For each implementation worktree branch (everything except the main working branch), merge it
-   into the current branch with \`git merge --no-ff\`. Resolve any conflicts so that ALL components
-   are preserved and shared files (build files like ${cfg.toolchain.build_system.tool} config,
-   shared headers, test registration) are reconciled — never drop a component.
-3. After merging, run ${fmt} and a ${cfg.toolchain.build_system.tool} build to confirm the assembled
-   code compiles and links; fix trivial integration breakage (includes, target wiring) so it builds.
-4. Prune the merged worktrees (\`git worktree remove\`).
+      `You are the Integrator for increment ${tag} @ ${level}. Integration happens ON DEMAND and assembles
+the composition hierarchy BOTTOM-UP — units→components→modules→deployables(executables)→system — merging
+exactly what the parallel implementation produced. The implementers each built ONE component in an
+ISOLATED git worktree and committed on its own branch.
+Topology: ${sys.topology}. Deployables (executables): ${JSON.stringify(deployables)}.
+Composition map (module ◄ components, with its deployable): ${JSON.stringify(moduleMap)}.
+1. Discover the worktrees with \`git worktree list --porcelain\`.
+2. For each implementation worktree branch (everything except the main working branch), merge it into
+   the current branch with \`git merge --no-ff\`. Resolve conflicts so ALL components are preserved and
+   shared files (build config, shared headers, test registration) reconciled — never drop a component;
+   a component shared by several modules is integrated ONCE and referenced by each module.
+3. Assemble the hierarchy in the build: group each module's components into its module target, each
+   module into its DEPLOYABLE (executable) target, and wire the deployables into the SYSTEM (topology)
+   — so unit→component→module→deployable→system is reflected in the ${cfg.toolchain.build_system.tool} structure.
+4. Run ${fmt} and a ${cfg.toolchain.build_system.tool} build to confirm every executable compiles and links;
+   fix trivial integration breakage (includes, target wiring) so it builds.
+5. Prune the merged worktrees (\`git worktree remove\`).
 ${commitDirective(tag, level, 5, 'Integrate')}
 If there were no extra worktrees (components implemented inline), just ensure everything is staged
 and committed on the current branch, and still write the trace file.`,
       { label: `integrate:${tag}`, phase: 'Integrate', model: modelFor('implementation') })
   }
 
-  // ---- VERIFICATION: climb the V bottom-up, adversarial (fresh agents) ----
-  phase('Verification')
+  // ---- RIGHT ARM: climb the FIVE test levels, adversarial (fresh agents) -----
+  // 6 Unit ◄5 · 7 Component ◄4 (mocked) · 8 Module ◄3 (mocked) · 9 System ◄2 ·
+  // 10 Acceptance ◄1. Each level mirrors the hierarchy and FANS OUT in parallel
+  // (per component / per module / per deployable / whole system); each level is a
+  // BARRIER (a clear GATE). A RED level is fixed by a TARGETED repeat of the
+  // failing element's own build loop (+ refactor), then re-verified — bounded by
+  // max_fix_rounds. Already-passing siblings are NOT touched or re-implemented.
   const order = cfg.v_model.test_execution_order
-  const levelInstructions = {
-    unit: `Run all unit tests (${tf.unit.tool}) with sanitizers (${sans}) enabled; report ${cov} coverage %.`,
-    component: `Run component tests (${tf.component.tool}) — each component against its contract, collaborators mocked.`,
-    module: `Run module/integration tests (${tf.integration.tool}) across real module boundaries.`,
-    'software-integration': `Run the final software-integration test on the assembled build (${cfg.toolchain.build_system.tool}).`,
-    acceptance: `Run the Stage-1 acceptance scenarios end-to-end (${tf.acceptance.tool}): ${JSON.stringify(reqs.acceptance_tests)}.`,
+  const adversarial = `Be adversarial: try to find a failing or missing case (within the "${level}" maturity scope — intentionally-deferred behavior is out of scope, not a failure).`
+  const deployableNames = (sys.deployables || []).map(d => d.name)
+  const LEVELS = {
+    unit:      { phase: 'Unit Tests',      ord: 6,  fixes: 'the failing unit(s) — re-run their red→green→refactor loop' },
+    component: { phase: 'Component Tests', ord: 7,  fixes: 'the failing component(s) — the unit(s) involved in the contract failure' },
+    module:    { phase: 'Module Tests',    ord: 8,  fixes: 'the failing module(s) — the component wiring/contracts at that boundary' },
+    system:    { phase: 'System Tests',    ord: 9,  fixes: 'the failing deployable(s) — how its modules assemble and talk in the topology' },
+    acceptance:{ phase: 'Acceptance',      ord: 10, fixes: 'the specific behavior the scenario exercises, across the running system' },
   }
-  const verifications = []
-  for (const testLevel of order) {
-    const v = await agent(
-      `You are the Verifier (independent of the implementer). Increment ${tag} @ maturity "${level}".
-Test level: ${testLevel}. ${levelInstructions[testLevel] || ''}
-Be adversarial: try to find a failing or missing case (within the "${level}" scope — deferred
-behavior is out of scope, not a failure). Implementation summary: ${JSON.stringify(impls.map(i => i.summary))}.${commitDirective(tag, level, 6, `Verification-${testLevel}`)}`,
-      { label: `verify:${testLevel}:${tag}`, phase: 'Verification', schema: VERIFY_SCHEMA, model: modelFor('verification') })
-    verifications.push(v)
-    if (v && v.passed === false) { log(`✗ ${testLevel} test failed for ${tag}: ${v.details}`); break } // stop the climb on red
+  // Build the per-level verification tasks (each returns a labelled thunk).
+  const verifyTasks = (lvl) => {
+    const L = LEVELS[lvl]; if (!L) return []
+    if (lvl === 'unit') return components.map(c => () =>
+      agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
+Test level: UNIT (6), scope = component "${c.name}". Run its unit tests (${tf.unit.tool}) with sanitizers
+(${sans}) enabled for units ${JSON.stringify((c.units || []).map(u => u.name))}; report ${cov} coverage %.
+Set "scope" to "${c.name}". ${adversarial}${commitDirective(tag, level, L.ord, `UnitTests-${c.name}`)}`,
+        { label: `unit:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
+    if (lvl === 'component') return components.map(c => () =>
+      agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
+Test level: COMPONENT (7), scope = "${c.name}". Run the component test (${tf.component.tool}) against its
+contract "${c.interface}". THIS REQUIRES MOCKING: mock the component's collaborators with
+${tf.unit.mock || 'a mock framework'} so only this component is exercised. Set "scope" to "${c.name}". ${adversarial}${commitDirective(tag, level, L.ord, `ComponentTests-${c.name}`)}`,
+        { label: `component:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
+    if (lvl === 'module') return moduleNames.map(m => () =>
+      agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
+Test level: MODULE (8), scope = "${m}". Prove the components [${componentsInModule(m).map(c => c.name).join(', ')}]
+compose into module "${m}" (per the module_test_plan, ${tf.integration.tool}). THIS REQUIRES MOCKING: mock
+the OTHER modules at "${m}"'s boundary so only this module is exercised. Set "scope" to "${m}". ${adversarial}${commitDirective(tag, level, L.ord, `ModuleTests-${m}`)}`,
+        { label: `module:${m}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
+    if (lvl === 'system') return (deployableNames.length ? deployableNames : ['system']).map(d => () =>
+      agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
+Test level: SYSTEM (9), scope = deployable "${d}". Build deployable "${d}" and verify its modules compose
+into the running executable, and that it participates correctly in the "${sys.topology}" topology with the
+other deployables [${deployableNames.filter(x => x !== d).join(', ') || 'none'}] (per the system_test_plan).
+External systems may be mocked; the deployables themselves are real. Set "scope" to "${d}". ${adversarial}${commitDirective(tag, level, L.ord, `SystemTests-${d}`)}`,
+        { label: `system:${d}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
+    if (lvl === 'acceptance') return [() =>
+      agent(`You are the Validator (independent of the implementer). Increment ${tag} @ "${level}".
+Test level: ACCEPTANCE (10), scope = the whole running SYSTEM — NO mocking. Build and RUN the system
+(topology "${sys.topology}", deployables [${deployableNames.join(', ')}]) and validate it against the
+requirements end-to-end: ${JSON.stringify(reqs.acceptance_tests)}. Capture concrete EVIDENCE (e.g.
+screenshots / recorded output / exit codes) proving each acceptance scenario; reference it in your
+details. Set "scope" to "acceptance". ${adversarial}${commitDirective(tag, level, L.ord, 'Acceptance')}`,
+        { label: `acceptance:${tag}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') })]
+    return []
+  }
+  // TARGETED REPAIR: re-run ONLY the failing element's build loop (+ refactor), then
+  // re-verify this level. Passing siblings (e.g. units that already went green) are
+  // left untouched — they are NOT re-implemented.
+  const maxFix = (cfg.agile && cfg.agile.max_fix_rounds != null) ? cfg.agile.max_fix_rounds : 2
+  const repair = (lvl, failed, round) => {
+    const L = LEVELS[lvl]
+    const scopes = failed.map(v => v.scope).filter(Boolean)
+    return agent(
+      `You are the Fixer for increment ${tag} @ "${level}". The ${lvl.toUpperCase()} test (level ${L.ord}) went RED.
+Failures: ${JSON.stringify(failed.map(v => ({ scope: v.scope, details: v.details })))}.
+Repeat the build loop for ${L.fixes}, scoped to ONLY: [${scopes.join(', ') || 'the failing element'}].
+Do this as a focused red→green→refactor loop on the failing element(s): reproduce with the failing
+${tf.unit.tool} test, make the minimal change to go green, then refactor on demand. Do NOT re-implement
+or modify elements that already pass — leave green units/components/modules exactly as they are. Do NOT
+redesign or re-architect the whole increment; only adjust the failing element's local design/code if the
+failure genuinely requires it. ${refactorOnDemand}
+Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing test green.
+Stay within the "${level}" maturity scope.${commitDirective(tag, level, L.ord, `Fix-${lvl}-r${round}`)}`,
+      { label: `fix:${lvl}:${tag}:r${round}`, phase: L.phase, model: modelFor('implementation') })
   }
 
-  // ---- REFACTOR PASS (bounded), multi-lens, tests must stay green ----
-  phase('Refactor')
-  const lenses = ['SOLID & principles', 'code smells', 'architecture & dependency rule', 'naming & function size/complexity']
-  let refactorRounds = 0
-  while (refactorRounds < (cfg.agile.max_refactor_rounds || 1)) {
-    const reviews = (await parallel(lenses.map(lens => () =>
-      agent(
-        `You are a clean-code reviewer for the "${lens}" lens on increment ${tag} @ "${level}" (${lang}).
-Rules: ${cc}. Effective quality gates for this level: ${effGates}.
-Cross-check against the refactoring catalog — smells ${JSON.stringify((refs.refactoring || {}).smells || [])}
-and techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}. For each finding, name
-the smell and the technique that removes it. Files: ${JSON.stringify(impls.flatMap(i => i.files_changed))}.
-Report concrete findings with fixes (do NOT flag intentionally-deferred behavior as a smell).
-Empty findings = clean.${commitDirective(tag, level, 7, `Refactor-review-${lens}`)}`,
-        { label: `review:${lens}:${tag}`, phase: 'Refactor', schema: REVIEW_SCHEMA, model: modelFor('refactor') })
-    ))).filter(Boolean)
-    const actionable = reviews.flatMap(r => (r.findings || []).filter(f => f.severity !== 'minor'))
-    if (actionable.length === 0) { log(`✓ Refactor clean for ${tag} (round ${refactorRounds + 1})`); break }
-    await agent(
-      `You are the Refactorer for increment ${tag} @ "${level}". Apply these fixes while keeping ALL tests green,
-re-running ${tf.unit.tool} and ${fmt}/${linters} after each change: ${JSON.stringify(actionable)}.${commitDirective(tag, level, 7, `Refactor-apply-r${refactorRounds + 1}`)}`,
-      { label: `refactor:${tag}:r${refactorRounds + 1}`, phase: 'Refactor', model: modelFor('refactor') })
-    refactorRounds++
+  const verifications = []
+  let climbBroken = false
+  for (const lvl of order) {
+    const L = LEVELS[lvl]
+    if (!L || !verifyTasks(lvl).length) continue
+    phase(L.phase)
+    let round = 0, levelResults = []
+    while (true) {
+      levelResults = (await parallel(verifyTasks(lvl))).filter(Boolean)  // fan out within the level
+      const failed = levelResults.filter(v => v && v.passed === false)
+      if (!failed.length) break                                   // level green → climb to the next level
+      if (round >= maxFix) {                                      // out of fix budget → climb stops, gate fails
+        log(`✗ ${L.phase} still red for ${tag} after ${round} fix round(s): ${failed.map(v => `${v.scope || ''}: ${v.details}`).join(' | ')}`)
+        climbBroken = true; break
+      }
+      round++
+      log(`↩ ${L.phase} red for ${tag} → targeted fix of [${failed.map(v => v.scope || '').filter(Boolean).join(', ')}] (round ${round}/${maxFix})`)
+      await repair(lvl, failed, round)                            // re-run only the failing element's loop, then re-verify
+    }
+    verifications.push(...levelResults)
+    if (climbBroken) break
   }
 
   // ---- ITERATION GATE (Definition of Done, scaled to the maturity level) ----
@@ -437,16 +610,28 @@ Intentionally-deferred behavior is NOT a failure at this level — record it as 
 Pass ONLY if every effective gate for this level is met.
 Documentation mode is "${docMode}": if "off", DO NOT require the documentation DoD item; otherwise enforce it.
 Also write the increment report (minimal & effective): list key_decisions (carried forward as
-constraints) and debt / deferred-to-next-loop items (carried forward as future work).${commitDirective(tag, level, 8, 'Iteration-Gate')}`,
+constraints) and debt / deferred-to-next-loop items (carried forward as future work).${commitDirective(tag, level, 11, 'Iteration-Gate')}`,
     { label: `gate:${tag}`, phase: 'Iteration Gate', schema: GATE_SCHEMA, model: modelFor('gate') })
 
+  const moduleDeployable = {}
+  for (const m of (arch.modules || [])) moduleDeployable[m.name] = m.deployable
   return {
     tag, title: item.title, level,
     status: gate && gate.passed ? 'passed' : 'failed',
     requirements: reqs.requirements,
-    modules: (arch.modules || []).map(m => m.name),
+    topology: sys.topology,
+    deployables: (sys.deployables || []).map(d => d.name),
+    modules: moduleNames,
     components: components.map(c => c.name),
-    architecture_pattern: (arch.adrs || []).map(a => a.title),
+    // Explicit system → software(executable) → module → component → unit hierarchy (OUTPUT.md visibility).
+    hierarchy: {
+      system: cfg.project.name, topology: sys.topology,
+      deployables: (sys.deployables || []).map(d => ({ deployable: d.name, kind: d.kind, modules: moduleNames.filter(m => moduleDeployable[m] === d.name) })),
+      modules: moduleNames.map(m => ({ module: m, deployable: moduleDeployable[m], components: componentsInModule(m).map(c => c.name) })),
+      components: components.map(c => ({ component: c.name, modules: c.modules || [], units: (c.units || []).map(u => u.name) })),
+      totals: { deployables: (sys.deployables || []).length, modules: moduleNames.length, components: components.length, units: totalUnits },
+    },
+    architecture_pattern: (arch.deployable_patterns || []).map(p => `${p.deployable}: ${p.pattern}`),
     key_decisions: (gate && gate.key_decisions) || [],
     debt: (gate && gate.debt) || [],
     verifications, gate,
@@ -476,7 +661,7 @@ just one sentence), AND READ ${outputFile} if it exists (it carries the state fr
 3. MVP MATURITY LADDER (strategy.approach="${strategy.approach}"). One run advances the product by exactly
    ONE rung across the whole backlog; the human RE-RUNS to climb. The ordered rungs are: ${JSON.stringify(ladderNames)}.
    ${mvpMode
-      ? `Decide which rung to run THIS loop by reading ${outputFile}'s recorded state: if no prior loop ran, choose "${ladderNames[0]}" (the MVP). Otherwise choose the LOWEST rung not yet completed for the whole backlog (e.g. once every increment passed "${ladderNames[0]}", choose the next rung). Set "loop" to the 1-based loop counter (prior loop + 1). If every increment has passed the TOP rung ("${ladderNames[ladderNames.length - 1]}") and INPUT.md has nothing unresolved, set fully_resolved=true.`
+      ? `Decide which rung to run THIS loop by reading ${outputFile}'s recorded state: if no prior loop ran, choose "${ladderNames[0]}" (the MVP). A NEW loop only ADVANCES to the next rung when the previous cycle COMPLETELY FINISHED — i.e. every increment in the backlog passed its gate at that rung. If the previous loop did NOT fully finish (any increment still queued / in-progress / failed), STAY on that same rung this loop to complete it; do not advance. So: choose the LOWEST rung not yet completed for the WHOLE backlog. Set "loop" to the 1-based loop counter (prior loop + 1). If every increment has passed the TOP rung ("${ladderNames[ladderNames.length - 1]}") and INPUT.md has nothing unresolved, set fully_resolved=true.`
       : `strategy.approach is "full", so set level to the top rung "${ladderNames[ladderNames.length - 1]}" every run (no MVP laddering).`}
 4. Track RESOLUTION of ${inputFile}: for each distinct idea/requirement in ${inputFile}, return its status —
    resolved (done at the top rung), partial (some loops done, more to deepen), or queued (not started).

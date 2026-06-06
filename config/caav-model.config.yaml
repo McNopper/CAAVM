@@ -106,8 +106,9 @@ toggles:
 models:
   default: sonnet
   requirements: sonnet      # capture/structure requirements
-  architecture: opus        # highest-judgment: pattern choice, boundaries, ADRs
-  design: opus              # interfaces + design-pattern selection
+  system: opus              # software-system topology + deployables/executables
+  architecture: opus        # per-deployable pattern, modules, boundaries, ADRs
+  design: opus              # component interfaces + design-pattern selection
   implementation: sonnet    # high-volume TDD coding, runs in parallel per component
   verification: haiku       # mostly mechanical: run tests, report pass/fail + coverage
   refactor: sonnet          # smell detection + technique application
@@ -194,13 +195,36 @@ toolchain:
 # that verifies it. Edit the descriptions, not the structure.
 # ---------------------------------------------------------------------------
 v_model:
-  # left stage            ->  right (verifying) test level
-  requirements:    { verifies_with: "acceptance / system / final software-integration test" }
-  architecture:    { verifies_with: "module integration test" }
-  design:          { verifies_with: "component test" }
-  implementation:  { verifies_with: "unit test" }
-  # Bottom-up test execution order on the right arm:
-  test_execution_order: [unit, component, module, software-integration, acceptance]
+  # Composition hierarchy the model builds and verifies (bottom -> top), each "one or more":
+  #   unit(s)       -> component             : a unit belongs to EXACTLY ONE component
+  #   component(s)  -> module                : a component may serve ONE OR MORE modules (shared, built once)
+  #   module(s)     -> software (executable) : a software/executable is composed of its modules
+  #   software(s)   -> software system       : the system is composed of its executables (e.g. client + server)
+  # Architecture decides the software-system topology + its executables (Software System step),
+  # then modules per executable; Design details each component + its units. Every element is
+  # individually VISIBLE (OUTPUT.md + phase traces) and individually TESTED, and the independence
+  # between siblings is what lets the whole thing run HIGHLY IN PARALLEL.
+  composition:
+    unit_to_component: "one or more units : one component"
+    component_to_module: "one or more components : one module (a component may be reused across modules, built once)"
+    module_to_software: "one or more modules : one software (executable/deployable)"
+    software_to_system: "one or more softwares (executables) : one software system (topology, e.g. client-server)"
+  # left stage (phase)        ->  right (verifying) test level/phase
+  requirements:    { verifies_with: "acceptance test (whole system, end-to-end)" }   # 1 <-> 10
+  software_system: { verifies_with: "system test (deployables run together in the topology)" }  # 2 <-> 9
+  architecture:    { verifies_with: "module / integration test (mocked)" }           # 3 <-> 8
+  design:          { verifies_with: "component test (mocked)" }                       # 4 <-> 7
+  implementation:  { verifies_with: "unit test" }                                     # 5 <-> 6
+  # Bottom-up test execution order on the right arm. Each level FANS OUT in parallel (per component
+  # at unit/component, per module at module, per deployable at system, whole system at acceptance)
+  # and is a BARRIER before the next. Component & module tests REQUIRE MOCKING; acceptance runs the
+  # real system (e.g. screenshots / E2E).
+  test_execution_order: [unit, component, module, system, acceptance]
+  # The left arm flows FORWARD ONLY — no backward jumps between design stages. Each test level is a
+  # CLEAR GATE: the climb proceeds only when it is green. A RED gate triggers a TARGETED REPAIR — repeat
+  # the build loop for ONLY the failing element at that level (a unit / component / module / deployable;
+  # the rule is the same at every level) plus refactoring, then re-verify — bounded by agile.max_fix_rounds.
+  # Already-passing siblings are NEVER re-implemented. Persistent failure fails the gate and re-loops.
 
 # ---------------------------------------------------------------------------
 # Agile loop controls.
@@ -208,11 +232,12 @@ v_model:
 agile:
   iteration_name: "sprint"
   increment_scope: "one vertical feature slice from project.backlog"
-  tdd: true                   # red -> green -> refactor per unit
-  max_refactor_rounds: 2      # refactor passes per increment before re-gating
+  tdd: true                   # red -> green -> refactor per unit (refactoring is on-demand inside every phase)
+  max_refactor_rounds: 2      # hint for the on-demand refactor effort within a phase
+  max_fix_rounds: 2           # targeted-repair rounds for a RED gate (repeat the failing element's loop) before the climb stops
   max_gate_retries: 2         # times an increment may re-loop if a gate fails
   definition_of_done:
-    - "All five test levels green (unit, component, module, integration, acceptance) for the requirements IN SCOPE at this maturity level."
+    - "All five test levels green (unit, component, module, system, acceptance) for the requirements IN SCOPE at this maturity level."
     - "The EFFECTIVE quality_gates for this maturity level satisfied (strict gates with the level's relaxations merged on top)."
     - "Requirements <-> tests traceability matrix complete for the in-scope requirements."
     - "No new linter/formatter/sanitizer findings."
@@ -227,8 +252,9 @@ agile:
 # ---------------------------------------------------------------------------
 living_artifacts:
   requirements:   "docs/requirements/<INC>.md + a traceability matrix that grows each increment"
-  architecture:   "docs/architecture/arc42-*.md + ADRs (append-only) + UML diagrams"
-  design:         "docs/design/<INC>.md + component-test specs"
+  software_system: "docs/system/<INC>.md — topology + deployables (executables) + context + external interfaces"
+  architecture:   "docs/architecture/arc42-*.md + ADRs (append-only, per-deployable patterns) + UML diagrams"
+  design:         "docs/design/<INC>.md + per-component interface contracts + component-test specs"
   implementation: "code + tests (the executable specification)"
   increment:      "docs/increments/<INC>-report.md (shipped, gate results, smell->technique refactors, debt)"
   # Per-phase trail written REGARDLESS of toggles.documentation (even 'off'): a small
