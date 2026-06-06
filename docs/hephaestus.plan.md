@@ -75,6 +75,47 @@ in parallel** (§3b, §4): each deployable is architected on its own, every comp
 bottom-up as a **tree of gated merges** — units → components → modules → deployables → system, each node
 merging into its parent only once green (§2c).
 
+### The abstract shape — a lattice of gems
+
+Strip away the labels and each phase pair has one shape: a **down-phase takes one input and produces
+one-or-more outputs** (decompose, 1→N), and the paired **up-phase takes those several inputs and produces
+one output** (integrate + verify, N→1). So every node **splits then rejoins** — a **gem** ◆ — and because
+the split recurses all the way down, the whole increment isn't a flat "V" but a **lattice of nested gems**:
+
+```
+              ◆ system            (1 → deployables → 1)
+            ◆   ◆   ◆ software    (1 → modules → 1)
+          ◆ ◆ ◆ ◆ ◆ ◆ module     (1 → components → 1)
+         ◆ ◆ ◆ ◆ ◆ ◆ ◆ component (1 → units → 1)
+              · · · units          (the facets)
+```
+
+The system gem contains software gems, each containing module gems, then component gems, down to the
+units (the facets). Decompose (cut the facets) on the way down; integrate-and-verify (polish them back
+together) on the way up. The single-writer Scaffold and the deterministic branch tree are what keep each
+gem's facets independent so they can be cut in parallel and rejoin without conflict.
+
+And the **outermost gem is the interface itself**: `INPUT.md` is the single point *in* — Intake fans it out
+across the backlog and, inside each increment, down the whole gem lattice into many parallel lines of work
+— and everything converges back to the single point *out*, `OUTPUT.md` (re-runs stack further gems as the
+product deepens). So the shape is **self-similar at every scale**: the whole run is a gem, each increment is
+a gem, each node is a gem — the same 1 → many → 1 from `INPUT.md` all the way down to a unit and back.
+
+**Same operator, different payload.** What is identical everywhere is the *logic*: take one input, decompose
+into independent parts, work each in isolation, integrate-and-verify them back into one, gate, emit one
+output. What *differs* is only the **activity inside a node** — wording requirements, choosing an
+architecture pattern, TDD-ing a unit, wiring a topology. That invariance is the whole trick: the engine is
+one small **recursive procedure parameterized per phase**, which is exactly why the workflow's tier walk is
+generic (one verify-then-merge loop) with only the agent's prompt swapped per kind. Learn the gem once and
+you understand every phase at every scale.
+
+**Contracts are the only coupling.** Because decomposition is strictly **top-down**, a child node is handed
+its contract by its parent and needs **nothing else** — not a sibling's internals, not another node's code,
+only the **interfaces** it mocks against (published once by Scaffold; Ports & Adapters). A node is
+deliberately *blind* to everything outside its own facet. That blindness is not a limitation — it is what
+**licenses** cutting all of a gem's facets in parallel and rejoining them without conflict. The interface is
+the only thing that ever crosses a node boundary, up or down.
+
 ---
 
 ## 2b. The MVP maturity ladder — run several times to resolve `INPUT.md`

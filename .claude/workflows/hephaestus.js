@@ -164,6 +164,11 @@ const fmt = cfg.toolchain.formatter.tool
 const sans = cfg.toolchain.sanitizers.join(', ')
 const cov = cfg.toolchain.coverage.tool
 const tf = cfg.toolchain.test_frameworks
+const buildTool = cfg.toolchain.build_system.tool
+const buildDir = (cfg.layout && cfg.layout.build_dir) || 'build'
+// Scope every build/test to ONE node's own target — NEVER the whole project (only the
+// acceptance test builds the full system). Collaborators are mocked, so nothing else compiles.
+const scopedBuild = (what) => `Build and test ONLY ${what} in isolation: build just its target (e.g. \`${buildTool} --build ${buildDir} --target <that target>\`) and run only its tests (e.g. \`ctest -R <that name>\`). Do NOT build or run the whole project — collaborators are mocked, so nothing else needs to compile.`
 const cc = JSON.stringify(cfg.clean_code)
 const refs = cfg.references || {}
 // Per-phase model routing. Returns undefined when nothing is configured so the
@@ -462,13 +467,15 @@ missing or needing deepening at this level, and keep existing tests green — do
 RECURSIVE BRANCHING (unit ◄ component): for EACH unit, \`git checkout -b\` a local unit branch FROM this
 component branch, do its red→green→refactor there (write the FAILING ${tf.unit.tool} test from its
 unit_test_spec, then minimal code to pass, then tidy), and MERGE the unit branch BACK into the component
-branch once its unit test is green. Units are disjoint, so they never collide. Unit specs: ${JSON.stringify(c.units || [])}.
-Then run this component's unit + component self-tests (collaborators mocked) so the component branch is
-green in isolation. At the "${level}" level implement only what the slice needs; defer the rest as TODO+debt.
+branch once its unit test is green. Units are disjoint, so they never collide. A unit's branch and any
+per-unit build target are TEMPORARY (for that inner loop only) — the unit's source/test land in THIS
+component's CMakeLists; nothing per-unit is committed as a build file. Unit specs: ${JSON.stringify(c.units || [])}.
+Then build the component ONCE and run ALL its unit tests as a single BATCH, plus the component self-test
+(collaborators mocked), so the component branch is green in isolation. At the "${level}" level implement only what the slice needs; defer the rest as TODO+debt.
 Put code under ${cfg.layout.source_dir}/${cfg.layout.include_dir}, tests under ${cfg.layout.test_dir}.
 ${refactorOnDemand}
 Return your "component" name and "units_implemented".
-Run ${fmt} and ${linters} on touched files. Build with ${cfg.toolchain.build_system.tool}.
+Run ${fmt} and ${linters} on touched files. ${scopedBuild(`component "${c.name}" — its units and this component's own tests`)}
 Commit on branch ${br('component', c.name)} — \`git add -A\` and \`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\`.
 Then \`git worktree remove\` your worktree (the BRANCH ref persists for the Module Tier to merge up). Do NOT
 touch the working branch or other components' branches.`,
@@ -516,11 +523,16 @@ out for increment ${tag} @ "${level}". ${docInstruction}
 1. Publish every component's INTERFACE/contract as header/interface files under ${cfg.layout.include_dir}
    (and component-test specs under ${cfg.layout.test_dir}) so implementers can mock ANY collaborator.
    Components & contracts: ${JSON.stringify(designed.map(c => ({ name: c.name, modules: c.modules, interface: c.interface, units: (c.units || []).map(u => u.name) })))}.
-2. Establish/refresh a GLOB-BASED ${cfg.toolchain.build_system.tool} skeleton (glob sources per target,
-   generator ${cfg.toolchain.build_system.generator || '(configured)'}, presets, and the
-   ${(cfg.toolchain.package_manager || {}).tool || 'package'} manifest) so ADDING a unit's source/test file
-   later needs NO edit to shared build config. Reflect the hierarchy in targets:
-   unit→component→module→deployable(executable)→system. A MODULE may be built as a STATIC library, a
+2. Establish/refresh a HIERARCHICAL ${cfg.toolchain.build_system.tool} build that MIRRORS the composition
+   tree — ONE build file per PERSISTENT node: a CMakeLists.txt per component, per module, and per executable,
+   composed bottom-up via add_subdirectory (a component's CMakeLists globs its unit sources and builds its
+   tests; its module add_subdirectory's its components; the executable add_subdirectory's its modules; the
+   root composes the system). UNITS have NO build file of their own — their source/test live inside their
+   component's CMakeLists (a single unit is exercised with a TEMPORARY throwaway target during TDD, mirroring
+   its temporary branch). So every persistent node has its OWN build file + target and builds & tests IN
+   ISOLATION, and adding a file is a LOCAL edit to that node's CMakeLists — never the root. Use generator
+   ${cfg.toolchain.build_system.generator || '(configured)'}, presets, and the
+   ${(cfg.toolchain.package_manager || {}).tool || 'package'} manifest. A MODULE may be built as a STATIC library, a
    SHARED library / DLL, or header-only — use what the architecture chose per module; default to static if
    unspecified. Topology: ${sys.topology}; deployables: ${JSON.stringify((sys.deployables || []).map(d => d.name))};
    modules: ${JSON.stringify(moduleNames)}.
@@ -574,37 +586,39 @@ Confirm the skeleton configures (and, if prior code exists, still builds).${comm
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
 Test level: UNIT (6), scope = component "${c.name}". ${verifyOnBranch(nodeBranch('unit', c.name))}
 Run its unit tests (${tf.unit.tool}) with sanitizers (${sans}) enabled for units
-${JSON.stringify((c.units || []).map(u => u.name))}; report ${cov} coverage %. Set "scope" to "${c.name}". ${adversarial}`,
+${JSON.stringify((c.units || []).map(u => u.name))}; report ${cov} coverage %. ${scopedBuild(`component "${c.name}" — build it ONCE and run all its unit tests as a single batch`)} Set "scope" to "${c.name}". ${adversarial}`,
         { label: `unit:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'component') return components.map(c => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
 Test level: COMPONENT (7), scope = "${c.name}". ${verifyOnBranch(nodeBranch('component', c.name))}
 Run the component test (${tf.component.tool}) against its contract "${c.interface}". THIS REQUIRES MOCKING:
 mock the component's collaborators with ${tf.unit.mock || 'a mock framework'} so only this component is
-exercised. Set "scope" to "${c.name}". ${adversarial}`,
+exercised. ${scopedBuild(`component "${c.name}"'s contract test`)} Set "scope" to "${c.name}". ${adversarial}`,
         { label: `component:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'module') return moduleNames.map(m => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
 Test level: MODULE (8), scope = "${m}". ${verifyOnBranch(nodeBranch('module', m))}
 Prove the components [${componentsInModule(m).map(c => c.name).join(', ')}] compose into module "${m}"
 (per the module_test_plan, ${tf.integration.tool}). THIS REQUIRES MOCKING: mock the OTHER modules at
-"${m}"'s boundary so only this module is exercised. Set "scope" to "${m}". ${adversarial}`,
+"${m}"'s boundary so only this module is exercised. ${scopedBuild(`module "${m}" (its components only; other modules mocked)`)} Set "scope" to "${m}". ${adversarial}`,
         { label: `module:${m}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'system') return (deployableNames.length ? deployableNames : ['system']).map(d => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
 Test level: SYSTEM (9), scope = deployable "${d}". ${verifyOnBranch(nodeBranch('system', d))}
 Verify its modules compose into the running executable, and that it participates correctly in the
 "${sys.topology}" topology with the other deployables [${deployableNames.filter(x => x !== d).join(', ') || 'none'}]
-(per the system_test_plan). External systems may be mocked; the deployables themselves are real. Set
-"scope" to "${d}". ${adversarial}`,
+(per the system_test_plan). External systems may be mocked; the deployables themselves are real.
+${scopedBuild(`deployable "${d}" only (build just this executable, not the others)`)} Set "scope" to "${d}". ${adversarial}`,
         { label: `system:${d}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'acceptance') return [() =>
       agent(`You are the Validator (independent of the implementer). Increment ${tag} @ "${level}".
 Test level: ACCEPTANCE (10), scope = the whole running SYSTEM — NO mocking. ${verifyOnBranch(nodeBranch('acceptance'))}
-Build and RUN the system (topology "${sys.topology}", deployables [${deployableNames.join(', ')}]) and
-validate it end-to-end against the requirements: ${JSON.stringify(reqs.acceptance_tests)}. Capture concrete
-EVIDENCE (e.g. screenshots / recorded output / exit codes) for each acceptance scenario and reference it
-in your details. Set "scope" to "acceptance". ${adversarial}`,
+This is the ONE place the WHOLE system is built and run. Build and RUN it (topology "${sys.topology}",
+deployables [${deployableNames.join(', ')}]) and validate it end-to-end against the requirements:
+${JSON.stringify(reqs.acceptance_tests)}. You are EXPECTED to devise a way to capture concrete EVIDENCE for
+each scenario — for a GUI/OpenGL app that means capturing the rendered window (a screen/window capture,
+framebuffer/PNG dump, or screenshot tool); for a CLI, recorded output / exit codes. Reference the captured
+evidence in your details. Set "scope" to "acceptance". ${adversarial}`,
         { label: `acceptance:${tag}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') })]
     return []
   }
@@ -646,37 +660,49 @@ Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing t
       await repair(lvl, failed, round)                                     // fix only the failing node(s), then re-verify
     }
   }
-  // Tier INTEGRATE agents — create the parent node's NAMED branch, merge IN its already-
-  // verified child branches (known names, no discovery), write that tier's glue, ensure
-  // it builds. (The component tier needs none: implementers built the leaf components.)
-  const moduleIntegrate = (m) => agent(
-    `You are the Integrator for MODULE "${m}" of increment ${tag} @ "${level}".
-Create this module's branch+worktree from the working branch — \`git worktree add -b ${br('module', m)} ${wt('module', m)}\` — then \`cd\` in.
-\`git merge --no-ff\` IN its VERIFIED component branches (by name): [${componentsInModule(m).map(c => br('component', c.name)).join(', ') || '(none)'}]
-(a component shared by several modules is merged into EACH module that uses it — built once, referenced by
-each). Resolve any conflicts so ALL components survive. Then write the MODULE-LEVEL glue composing those
-components into module "${m}" (per the module_test_plan). A module may be packaged as a STATIC library, a
-SHARED library / DLL, or header-only — honor the architecture's choice for "${m}" (default static). Confirm
-it builds with ${cfg.toolchain.build_system.tool}. Commit on ${br('module', m)}, then \`git worktree remove\` your worktree
-(the branch ref persists). Do NOT modify other modules.${commitDirective(tag, level, 8, `Integrate-module-${m}`)}`,
-    { label: `int:module:${m}`, phase: 'Module Tier', model: modelFor('implementation') })
-  const softwareIntegrate = (d) => agent(
-    `You are the Integrator for the EXECUTABLE (deployable) "${d}" of increment ${tag} @ "${level}".
-Create this executable's branch+worktree — \`git worktree add -b ${br('software', d)} ${wt('software', d)}\` — then \`cd\` in.
-\`git merge --no-ff\` IN its VERIFIED module branches (by name): [${(moduleNames.filter(m => moduleDeployableOf(m) === d).length ? moduleNames.filter(m => moduleDeployableOf(m) === d) : moduleNames).map(m => br('module', m)).join(', ') || '(none)'}].
-Then LINK those modules into the deployable "${d}" (entry point, executable target, link config — static
-libs linked in, shared libs / DLLs resolved at load) and confirm it builds & links with
-${cfg.toolchain.build_system.tool}. Commit on ${br('software', d)}, then \`git worktree remove\`. Do NOT modify other
-executables.${commitDirective(tag, level, 9, `Integrate-software-${d}`)}`,
-    { label: `int:sw:${d}`, phase: 'Software Tier', model: modelFor('implementation') })
-  const systemIntegrate = () => agent(
-    `You are the Integrator for the SOFTWARE SYSTEM of increment ${tag} @ "${level}".
-Create the system branch+worktree — \`git worktree add -b ${br('system')} ${wt('system')}\` — then \`cd\` in.
-\`git merge --no-ff\` IN every VERIFIED executable branch (by name): [${(deployableNames.length ? deployableNames : ['system']).map(d => br('software', d)).join(', ')}].
-Then WIRE the executables into the "${sys.topology}" topology (deploy/run config, ports/IPC as needed) so the
-whole system runs together, and confirm it builds. Commit on ${br('system')} (keep the worktree — Acceptance
-verifies this branch and Merge-to-main lands it).${commitDirective(tag, level, 10, 'Integrate-system')}`,
-    { label: `int:system:${tag}`, phase: 'System Tier', model: modelFor('implementation') })
+  // ---- ONE integrate operator, PARAMETERIZED PER TIER ----------------------
+  // Same operator, different payload: create the node's NAMED branch+worktree,
+  // `git merge --no-ff` its already-verified child branches (known names, no
+  // discovery), write that tier's glue, build, commit. Only the per-kind rows below
+  // differ (role wording, which children, the glue, ordinal/phase, worktree lifetime).
+  // The component tier needs no integrator — implementers built the leaf components.
+  const INTEGRATORS = {
+    module: {
+      ord: 8, phase: 'Module Tier',
+      role: (m) => `MODULE "${m}"`,
+      children: (m) => componentsInModule(m).map(c => br('component', c.name)),
+      glue: (m) => `write the MODULE-LEVEL glue composing those components into module "${m}" (per the module_test_plan; a component shared by several modules is merged into EACH module that uses it — built once, referenced by each). A module may be packaged as a STATIC library, a SHARED library / DLL, or header-only — honor the architecture's choice for "${m}" (default static)`,
+      keepWorktree: false, isolate: 'Do NOT modify other modules.',
+    },
+    software: {
+      ord: 9, phase: 'Software Tier',
+      role: (d) => `EXECUTABLE (deployable) "${d}"`,
+      children: (d) => (moduleNames.filter(m => moduleDeployableOf(m) === d).length ? moduleNames.filter(m => moduleDeployableOf(m) === d) : moduleNames).map(m => br('module', m)),
+      glue: (d) => `LINK those modules into the deployable "${d}" (entry point, executable target, link config — static libs linked in, shared libs / DLLs resolved at load)`,
+      keepWorktree: false, isolate: 'Do NOT modify other executables.',
+    },
+    system: {
+      ord: 10, phase: 'System Tier',
+      role: () => 'SOFTWARE SYSTEM',
+      children: () => (deployableNames.length ? deployableNames : ['system']).map(d => br('software', d)),
+      glue: () => `WIRE the executables into the "${sys.topology}" topology (deploy/run config, ports/IPC as needed) so the whole system runs together`,
+      keepWorktree: true, isolate: '',
+    },
+  }
+  const integrate = (kind, node) => {
+    const S = INTEGRATORS[kind]
+    const branch = br(kind, node), children = S.children(node)
+    const wtTail = S.keepWorktree
+      ? `Commit on ${branch} (KEEP the worktree — Acceptance verifies this branch and Merge-to-main lands it).`
+      : `Commit on ${branch}, then \`git worktree remove\` your worktree (the branch ref persists).`
+    return agent(
+      `You are the Integrator for the ${S.role(node)} of increment ${tag} @ "${level}".
+Create its branch+worktree from the working branch — \`git worktree add -b ${branch} ${wt(kind, node)}\` — then \`cd\` in.
+\`git merge --no-ff\` IN its VERIFIED child branches (by name): [${children.join(', ') || '(none)'}]. Resolve any
+conflicts so ALL children survive. Then ${S.glue(node)} and confirm it builds with ${cfg.toolchain.build_system.tool}.
+${wtTail} ${S.isolate}${commitDirective(tag, level, S.ord, `Integrate-${kind}${node ? '-' + node : ''}`)}`,
+      { label: `int:${kind}${node ? ':' + node : ''}`, phase: S.phase, model: modelFor('implementation') })
+  }
 
   // Bottom-up tiers. Each tier (a) pulls the previous tier's VERIFIED child branches up
   // into this tier's node branches (integrate), (b) verifies its nodes IN ISOLATION,
@@ -686,9 +712,9 @@ verifies this branch and Merge-to-main lands it).${commitDirective(tag, level, 1
   let climbBroken = false
   const tiers = [
     { phase: 'Component Tier', levels: ['unit', 'component'], integrate: null },
-    { phase: 'Module Tier',    levels: ['module'],            integrate: () => parallel(moduleNames.map(m => () => moduleIntegrate(m))) },
-    { phase: 'Software Tier',  levels: ['system'],            integrate: () => parallel((deployableNames.length ? deployableNames : ['system']).map(d => () => softwareIntegrate(d))) },
-    { phase: 'System Tier',    levels: ['acceptance'],        integrate: () => systemIntegrate() },
+    { phase: 'Module Tier',    levels: ['module'],            integrate: () => parallel(moduleNames.map(m => () => integrate('module', m))) },
+    { phase: 'Software Tier',  levels: ['system'],            integrate: () => parallel((deployableNames.length ? deployableNames : ['system']).map(d => () => integrate('software', d))) },
+    { phase: 'System Tier',    levels: ['acceptance'],        integrate: () => integrate('system') },
   ]
   for (const t of tiers) {
     if (!t.levels.some(l => verifyTasks(l).length)) continue

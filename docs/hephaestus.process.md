@@ -250,10 +250,14 @@ never race). Then exactly ONE writer prepares the working branch *before* implem
 
 - Publish every component **interface** (headers/contracts under `${config.layout.include_dir}`,
   component-test specs under `${config.layout.test_dir}`) so any implementer can **mock any collaborator**.
-- Establish a **glob-based build skeleton** (glob sources per target, presets, package manifest) so that
-  **adding a unit's source/test file later needs no edit to shared build config**. Reflect the hierarchy in
-  targets: unit → component → module → deployable (executable) → system. A module may be a **static
-  library, a shared library / DLL, or header-only** — the architecture's per-module choice (default static).
+- Establish a **hierarchical build that mirrors the composition tree** — one `CMakeLists.txt` **per
+  component, per module, and per executable**, composed bottom-up via `add_subdirectory` (a component's
+  CMake globs its unit sources + tests; its module pulls in its components; the executable its modules; the
+  root the system). **Units have no build file of their own** — they compile inside their component's CMake
+  (a single unit uses a *temporary* throwaway target during TDD). So **every node builds and tests in
+  isolation**: a unit/component/module never builds the whole project (only the acceptance test does), and
+  adding a file is a *local* edit to that node's CMake. A module may be a **static library, a shared
+  library / DLL, or header-only** — the architecture's per-module choice (default static).
 - Reuse/extend what already exists across loops; never clobber working code. Commit once.
 
 This single-writer step is what keeps every later merge a **disjoint, conflict-free add**: the interfaces
@@ -291,18 +295,21 @@ software (executable) branch, software → the system branch, and the verified s
 Each tier first **pulls the previous tier's verified child branches up** (an Integrator creates the parent
 branch, `git merge --no-ff`s the verified children in, writes that tier's glue — linking static libs,
 resolving shared libs/DLLs — and confirms it builds), then a **different agent than the implementer**
-verifies each node in isolation (adversarial). Run the levels in the order
-`${config.v_model.test_execution_order}`; each level is a **barrier/gate** before the next:
+verifies each node in isolation (adversarial). **Each verifier builds and runs ONLY its own node's
+target** (its CMake) — never the whole project; only the acceptance test builds the full system. Run the
+levels in the order `${config.v_model.test_execution_order}`; each level is a **barrier/gate** before the next:
 
-6. **Unit tests** — *one verifier per component* (its units), fast, isolated, with
-   `${config.toolchain.sanitizers}` enabled; collect coverage via `${config.toolchain.coverage.tool}`.
+6. **Unit tests** — *one verifier per component*: build the component **once** and run all its unit tests
+   as a **batch**, with `${config.toolchain.sanitizers}` enabled; collect coverage via `${config.toolchain.coverage.tool}`.
 7. **Component tests** — *one verifier per component*, each against its contract, collaborators **mocked**.
 8. **Module tests** — *one verifier per module*: its components compose; OTHER modules **mocked** at the boundary.
 9. **System tests** — *one verifier per deployable*: its modules compose into the executable, and it
    participates correctly in the topology with the other deployables (the system test plan).
-10. **Acceptance test** — *one verifier for the whole running system*, NO mocking: the Stage-1 scenarios
-    end to end, with concrete **evidence** (e.g. screenshots / recorded output / exit codes). On green, the
-    verified **system branch merges onto `main`** and the increment's per-node worktrees/branches are pruned.
+10. **Acceptance test** — *one verifier for the whole running system* (the ONE place the full system is
+    built and run), NO mocking: the Stage-1 scenarios end to end. The validator is **expected to devise a way
+    to capture evidence** — for a GUI/OpenGL app, capture the rendered window (screen/window capture or a
+    framebuffer/PNG dump); for a CLI, recorded output / exit codes. On green, the verified **system branch
+    merges onto `main`** and the increment's per-node worktrees/branches are pruned.
 
 **A different agent than the implementer runs these** (adversarial verification).
 
