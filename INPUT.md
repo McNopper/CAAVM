@@ -5,9 +5,9 @@
 > Everything it understands, derives, creates, or updates is reported back in
 > [`OUTPUT.md`](OUTPUT.md) (which is the process's file — you never edit that one).
 >
-> At the start of every cycle the CAAVM *Intake* step reads this file and:
+> At the start of every cycle the Hephaestus *Intake* step reads this file and:
 > - maps high-level choices (language, design, tools, gates, docs level) into
->   [`config/caav-model.config.yaml`](config/caav-model.config.yaml);
+>   [`config/hephaestus.config.yaml`](config/hephaestus.config.yaml);
 > - turns feature/requirement ideas into backlog increments.
 >
 > **Minimal is fine.** The config already holds sensible defaults (C++23, CMake+Ninja,

@@ -1,9 +1,15 @@
-# CAAVM — Cyclic Agentic Agile V-Model
+# 🔱 Hephaestus
+
+### Cyclic Agentic Agile V-Model
 
 > Build software increment by increment with full V-Model traceability, TDD,
 > adversarial verification, and enforced clean-code gates — driven by autonomous
 > agents and **configured in one file**. Defaults target **C++**; retarget any
 > language by editing config.
+
+> **Why "Hephaestus"?** [Hephaestus](https://en.wikipedia.org/wiki/Hephaestus) is the Greek god of
+> craft and the forge — and the one who built *automatons* (Talos, the golden mechanical attendants).
+> A fitting patron for a disciplined, agent-driven build process.
 
 ```
  0. MVP loop (INPUT.md ⇄ OUTPUT.md, re-run to deepen)
@@ -17,7 +23,7 @@
 ```
 
 Each backlog item runs one full **V-pass** (decompose top-down, verify bottom-up),
-and the V repeats every iteration — that's the *cyclic agile* part. CAAVM builds an
+and the V repeats every iteration — that's the *cyclic agile* part. Hephaestus builds an
 **MVP first** and is **re-run to deepen**: one run advances the product by one maturity
 rung across the backlog, so `INPUT.md` is resolved over several meaningful loops. Every
 phase **commits onto `main`** as it finishes (and writes a file-level trace).
@@ -59,28 +65,28 @@ automatically as each tier comes together. It is **highly parallel**.
 
 **Forward decomposition, clear gates, targeted repair.** The left arm flows **forward only** — no
 backward jumps between design stages. Gaps surface in the **test phases**, which are clear gates. When
-a gate goes red, CAAVM repeats the build loop for **only the failing element** (a unit, a component, a
+a gate goes red, Hephaestus repeats the build loop for **only the failing element** (a unit, a component, a
 module, a deployable — the rule is the same at every level) plus refactoring, then re-verifies —
 bounded by `max_fix_rounds`. **Already-passing siblings are never re-implemented.** If it can't go
 green within the budget, the increment fails its gate and re-loops (the coarse safety net).
 
 ## How it's used
 
-CAAVM is a **drop-in kit you ship inside your own project**, not a separate place where your
+Hephaestus is a **drop-in kit you ship inside your own project**, not a separate place where your
 code lives. Copy these files into your project root, next to your source, and commit them with it:
 
 ```
 your-project/
 ├── INPUT.md                       # you write here
 ├── OUTPUT.md                      # the process writes here
-├── config/caav-model.config.yaml  # defaults + your overrides
-├── docs/caav-model.*.md           # plan + process spec
-├── .claude/workflows/caav-model.js
+├── config/hephaestus.config.yaml  # defaults + your overrides
+├── docs/hephaestus.*.md           # plan + process spec
+├── .claude/workflows/hephaestus.js
 ├── .gitattributes
 └── src/ … (your actual code)
 ```
 
-**This repository (`McNopper/CAAVM`) is the upstream** that maintains and improves those kit
+**This repository (`McNopper/Hephaestus`) is the upstream** that maintains and improves those kit
 files. Your project vendors a copy; to get fixes and new features later, pull the updated
 `config/`, `docs/`, and `.claude/workflows/` files from here (your `INPUT.md`/`OUTPUT.md` and your
 source are untouched). Treat the kit like a versioned dependency you periodically refresh.
@@ -105,21 +111,21 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 ```
 INPUT.md                          # YOU write loose ideas/requirements here (the interface in)
 OUTPUT.md                         # process writes a short status checklist here (the interface out)
-config/caav-model.config.yaml     # SOURCE OF TRUTH (sensible defaults) — Intake updates this
-docs/caav-model.plan.md           # methodology & rationale
-docs/caav-model.process.md        # portable step-by-step spec (any tool)
-.claude/workflows/caav-model.js   # runnable Claude Code workflow
+config/hephaestus.config.yaml     # SOURCE OF TRUTH (sensible defaults) — Intake updates this
+docs/hephaestus.plan.md           # methodology & rationale
+docs/hephaestus.process.md        # portable step-by-step spec (any tool)
+.claude/workflows/hephaestus.js   # runnable Claude Code workflow
 ```
 
 ## The interface: `INPUT.md` ⇄ `OUTPUT.md`
 
-You don't have to edit YAML to use CAAVM — you talk to it through two markdown files with
+You don't have to edit YAML to use Hephaestus — you talk to it through two markdown files with
 **strict ownership**:
 
 - **[`INPUT.md`](INPUT.md) — human-only (the process only ever *reads* it; never writes it).**
   Write plain sentences, anytime (even while it runs): the language, design, tools, gates, and
   feature ideas. The **Intake** step reads it and **rewrites the project files to match** —
-  high-level choices go into `config/caav-model.config.yaml`, feature ideas become backlog
+  high-level choices go into `config/hephaestus.config.yaml`, feature ideas become backlog
   increments. It can be **super minimal**: the config already holds defaults (C++23, CMake+Ninja,
   clang-tidy/clang-format/cppcheck, GoogleTest, hexagonal design…), so you only write what should
   *differ* — even a single sentence is a valid input.
@@ -131,7 +137,7 @@ You don't have to edit YAML to use CAAVM — you talk to it through two markdown
 So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → run again (to deepen) /
 jot more in `INPUT.md`._ The process never edits your `INPUT.md`; you never edit its `OUTPUT.md`.
 
-**Run it several times.** CAAVM follows an **MVP strategy**: one invocation advances the product by
+**Run it several times.** Hephaestus follows an **MVP strategy**: one invocation advances the product by
 one maturity rung (`mvp → harden → complete`, see `config.strategy`) across the whole backlog. The
 first run builds the thinnest end-to-end MVP (edge cases deferred as logged debt); each later run
 reads `OUTPUT.md`, deepens, and re-checks `INPUT.md`, until every idea is resolved at the top rung.
@@ -140,7 +146,7 @@ commits its content onto `main` as it finishes, so progress is incremental and a
 
 ## Quick start
 
-> 💻 **Runs on the engineer's desktop.** CAAVM is designed to run locally in your terminal/IDE,
+> 💻 **Runs on the engineer's desktop.** Hephaestus is designed to run locally in your terminal/IDE,
 > not in CI. The agent edits code, runs the build, and executes the quality gates against your
 > **local toolchain** — so the same machine needs the configured tools installed (e.g. for the
 > C++ default: a C++23 compiler, CMake + Ninja, clang-format, clang-tidy, cppcheck, Doxyfile/Doxygen)
@@ -148,7 +154,7 @@ commits its content onto `main` as it finishes, so progress is incremental and a
 > same gate commands from the config.
 
 **Configure.** Easiest: write a sentence or two in [`INPUT.md`](INPUT.md) and let the Intake step
-update the config for you. Or edit [`config/caav-model.config.yaml`](config/caav-model.config.yaml)
+update the config for you. Or edit [`config/hephaestus.config.yaml`](config/hephaestus.config.yaml)
 directly (`language.*`, `toolchain.*`, `quality_gates.*`, `toggles.documentation`, `models.*`,
 `project.backlog`). Either way it's the same source of truth, so behavior is identical no matter
 which agent drives it.
@@ -160,13 +166,13 @@ workstation.
 
 Two ways, sharing the same config:
 
-**A) Automated workflow (multi-agent).** The script `.claude/workflows/caav-model.js` is registered
-as the `caav-model` workflow (open this repo as your Claude Code project so `.claude/workflows/` is
+**A) Automated workflow (multi-agent).** The script `.claude/workflows/hephaestus.js` is registered
+as the `hephaestus` workflow (open this repo as your Claude Code project so `.claude/workflows/` is
 discovered). The workflow engine can't read files itself, so ask Claude to load the config and pass
 it as `args`:
 
 ```text
-Run the caav-model workflow using config/caav-model.config.yaml as args.
+Run the hephaestus workflow using config/hephaestus.config.yaml as args.
 ```
 
 Claude parses the YAML, hands it in as `args` (merged over built-in defaults), and runs every
@@ -184,8 +190,8 @@ next; **re-run the workflow to climb to the next rung** until `INPUT.md` is full
 increment, smaller token budgets, or step-by-step review:
 
 ```text
-Follow docs/caav-model.process.md to implement backlog item INC-001 from
-config/caav-model.config.yaml. Do one V-pass and stop at the quality gate.
+Follow docs/hephaestus.process.md to implement backlog item INC-001 from
+config/hephaestus.config.yaml. Do one V-pass and stop at the quality gate.
 ```
 
 #### Per-phase model routing
@@ -222,8 +228,8 @@ copilot          # launch the agentic GitHub Copilot CLI in your project
 Then instruct it:
 
 ```text
-Act as the CAAVM agent. Read config/caav-model.config.yaml (the single source of truth) and
-follow docs/caav-model.process.md. Build project.backlog item INC-001 as one V-pass:
+Act as the Hephaestus agent. Read config/hephaestus.config.yaml (the single source of truth) and
+follow docs/hephaestus.process.md. Build project.backlog item INC-001 as one V-pass:
 requirements → architecture → design → TDD implementation → unit/component/module/integration/
 acceptance verification → refactor (cross-check the refactoring & design-pattern catalogs in
 `references`) → quality gate. Honor toggles.documentation and the carry_forward rule.
@@ -234,9 +240,9 @@ acceptance verification → refactor (cross-check the refactoring & design-patte
 
 ```markdown
 <!-- .github/copilot-instructions.md -->
-This repo uses CAAVM. Treat config/caav-model.config.yaml as the single source of truth for
+This repo uses Hephaestus. Treat config/hephaestus.config.yaml as the single source of truth for
 language, tools, quality gates, reference catalogs, strategy, git, and toggles.documentation. For
-any feature work, follow docs/caav-model.process.md: build each project.backlog item as one V-pass
+any feature work, follow docs/hephaestus.process.md: build each project.backlog item as one V-pass
 with TDD and the five test levels, run the configured formatter/linters/tests as gates, keep docs
 minimal & effective, and carry decisions + debt forward between increments. Follow the MVP maturity
 ladder (strategy.maturity_levels: mvp → harden → complete) — build the thinnest slice first and
@@ -249,9 +255,9 @@ working branch as it finishes and write the per-phase trace file (living_artifac
 
 ### Any other agentic CLI / IDE
 
-CAAVM is just three plain files — config + plan + process. Feed
-[`docs/caav-model.process.md`](docs/caav-model.process.md) and
-[`config/caav-model.config.yaml`](config/caav-model.config.yaml) as context to any capable
+Hephaestus is just three plain files — config + plan + process. Feed
+[`docs/hephaestus.process.md`](docs/hephaestus.process.md) and
+[`config/hephaestus.config.yaml`](config/hephaestus.config.yaml) as context to any capable
 coding agent (Cursor, Aider, Gemini CLI, …) and ask it to execute one V-pass per backlog item.
 
 ## Retargeting the language
@@ -262,8 +268,8 @@ No other file changes.
 
 ## Documentation
 
-- **[Plan & methodology](docs/caav-model.plan.md)** — the what & why, full V-mapping, diagrams.
-- **[Process spec](docs/caav-model.process.md)** — the how, tool-agnostic, with templates.
+- **[Plan & methodology](docs/hephaestus.plan.md)** — the what & why, full V-mapping, diagrams.
+- **[Process spec](docs/hephaestus.process.md)** — the how, tool-agnostic, with templates.
 
 ## License
 

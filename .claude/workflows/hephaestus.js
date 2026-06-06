@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'caav-model',
+  name: 'hephaestus',
   description: 'Cyclic Agentic Agile V-Model with an MVP maturity ladder: ONE run advances the product by one maturity level (loop) across the backlog — re-run to deepen until INPUT.md is fully resolved. Per increment it runs a full V-pass (requirements->architecture->design->implementation, mirrored by acceptance/integration/component/unit tests) with TDD, adversarial verification, a clean-code refactor pass, and quality gates, committing each phase onto the working branch. Language/toolchain are fully config-driven (default: C++).',
-  whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Re-runnable: each invocation is one MVP/deepening loop. Pass the parsed config/caav-model.config.yaml as args (or rely on the built-in C++ defaults).',
+  whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Re-runnable: each invocation is one MVP/deepening loop. Pass the parsed config/hephaestus.config.yaml as args (or rely on the built-in C++ defaults).',
   phases: [
     { title: 'Setup' },
     { title: 'Intake', model: 'sonnet' },
@@ -23,7 +23,7 @@ export const meta = {
 
 // ===========================================================================
 //  CONFIG — built-in C++ defaults. The `args` you pass (parsed from
-//  config/caav-model.config.yaml) is merged ON TOP of these, so you only need
+//  config/hephaestus.config.yaml) is merged ON TOP of these, so you only need
 //  to supply what differs. This keeps the script the source of behavior and
 //  the YAML the source of project parameters.
 // ===========================================================================
@@ -116,7 +116,7 @@ const DEFAULTS = {
   },
   // Commit-per-phase: each phase lands its content on the working branch as it
   // finishes; parallel impl worktrees are merged back in the Integrate phase.
-  git: { commit_per_phase: true, branch: 'current', worktree_merge: true, commit_prefix: 'caav' },
+  git: { commit_per_phase: true, branch: 'current', worktree_merge: true, commit_prefix: 'hephaestus' },
   toggles: { documentation: 'minimal' },  // full | minimal | off — see docInstruction below
   // Per-phase model routing (opus | sonnet | haiku). A phase falls back to
   // `default`; if that is unset too, the agent inherits the session model.
@@ -194,10 +194,10 @@ const gatesForLevel = (lvl) => JSON.stringify({ ...cfg.quality_gates, ...((lvl &
 // `minimal`/`off` scale the arc42/API docs, never this trail.
 const git = cfg.git || {}
 const commitsOn = git.commit_per_phase !== false
-const commitPrefix = git.commit_prefix || 'caav'
+const commitPrefix = git.commit_prefix || 'hephaestus'
 const docsDir = (cfg.layout && cfg.layout.docs_dir) || 'docs/'
 const tracePath = (tag, level, n, phaseName) =>
-  `${docsDir}caav-model/trace/${tag}/${level}/${String(n).padStart(2, '0')}-${phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
+  `${docsDir}hephaestus/trace/${tag}/${level}/${String(n).padStart(2, '0')}-${phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
 // n = phase ordinal within the V-pass (for stable, sortable trace filenames).
 const commitDirective = (tag, level, n, phaseName) => {
   const trace = `\nTRACE (always, regardless of the documentation toggle): write a short markdown file to "${tracePath(tag, level, n, phaseName)}" capturing this phase — heading "${phaseName} — ${tag} @ ${level}", then a few bullets: key outputs/decisions, anything DEFERRED to a later loop, files touched, and a one-line status. Keep it minimal & effective; it is a file-level trail, not product documentation.`
@@ -655,7 +655,7 @@ Use your file tools to READ ${inputFile} at the project root (loose ideas/requir
 just one sentence), AND READ ${outputFile} if it exists (it carries the state from prior loops). Then:
 1. Turn feature/requirement ideas into vertical-slice backlog increments (id INC-NNN, title, acceptance),
    merged with the existing backlog ${JSON.stringify(backlog)} WITHOUT duplicating.
-2. If the input implies CONFIGURATION/process changes, REWRITE config/caav-model.config.yaml accordingly
+2. If the input implies CONFIGURATION/process changes, REWRITE config/hephaestus.config.yaml accordingly
    and minimally — language/standard, toolchain tools, quality_gates, toggles.documentation, models.*,
    project.backlog. Leave everything else at its default; never invent changes the input does not ask for.
 3. MVP MATURITY LADDER (strategy.approach="${strategy.approach}"). One run advances the product by exactly
@@ -686,7 +686,7 @@ if (mvpMode && intake && intake.fully_resolved) {
   log(`INPUT.md is fully resolved at the top rung "${ladderNames[ladderNames.length - 1]}". Nothing to deepen — see ${outputFile}.`)
   return { project: cfg.project.name, language: lang, loop: loopNo, level: levelName, fully_resolved: true, increments: [], interface: { input: inputFile, output: outputFile } }
 }
-log(`CAAVM loop ${loopNo} @ "${levelName}" for "${cfg.project.name}" — ${lang} — ${backlog.length} increment(s) from ${inputFile}/config.`)
+log(`Hephaestus loop ${loopNo} @ "${levelName}" for "${cfg.project.name}" — ${lang} — ${backlog.length} increment(s) from ${inputFile}/config.`)
 
 const results = []
 const ledger = []  // carry-forward memory: prior decisions + debt feed later increments
@@ -731,7 +731,7 @@ Current results so far: ${JSON.stringify(results)}.`,
 }
 
 const passed = results.filter(r => r.status === 'passed').length
-log(`CAAVM loop ${loopNo} @ "${levelName}" complete: ${passed}/${results.length} increment(s) passed. Re-run to deepen — see ${outputFile}.`)
+log(`Hephaestus loop ${loopNo} @ "${levelName}" complete: ${passed}/${results.length} increment(s) passed. Re-run to deepen — see ${outputFile}.`)
 return {
   project: cfg.project.name, language: lang, loop: loopNo, level: levelName,
   increments: results, summary: { passed, total: results.length, level: levelName, loop: loopNo },

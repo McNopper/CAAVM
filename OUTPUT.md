@@ -1,6 +1,6 @@
 # OUTPUT — current state (process-only, auto-generated)
 
-> **This file belongs to the process — do not edit it by hand.** CAAVM overwrites it
+> **This file belongs to the process — do not edit it by hand.** Hephaestus overwrites it
 > (Intake seeds it, Report refreshes it after each increment) with everything it
 > understood, derived, created, and updated. You write your ideas in
 > [`INPUT.md`](INPUT.md); the process never edits that file, only reads it.
@@ -9,7 +9,7 @@ _Last run: not yet run._
 
 ## Loop & maturity
 
-<!-- Which loop this is and the maturity rung it ran. CAAVM advances ONE rung per run. -->
+<!-- Which loop this is and the maturity rung it ran. Hephaestus advances ONE rung per run. -->
 
 - loop: — · this run's level: — · next run's level: — · INPUT.md fully resolved: —
 

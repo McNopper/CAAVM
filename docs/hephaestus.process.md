@@ -1,13 +1,13 @@
-# CAAVM — Portable Process Specification
+# Hephaestus — Portable Process Specification
 
 > Tool-agnostic, step-by-step procedure for running **one increment** of the
 > Cyclic Agentic Agile V-Model. Follow this by hand, with any agent harness, or
 > as the contract the automated workflow implements. Every `${config.x}` refers
-> to [`../config/caav-model.config.yaml`](../config/caav-model.config.yaml).
+> to [`../config/hephaestus.config.yaml`](../config/hephaestus.config.yaml).
 >
 > Repeat this whole procedure once per entry in `${config.project.backlog}`.
 >
-> **MVP first, deepen by re-running (`${config.strategy}`).** CAAVM is meant to be
+> **MVP first, deepen by re-running (`${config.strategy}`).** Hephaestus is meant to be
 > **run several times**. One run advances the product by exactly **one maturity rung**
 > (`${config.strategy.maturity_levels}` — `mvp → harden → complete`) across the whole
 > backlog: the first run builds the thinnest end-to-end MVP (happy path, edge cases
@@ -51,7 +51,7 @@ creates, derives, or updates is recorded in `OUTPUT.md`.
   sentence is a valid input.
 - **Stage 0 — Intake (process).** *Read* `INPUT.md` **and `OUTPUT.md`** (the latter carries prior
   loops' state) and **rewrite the project files to match**: map high-level choices into
-  `config/caav-model.config.yaml` (language, toolchain, quality_gates, toggles.documentation,
+  `config/hephaestus.config.yaml` (language, toolchain, quality_gates, toggles.documentation,
   models, …) and turn feature ideas into backlog increments. **Choose this loop's maturity rung**
   from `${config.strategy.maturity_levels}`: the first loop runs `mvp`; each later loop picks the
   lowest rung not yet completed for the whole backlog. Then **write the captured record into

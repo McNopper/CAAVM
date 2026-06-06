@@ -1,5 +1,5 @@
 # ============================================================================
-#  Cyclic Agentic Agile V-Model (CAAVM) — Project Configuration
+#  Cyclic Agentic Agile V-Model (Hephaestus) — Project Configuration
 # ----------------------------------------------------------------------------
 #  This file is the SINGLE SOURCE OF TRUTH for everything language- and
 #  tool-specific. Edit it per project; the plan, the process spec, and the
@@ -8,7 +8,7 @@
 #  How it reaches the workflow:
 #    The Claude Code Workflow engine cannot read files. When you run the
 #    workflow, the values below are parsed and handed in as `args` (JSON).
-#    Just tell Claude:  "Run the caav-model workflow with config/caav-model.config.yaml"
+#    Just tell Claude:  "Run the hephaestus workflow with config/hephaestus.config.yaml"
 #    and it will load this file and pass it through. The workflow also ships
 #    with C++ defaults that are merged UNDER these values, so anything you
 #    omit falls back to a sensible default.
@@ -33,7 +33,7 @@ project:
 # ---------------------------------------------------------------------------
 # MVP strategy & maturity ladder.
 # ---------------------------------------------------------------------------
-#  CAAVM is meant to be RE-RUN: one workflow invocation advances the product by
+#  Hephaestus is meant to be RE-RUN: one workflow invocation advances the product by
 #  exactly ONE maturity level (one "meaningful loop") across the whole backlog.
 #  The first run builds the thinnest end-to-end MVP; each later run reads the
 #  state in OUTPUT.md and DEEPENS the product, until every idea in INPUT.md is
@@ -82,7 +82,7 @@ git:
   commit_per_phase: true
   branch: current             # "current" = whatever branch you launch on (normally main)
   worktree_merge: true        # merge parallel impl worktree branches back before Verify
-  commit_prefix: "caav"       # commits look like: caav(mvp/INC-001): Architecture
+  commit_prefix: "hephaestus"       # commits look like: hephaestus(mvp/INC-001): Architecture
 
 # ---------------------------------------------------------------------------
 # Feature toggles.
@@ -260,7 +260,7 @@ living_artifacts:
   # Per-phase trail written REGARDLESS of toggles.documentation (even 'off'): a small
   # markdown file per phase so progress is trackable at the file level and every
   # commit-per-phase is non-empty. This is process telemetry, not product docs.
-  phase_trace:    "docs/caav-model/trace/<INC>/<level>/<NN-phase>.md (one per phase per loop)"
+  phase_trace:    "docs/hephaestus/trace/<INC>/<level>/<NN-phase>.md (one per phase per loop)"
 
 carry_forward:
   - "Each increment is given the prior ADRs, the current traceability matrix, and the debt log as input context."

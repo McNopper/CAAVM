@@ -1,4 +1,4 @@
-# Normalize line endings across platforms (CAAVM runs on mixed desktops).
+# Normalize line endings across platforms (Hephaestus runs on mixed desktops).
 * text=auto eol=lf
 
 # Keep Windows scripts CRLF

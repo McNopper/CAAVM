@@ -1,4 +1,6 @@
-# Cyclic Agentic Agile V-Model (CAAVM) — Plan & Methodology
+# Hephaestus — Plan & Methodology
+
+> The **Cyclic Agentic Agile V-Model**. ([Why "Hephaestus"?](https://en.wikipedia.org/wiki/Hephaestus) — the Greek god of the forge who built automatons.)
 
 > A reusable, language-agnostic methodology for building software increment by
 > increment, where **every design stage is paired with the test level that
@@ -6,7 +8,7 @@
 > **autonomous agents** drive each stage under enforced **clean-code and
 > refactoring** gates.
 >
-> All language/tool specifics live in [`../config/caav-model.config.yaml`](../config/caav-model.config.yaml).
+> All language/tool specifics live in [`../config/hephaestus.config.yaml`](../config/hephaestus.config.yaml).
 > This document never hard-codes C++ — it reads `${config.*}` placeholders.
 
 ---
@@ -20,7 +22,7 @@
 | **Agile**   | Small vertical slices, working software every iteration, refactoring as a first-class step. |
 | **V-Model** | Strict traceability: requirements ↔ acceptance, architecture ↔ integration, design ↔ component, implementation ↔ unit. |
 
-The classic V-Model's weakness is that it is waterfall — one giant pass. CAAVM
+The classic V-Model's weakness is that it is waterfall — one giant pass. Hephaestus
 keeps the V-Model's traceability discipline but **folds it into the agile loop**:
 one short, complete V per increment.
 
@@ -76,7 +78,7 @@ units → components → modules → deployables → system (§2c).
 
 ## 2b. The MVP maturity ladder — run several times to resolve `INPUT.md`
 
-CAAVM does **not** try to build everything in one giant pass. It is meant to be
+Hephaestus does **not** try to build everything in one giant pass. It is meant to be
 **re-run**, and **one run advances the product by exactly one maturity rung** across
 the whole backlog (`config.strategy`):
 
@@ -118,7 +120,7 @@ spots a smell from the catalog while working, it applies the matching technique 
 **Commit-per-phase.** Every phase commits its content onto the working branch as it finishes
 (`config.git.commit_per_phase`), so `main` advances incrementally and a run is **resumable**. Every
 phase also writes a small **trace file** (`config.living_artifacts.phase_trace`,
-e.g. `docs/caav-model/trace/<INC>/<level>/05-implementation.md`) **regardless of the documentation
+e.g. `docs/hephaestus/trace/<INC>/<level>/05-implementation.md`) **regardless of the documentation
 toggle** — a file-level trail that also keeps each commit non-empty. The trace is process telemetry;
 `minimal`/`off` only scale the *product* documentation, never this trail.
 
@@ -168,10 +170,10 @@ because siblings are independent — the work runs **highly in parallel** (§4).
 ### 3c. How the names map to standard terminology
 
 The composition hierarchy isn't standardized identically across the industry (the same words —
-*module*, *component*, *unit* — are used differently project to project), but CAAVM's chain lines up
+*module*, *component*, *unit* — are used differently project to project), but Hephaestus's chain lines up
 with widely-used definitions and the classic V-Model:
 
-| CAAVM term | Standard alignment |
+| Hephaestus term | Standard alignment |
 |------------|--------------------|
 | **unit** | ISTQB *unit/component test* target; ISO 26262 *software unit* (the lowest design piece). |
 | **component** (one or more units) | ISO 26262: "a software component gathers one or more software units." |
@@ -179,7 +181,7 @@ with widely-used definitions and the classic V-Model:
 | **software / executable** (one or more modules) | A deliverable build artifact — the *subsystem/application* level. |
 | **software system** (one or more executables) | The top *system* element; its **topology** (e.g. client-server) is the arrangement of executables. |
 
-Test-level mapping to the classic V-Model (ISTQB: *unit → integration → system → acceptance*): CAAVM's
+Test-level mapping to the classic V-Model (ISTQB: *unit → integration → system → acceptance*): Hephaestus's
 **unit** and **acceptance** match directly; the V-Model's **integration testing** is split by tier into
 **component** (units within a component, mocked), **module** (components within a module, mocked) and
 **system** (executables running together) tests; **system** and **acceptance** match the V-Model's
@@ -195,7 +197,7 @@ stage does its best with what it has, because any real gap will surface concrete
 phases**. This keeps the decomposition simple and lets it run in parallel without speculative rework.
 
 Each test level is a **clear gate** (a barrier): the climb to the next level proceeds only once the
-current level is green. When a gate goes red, CAAVM applies a **targeted repair** — it repeats the
+current level is green. When a gate goes red, Hephaestus applies a **targeted repair** — it repeats the
 build loop **only for the failing element** and re-verifies, bounded by `config.agile.max_fix_rounds`:
 
 > This is **abstract and the same at every level**. If one unit fails, only that unit's
@@ -309,7 +311,7 @@ workflow's Architecture and Gate phases honor this toggle automatically.
 
 Nothing above is C++-specific. To target Rust, Go, Python, TypeScript, …:
 
-1. Edit `config/caav-model.config.yaml`: `language.*`, `toolchain.*` (e.g. swap
+1. Edit `config/hephaestus.config.yaml`: `language.*`, `toolchain.*` (e.g. swap
    `clang-tidy`→`clippy`, `clang-format`→`rustfmt`, `GoogleTest`→`cargo test`,
    `cmake`→`cargo`).
 2. Adjust `quality_gates` thresholds if the ecosystem differs.
@@ -322,10 +324,10 @@ Nothing above is C++-specific. To target Rust, Go, Python, TypeScript, …:
 
 See [`../README.md`](../README.md) for the quickstart. In short:
 
-- **Automated:** run the workflow at `.claude/workflows/caav-model.js` (it
+- **Automated:** run the workflow at `.claude/workflows/hephaestus.js` (it
   orchestrates one agent per stage, per increment, with verification and gates).
 - **Manual / any tool:** follow the step-by-step entry/exit criteria and prompt
-  templates in [`caav-model.process.md`](caav-model.process.md).
+  templates in [`hephaestus.process.md`](hephaestus.process.md).
 
 Both consume the same config file, so automated and manual runs stay consistent.
 
@@ -334,7 +336,7 @@ Both consume the same config file, so automated and manual runs stay consistent.
 You normally don't touch YAML. Write plain sentences in `config.interface.input`
 (`INPUT.md`) — the language, design, tools, gates, and feature ideas — and the
 **Intake** step (Stage 0) updates the project files to match: high-level choices are
-written into `config/caav-model.config.yaml`, feature ideas become backlog increments.
+written into `config/hephaestus.config.yaml`, feature ideas become backlog increments.
 `INPUT.md` can be **super minimal** because the config carries defaults; you write only
 what should differ. After each increment the **Report** step overwrites
 `config.interface.output` (`OUTPUT.md`) with a short status checklist and re-reads
