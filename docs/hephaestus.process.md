@@ -76,8 +76,9 @@ judgment-heavy phases and a cheaper one for mechanical work. Shipped default:
 | 2 · Software System | **opus** |
 | 3 · Architecture | **opus** |
 | 4 · Design | **opus** |
+| Scaffold (publish interfaces + build skeleton) | sonnet |
 | 5 · Implementation (TDD) | sonnet |
-| Integrate (on demand) | sonnet |
+| Per-tier integration (module / software / system) | sonnet |
 | 6–10 · Unit / Component / Module / System / Acceptance tests | haiku |
 | Iteration Gate | **opus** |
 

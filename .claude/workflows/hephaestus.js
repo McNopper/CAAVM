@@ -522,9 +522,16 @@ Confirm the skeleton configures (and, if prior code exists, still builds).${comm
   // max_fix_rounds); already-green siblings are never touched.
   const adversarial = `Be adversarial: try to find a failing or missing case (within the "${level}" maturity scope — intentionally-deferred behavior is out of scope, not a failure).`
   const deployableNames = (sys.deployables || []).map(d => d.name)
+  // The gated-merge TREE needs git (commit-per-phase + worktree merges). When ON, each
+  // node is verified on its own branch in a throwaway worktree, then merged up; when OFF,
+  // the run degrades to verifying the inline working tree (no branch tree, no merges).
+  const mergeOn = commitsOn && git.worktree_merge !== false
+  if (!mergeOn) log(`⚠ ${tag}: gated-merge tree disabled (commit_per_phase/worktree_merge off) — verifying inline on the working tree.`)
   // Verify a node WITHOUT disturbing other work: spin up a throwaway worktree on its
   // branch, test there, remove it. Parallel verifiers in a level touch DISTINCT branches.
-  const verifyOnBranch = (what) => `Verify IN ISOLATION: \`git worktree add\` a TEMPORARY worktree checked out on ${what} (discover the branch via \`git worktree list --porcelain\` / \`git branch\`; node branches were committed with messages naming what they built), run the tests THERE, then \`git worktree remove\` it. Report results ONLY — do NOT merge or commit.`
+  const verifyOnBranch = (what) => mergeOn
+    ? `Verify IN ISOLATION: \`git worktree add\` a TEMPORARY worktree checked out on ${what} (discover the branch via \`git worktree list --porcelain\` / \`git branch\`; node branches were committed with messages naming what they built), run the tests THERE, then \`git worktree remove\` it. Report results ONLY — do NOT merge or commit.`
+    : `Run the tests against the current working tree (the gated-merge branch tree is disabled). Report results ONLY — do NOT commit.`
   const LEVELS = {
     unit:      { phase: 'Component Tier', ord: 6,  fixes: 'the failing unit(s) — re-run their red→green→refactor loop on the component branch' },
     component: { phase: 'Component Tier', ord: 7,  fixes: 'the failing component(s) — the unit(s) behind the contract failure' },
@@ -582,15 +589,13 @@ in your details. Set "scope" to "acceptance". ${adversarial}`,
     return agent(
       `You are the Fixer for increment ${tag} @ "${level}". The ${lvl.toUpperCase()} test (level ${L.ord}) went RED.
 Failures: ${JSON.stringify(failed.map(v => ({ scope: v.scope, details: v.details })))}.
-Work ON THE FAILING NODE'S OWN BRANCH (the [${scopes.join(', ') || 'failing'}] branch — \`git worktree add\`
-or check it out in a dedicated worktree). Repeat the build loop for ${L.fixes}, scoped to ONLY:
+${mergeOn ? `Work ON THE FAILING NODE'S OWN BRANCH (the [${scopes.join(', ') || 'failing'}] branch — \`git worktree add\` or check it out in a dedicated worktree).` : `Work in the current working tree.`} Repeat the build loop for ${L.fixes}, scoped to ONLY:
 [${scopes.join(', ') || 'the failing element'}]. Do this as a focused red→green→refactor loop: reproduce with
 the failing ${tf.unit.tool} test, make the minimal change to go green, then refactor on demand. Do NOT
 re-implement or modify nodes that already pass — leave green units/components/modules exactly as they are,
 and do NOT redesign/re-architect the increment; adjust only the failing node's local code if the failure
 genuinely requires it. ${refactorOnDemand}
-Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing test green. COMMIT the fix on
-that node's branch so re-verification and the tier merge see it. Stay within the "${level}" maturity scope.`,
+Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing test green.${mergeOn ? ` COMMIT the fix on that node's branch so re-verification and the tier merge see it.` : ''} Stay within the "${level}" maturity scope.`,
       { label: `fix:${lvl}:${tag}:r${round}`, phase: L.phase, model: modelFor('implementation') })
   }
   // Run one test LEVEL: fan out its verifiers, then targeted-repair the red nodes on
@@ -648,7 +653,6 @@ confirm it builds.${commitDirective(tag, level, 10, 'Integrate-system')}`,
   // does the next tier merge it upward; the System Tier lands the system on main.
   const verifications = []
   let climbBroken = false
-  const mergeOn = commitsOn && git.worktree_merge !== false
   const tiers = [
     { phase: 'Component Tier', levels: ['unit', 'component'], integrate: null },
     { phase: 'Module Tier',    levels: ['module'],            integrate: () => parallel(moduleNames.map(m => () => moduleIntegrate(m))) },
