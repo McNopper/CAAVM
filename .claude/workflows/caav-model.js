@@ -4,13 +4,13 @@ export const meta = {
   whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Pass the parsed config/caav-model.config.yaml as args (or rely on the built-in C++ defaults).',
   phases: [
     { title: 'Setup' },
-    { title: 'Requirements' },
-    { title: 'Architecture' },
-    { title: 'Design' },
-    { title: 'Implementation (TDD)' },
-    { title: 'Verification' },
-    { title: 'Refactor' },
-    { title: 'Iteration Gate' },
+    { title: 'Requirements', model: 'sonnet' },
+    { title: 'Architecture', model: 'opus' },
+    { title: 'Design', model: 'opus' },
+    { title: 'Implementation (TDD)', model: 'sonnet' },
+    { title: 'Verification', model: 'haiku' },
+    { title: 'Refactor', model: 'sonnet' },
+    { title: 'Iteration Gate', model: 'opus' },
   ],
 }
 
@@ -97,6 +97,18 @@ const DEFAULTS = {
     },
   },
   toggles: { documentation: 'full' },  // full | minimal | off — see docInstruction below
+  // Per-phase model routing (opus | sonnet | haiku). A phase falls back to
+  // `default`; if that is unset too, the agent inherits the session model.
+  models: {
+    default: 'sonnet',
+    requirements: 'sonnet',
+    architecture: 'opus',
+    design: 'opus',
+    implementation: 'sonnet',
+    verification: 'haiku',
+    refactor: 'sonnet',
+    gate: 'opus',
+  },
   layout: { source_dir: 'src/', include_dir: 'include/', test_dir: 'tests/', docs_dir: 'docs/', build_dir: 'build/' },
 }
 
@@ -121,6 +133,9 @@ const tf = cfg.toolchain.test_frameworks
 const cc = JSON.stringify(cfg.clean_code)
 const gates = JSON.stringify(cfg.quality_gates)
 const refs = cfg.references || {}
+// Per-phase model routing. Returns undefined when nothing is configured so the
+// agent inherits the session model (fully backward compatible).
+const modelFor = (key) => (cfg.models && (cfg.models[key] || cfg.models.default)) || undefined
 // Documentation toggle: full (arc42 + API docs + UML) | minimal (ADRs + sketch) | off (code/tests only)
 const docMode = (cfg.toggles && cfg.toggles.documentation) || 'full'
 const docInstruction =
@@ -200,7 +215,7 @@ Carry-forward context from prior increments (stay consistent; treat logged decis
 debt as constraints): ${carry}.
 Produce functional + non-functional requirements with stable IDs (REQ-${tag}-n) and
 acceptance tests (Given/When/Then) for ${tf.acceptance.tool}. Do NOT design a solution.`,
-    { label: `req:${tag}`, phase: 'Requirements', schema: REQ_SCHEMA })
+    { label: `req:${tag}`, phase: 'Requirements', schema: REQ_SCHEMA, model: modelFor('requirements') })
   if (!reqs) return { tag, status: 'aborted', stage: 'requirements' }
 
   phase('Architecture')
@@ -210,7 +225,7 @@ Choose an architecture pattern from this catalog and justify it: ${JSON.stringif
 Decompose into modules with boundaries honoring "${cfg.clean_code.architecture}" and the rule
 "${cfg.clean_code.dependency_rule}". Define interface contracts and ADRs. ${docInstruction}
 Produce an integration/module test plan for ${tf.integration.tool}, and map every REQ id to a module.`,
-    { label: `arch:${tag}`, phase: 'Architecture', schema: ARCH_SCHEMA })
+    { label: `arch:${tag}`, phase: 'Architecture', schema: ARCH_SCHEMA, model: modelFor('architecture') })
   if (!arch) return { tag, status: 'aborted', stage: 'architecture' }
 
   phase('Design')
@@ -223,7 +238,7 @@ creational ${JSON.stringify(dp.creational || [])}, structural ${JSON.stringify(d
 behavioral ${JSON.stringify(dp.behavioral || [])}. Specify error handling
 ("${cfg.clean_code.error_handling}") and ownership ("${cfg.clean_code.resource_management}").
 Give a component-test spec per component (deps mocked with ${tf.unit.mock || 'a mock framework'}).`,
-    { label: `design:${tag}`, phase: 'Design', schema: DESIGN_SCHEMA })
+    { label: `design:${tag}`, phase: 'Design', schema: DESIGN_SCHEMA, model: modelFor('design') })
   if (!design) return { tag, status: 'aborted', stage: 'design' }
 
   // ---- RIGHT ARM: implement each component via TDD (parallel, isolated) ----
@@ -236,7 +251,7 @@ Interface/contract: ${c.interface}. Patterns: ${(c.patterns || []).join(', ')}.
 For each unit: write the FAILING ${tf.unit.tool} test first, then minimal code to pass, then tidy.
 Honor clean-code rules ${cc}. Put code under ${cfg.layout.source_dir}/${cfg.layout.include_dir},
 tests under ${cfg.layout.test_dir}. Run ${fmt} and ${linters} on touched files. Build with ${cfg.toolchain.build_system.tool}.`,
-      { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, isolation: 'worktree' })
+      { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, isolation: 'worktree', model: modelFor('implementation') })
   ))).filter(Boolean)
 
   // ---- VERIFICATION: climb the V bottom-up, adversarial (fresh agents) ----
@@ -255,7 +270,7 @@ tests under ${cfg.layout.test_dir}. Run ${fmt} and ${linters} on touched files. 
       `You are the Verifier (independent of the implementer). Increment ${tag}.
 Test level: ${level}. ${levelInstructions[level] || ''}
 Be adversarial: try to find a failing or missing case. Implementation summary: ${JSON.stringify(impls.map(i => i.summary))}.`,
-      { label: `verify:${level}:${tag}`, phase: 'Verification', schema: VERIFY_SCHEMA })
+      { label: `verify:${level}:${tag}`, phase: 'Verification', schema: VERIFY_SCHEMA, model: modelFor('verification') })
     verifications.push(v)
     if (v && v.passed === false) { log(`✗ ${level} test failed for ${tag}: ${v.details}`); break } // stop the climb on red
   }
@@ -273,14 +288,14 @@ Cross-check against the refactoring catalog — smells ${JSON.stringify((refs.re
 and techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}. For each finding, name
 the smell and the technique that removes it. Files: ${JSON.stringify(impls.flatMap(i => i.files_changed))}.
 Report concrete findings with fixes. Empty findings = clean.`,
-        { label: `review:${lens}:${tag}`, phase: 'Refactor', schema: REVIEW_SCHEMA })
+        { label: `review:${lens}:${tag}`, phase: 'Refactor', schema: REVIEW_SCHEMA, model: modelFor('refactor') })
     ))).filter(Boolean)
     const actionable = reviews.flatMap(r => (r.findings || []).filter(f => f.severity !== 'minor'))
     if (actionable.length === 0) { log(`✓ Refactor clean for ${tag} (round ${refactorRounds + 1})`); break }
     await agent(
       `You are the Refactorer for increment ${tag}. Apply these fixes while keeping ALL tests green,
 re-running ${tf.unit.tool} and ${fmt}/${linters} after each change: ${JSON.stringify(actionable)}.`,
-      { label: `refactor:${tag}:r${refactorRounds + 1}`, phase: 'Refactor' })
+      { label: `refactor:${tag}:r${refactorRounds + 1}`, phase: 'Refactor', model: modelFor('refactor') })
     refactorRounds++
   }
 
@@ -294,7 +309,7 @@ matrix is complete (${cfg.quality_gates.traceability}). Pass ONLY if every gate 
 Documentation mode is "${docMode}": if "off", DO NOT require the documentation DoD item; otherwise enforce it.
 Also write the increment report (minimal & effective): list key_decisions (carried forward as
 constraints) and debt (carried forward as future work) for the next cycle.`,
-    { label: `gate:${tag}`, phase: 'Iteration Gate', schema: GATE_SCHEMA })
+    { label: `gate:${tag}`, phase: 'Iteration Gate', schema: GATE_SCHEMA, model: modelFor('gate') })
 
   return {
     tag, title: item.title,

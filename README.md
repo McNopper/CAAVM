@@ -23,7 +23,8 @@ and the V repeats every iteration — that's the *cyclic agile* part.
 - 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → integration → acceptance`.
 - 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting, bounded refactor pass every increment.
 - 🚦 **Quality gates** — coverage, complexity, zero-warning lint/format, sanitizers, doc coverage, traceability.
-- 🛠️ **One-file config** — language, version, and tools (clang-format, clang-tidy, cmake, GoogleTest, …) are plain data.
+- 🎚️ **Per-phase model routing** — run each phase on a different model tier (`opus`/`sonnet`/`haiku`), e.g. Opus for architecture/design/gate, Haiku for mechanical verification.
+- 🛠️ **One-file config** — language, version, tools (clang-format, clang-tidy, cmake, GoogleTest, …), toggles and models are all plain data.
 
 ## Repository layout
 
@@ -79,6 +80,28 @@ increment, smaller token budgets, or step-by-step review:
 Follow docs/caav-model.process.md to implement backlog item INC-001 from
 config/caav-model.config.yaml. Do one V-pass and stop at the quality gate.
 ```
+
+#### Per-phase model routing
+
+The workflow runs each phase on the model tier named in `config.models` (`opus` / `sonnet` /
+`haiku`). The shipped default puts the judgment-heavy phases on Opus and the mechanical ones on
+cheaper tiers:
+
+```yaml
+models:
+  default: sonnet
+  architecture: opus     # pattern choice, boundaries, ADRs
+  design: opus           # interfaces + design patterns
+  gate: opus             # final Definition-of-Done judgment
+  implementation: sonnet # high-volume parallel TDD
+  requirements: sonnet
+  refactor: sonnet
+  verification: haiku    # mechanical: run tests, report pass/fail
+```
+
+Edit any phase to taste; unset phases fall back to `default`, and with no `models` block at all
+every phase inherits your session model. (This routing is a Claude Code capability; on the Copilot
+CLI / manual path it's a recommendation, since that path uses one session model.)
 
 ### Using with GitHub Copilot CLI
 

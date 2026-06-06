@@ -43,6 +43,23 @@ toggles:
   documentation: full
 
 # ---------------------------------------------------------------------------
+# Per-phase model routing (Claude Code workflow). Each V-Model phase can run on
+# a different model tier — opus | sonnet | haiku. A phase falls back to
+# `default`; if `default` is unset too, the agent inherits the session model.
+# (For the GitHub Copilot CLI / manual path these are recommendations only,
+# since that path uses a single session model.)
+# ---------------------------------------------------------------------------
+models:
+  default: sonnet
+  requirements: sonnet      # capture/structure requirements
+  architecture: opus        # highest-judgment: pattern choice, boundaries, ADRs
+  design: opus              # interfaces + design-pattern selection
+  implementation: sonnet    # high-volume TDD coding, runs in parallel per component
+  verification: haiku       # mostly mechanical: run tests, report pass/fail + coverage
+  refactor: sonnet          # smell detection + technique application
+  gate: opus                # final Definition-of-Done judgment
+
+# ---------------------------------------------------------------------------
 # Language under test. Change `name`/`standard` to retarget the whole model.
 # ---------------------------------------------------------------------------
 language:

@@ -202,3 +202,12 @@ See [`../README.md`](../README.md) for the quickstart. In short:
   templates in [`caav-model.process.md`](caav-model.process.md).
 
 Both consume the same config file, so automated and manual runs stay consistent.
+
+### Per-phase model routing
+
+`config.models` assigns a model tier (`opus`/`sonnet`/`haiku`) to each V-Model
+phase, so judgment-heavy phases (architecture, design, gate) can run on a stronger
+model than the mechanical, high-volume ones (verification, implementation). A phase
+falls back to `models.default`; with no `models` block, every phase inherits the
+session model. This is a Claude Code workflow capability; on the manual/Copilot path
+it serves as a per-phase model recommendation.
