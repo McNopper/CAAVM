@@ -24,7 +24,7 @@ export const meta = {
 // ===========================================================================
 const DEFAULTS = {
   project: { name: 'project', description: '', backlog: [] },
-  language: { name: 'C++', standard: 'c++20', compilers: ['clang++ >= 17', 'g++ >= 13'], style_guide: 'C++ Core Guidelines' },
+  language: { name: 'C++', standard: 'c++23', compilers: ['clang++ >= 17', 'g++ >= 13'], style_guide: 'C++ Core Guidelines' },
   toolchain: {
     build_system: { tool: 'cmake', min_version: '3.28' },
     package_manager: { tool: 'vcpkg' },
@@ -98,7 +98,7 @@ const DEFAULTS = {
       sections: ['Introduction and Goals', 'Constraints', 'Context and Scope', 'Solution Strategy', 'Building Block View', 'Runtime View', 'Deployment View', 'Crosscutting Concepts', 'Architecture Decisions', 'Quality Requirements', 'Risks and Technical Debt', 'Glossary'],
     },
   },
-  toggles: { documentation: 'full' },  // full | minimal | off — see docInstruction below
+  toggles: { documentation: 'minimal' },  // full | minimal | off — see docInstruction below
   // Per-phase model routing (opus | sonnet | haiku). A phase falls back to
   // `default`; if that is unset too, the agent inherits the session model.
   models: {

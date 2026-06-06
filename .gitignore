@@ -43,3 +43,7 @@ Thumbs.db
 
 # ---- CAAVM examples are a local self-test harness, not a committed artifact -
 examples/
+
+# ---- Claude Code: ship the workflow, ignore machine-local files ----------
+.claude/*
+!.claude/workflows/
