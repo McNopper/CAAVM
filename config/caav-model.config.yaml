@@ -40,7 +40,7 @@ toggles:
   #   minimal : ADRs + a brief building-block sketch only; no full arc42 / API docs / UML
   #   off     : no separate documentation — the code and tests are the specification
   # When 'off', the "Public API documented" item is dropped from the Definition of Done.
-  documentation: full
+  documentation: minimal
 
 # ---------------------------------------------------------------------------
 # Per-phase model routing (Claude Code workflow). Each V-Model phase can run on
