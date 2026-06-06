@@ -119,6 +119,14 @@ collide and `main` only ever receives fully-verified work. This per-node isolati
 branch only**; already-green siblings are untouched. (A module may be packaged as a static library, a
 shared library / DLL, or header-only — the architecture chooses per module.)
 
+**Branch names are deterministic and human-readable**, so no tier has to *discover* anything — it knows
+exactly which child branches to merge, and the name itself is a hint (loop, V-stage, kind, node):
+`<prefix>/loop<N>/<inc>/<rung>/s<NN>-<kind>/<node>`, e.g. `hephaestus/loop1/inc-001/mvp/s05-component/csv-parser`,
+`…/s08-module/core`, `…/s09-software/client`, `…/s10-system`. The whole increment's branches share one
+prefix, so they list and prune together; verifiers read a branch via a *detached* throwaway worktree (so a
+branch checked out elsewhere is never an obstacle), and per-node scratch worktrees live under a gitignored
+`.hephaestus/` dir.
+
 **Single-writer Scaffold before the fan-out.** Right after Design, one step publishes every component
 **interface** plus a **glob-based build skeleton** onto the working branch, so each implementer can mock any
 collaborator's contract and adding a unit's file needs no edit to shared build config — which keeps every

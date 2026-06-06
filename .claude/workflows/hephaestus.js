@@ -205,8 +205,11 @@ const git = cfg.git || {}
 const commitsOn = git.commit_per_phase !== false
 const commitPrefix = git.commit_prefix || 'hephaestus'
 const docsDir = (cfg.layout && cfg.layout.docs_dir) || 'docs/'
+// activeLoop is stamped into trace paths so re-runs at the same maturity rung don't
+// collide — set by the driver before each increment loop. Mirrors the branch names.
+let activeLoop = 1
 const tracePath = (tag, level, n, phaseName) =>
-  `${docsDir}hephaestus/trace/${tag}/${level}/${String(n).padStart(2, '0')}-${phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
+  `${docsDir}hephaestus/trace/${tag}/loop${activeLoop}-${level}/${String(n).padStart(2, '0')}-${phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
 // n = phase ordinal within the V-pass (for stable, sortable trace filenames).
 const commitDirective = (tag, level, n, phaseName) => {
   const trace = `\nTRACE (always, regardless of the documentation toggle): write a short markdown file to "${tracePath(tag, level, n, phaseName)}" capturing this phase — heading "${phaseName} — ${tag} @ ${level}", then a few bullets: key outputs/decisions, anything DEFERRED to a later loop, files touched, and a one-line status. Keep it minimal & effective; it is a file-level trail, not product documentation.`
@@ -339,7 +342,7 @@ const GATE_SCHEMA = {
 // ===========================================================================
 //  One full V-pass for a single backlog increment.
 // ===========================================================================
-async function runIncrement(item, idx, priorContext, levelSpec) {
+async function runIncrement(item, idx, priorContext, levelSpec, loop) {
   const tag = item.id || `INC-${idx + 1}`
   const carry = JSON.stringify(priorContext || [])
   const level = (levelSpec && levelSpec.name) || 'complete'
@@ -352,6 +355,23 @@ Scope ALL work to this level only. Anything beyond it MUST be explicitly DEFERRE
 debt with a short reason) so a later loop picks it up — do not build it now. Effective quality
 gates for this level (relaxations already merged over the strict gates): ${effGates}.`
   log(`▼ Increment ${tag} @ ${level}: ${item.title}`)
+
+  // ---- DETERMINISTIC, HUMAN-READABLE BRANCH/WORKTREE NAMING -----------------
+  // Every node's branch has a COMPUTED name, so no tier ever has to DISCOVER
+  // branches — it knows exactly what to merge. The name reads like a path through
+  // the V-tree and is a self-describing HINT: which loop, which V-stage, which kind,
+  // which node (readable slugs, not hashes). E.g.:
+  //   hephaestus/loop1/inc-001/mvp/s05-component/csv-parser
+  //   hephaestus/loop1/inc-001/mvp/s08-module/core
+  //   hephaestus/loop1/inc-001/mvp/s09-software/client
+  //   hephaestus/loop1/inc-001/mvp/s10-system
+  // Tree: component ◄ module ◄ software ◄ system, all under one loop+increment+level
+  // prefix so the whole increment's branches are listable and prunable together.
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const stageOf = { component: '05', module: '08', software: '09', system: '10' }   // owning V-stage per kind
+  const refRoot = `${commitPrefix}/loop${loop}/${slug(tag)}/${slug(level)}`
+  const br = (kind, name) => `${refRoot}/s${stageOf[kind] || '00'}-${kind}${name ? '/' + slug(name) : ''}`     // branch name (readable path)
+  const wt = (kind, name) => `.hephaestus/wt/loop${loop}/${slug(tag)}/${slug(level)}/${kind}${name ? '/' + slug(name) : ''}` // worktree dir (gitignored)
 
   // ---- LEFT ARM — straight, forward decomposition (NO backward jumps) -------
   // The decomposition flows forward only: requirements → system → architecture →
@@ -425,33 +445,34 @@ Return the contract as DATA ONLY — do NOT write files and do NOT commit; the S
 component interfaces together as a single writer.`,
     { label: `design:${plan.name}`, phase: 'Design', schema: COMPONENT_SCHEMA, model: modelFor('design') })
 
-  // Implement ONE component on ITS OWN branch (isolated worktree, branched from the
-  // interface-complete working branch). Units branch FROM the component branch and
-  // merge BACK into it; the component branch is later merged into its module branch.
+  // Implement ONE component on ITS OWN named branch+worktree, branched from the
+  // interface-complete working branch. Units branch FROM the component branch and merge
+  // BACK into it; the component branch (known name) is later merged into its module branch.
   const implementComponent = (c) => agent(
     `You are the Implementer using TDD in ${lang}. Implement component "${c.name}", which belongs to
 module(s) [${(c.modules || []).join(', ')}] and is composed of these UNITS: ${JSON.stringify((c.units || []).map(u => u.name))}.
 ${mvpBanner}
 Interface/contract: ${c.interface}. Patterns: ${(c.patterns || []).join(', ')}.
-You are in an ISOLATED git worktree branched from the working branch — treat it as THIS COMPONENT'S
-BRANCH. Every component's interface was already published to the working branch (Scaffold), so mock any
-collaborator against its PUBLISHED contract. Touch ONLY this component's own files.
+WORK IN ISOLATION on THIS COMPONENT'S BRANCH: create it from the working branch and check it out in its own
+worktree — \`git worktree add -b ${br('component', c.name)} ${wt('component', c.name)}\` — then \`cd\` there.
+Every component's interface was already published to the working branch (Scaffold), so mock any collaborator
+against its PUBLISHED contract. Touch ONLY this component's own files.
 PARTIAL STATE across loops: INSPECT existing code first; REUSE and EXTEND it, implement only the units
 missing or needing deepening at this level, and keep existing tests green — do not rebuild or duplicate.
-RECURSIVE BRANCHING (unit ◄ component): for EACH unit, create a local unit branch FROM this component
-branch, do its red→green→refactor there (write the FAILING ${tf.unit.tool} test from its unit_test_spec,
-then minimal code to pass, then tidy), and MERGE the unit branch BACK into the component branch once its
-unit test is green. Units are disjoint, so they never collide. Unit specs: ${JSON.stringify(c.units || [])}.
+RECURSIVE BRANCHING (unit ◄ component): for EACH unit, \`git checkout -b\` a local unit branch FROM this
+component branch, do its red→green→refactor there (write the FAILING ${tf.unit.tool} test from its
+unit_test_spec, then minimal code to pass, then tidy), and MERGE the unit branch BACK into the component
+branch once its unit test is green. Units are disjoint, so they never collide. Unit specs: ${JSON.stringify(c.units || [])}.
 Then run this component's unit + component self-tests (collaborators mocked) so the component branch is
 green in isolation. At the "${level}" level implement only what the slice needs; defer the rest as TODO+debt.
 Put code under ${cfg.layout.source_dir}/${cfg.layout.include_dir}, tests under ${cfg.layout.test_dir}.
 ${refactorOnDemand}
 Return your "component" name and "units_implemented".
 Run ${fmt} and ${linters} on touched files. Build with ${cfg.toolchain.build_system.tool}.
-Commit on this component branch — \`git add -A\` and \`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\`
-— so the Module Tier can merge this branch up into its module branch. Do NOT switch to or modify other
-components' branches.`,
-    { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, isolation: 'worktree', model: modelFor('implementation') })
+Commit on branch ${br('component', c.name)} — \`git add -A\` and \`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\`.
+Then \`git worktree remove\` your worktree (the BRANCH ref persists for the Module Tier to merge up). Do NOT
+touch the working branch or other components' branches.`,
+    { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, model: modelFor('implementation') })
 
   // Forward pass through the upper-left stages.
   phase('Requirements');     const reqs = await runRequirements();       if (!reqs) return { tag, status: 'aborted', stage: 'requirements' }
@@ -503,7 +524,8 @@ out for increment ${tag} @ "${level}". ${docInstruction}
    SHARED library / DLL, or header-only — use what the architecture chose per module; default to static if
    unspecified. Topology: ${sys.topology}; deployables: ${JSON.stringify((sys.deployables || []).map(d => d.name))};
    modules: ${JSON.stringify(moduleNames)}.
-3. PARTIAL STATE: reuse/extend what already exists; do not clobber working code.
+3. Ensure \`.hephaestus/\` is in .gitignore (it holds the per-node worktrees/scratch the tiers create).
+4. PARTIAL STATE: reuse/extend what already exists; do not clobber working code.
 Confirm the skeleton configures (and, if prior code exists, still builds).${commitDirective(tag, level, 4, 'Scaffold')}`,
     { label: `scaffold:${tag}`, phase: 'Scaffold', model: modelFor('implementation') })
 
@@ -527,10 +549,16 @@ Confirm the skeleton configures (and, if prior code exists, still builds).${comm
   // the run degrades to verifying the inline working tree (no branch tree, no merges).
   const mergeOn = commitsOn && git.worktree_merge !== false
   if (!mergeOn) log(`⚠ ${tag}: gated-merge tree disabled (commit_per_phase/worktree_merge off) — verifying inline on the working tree.`)
-  // Verify a node WITHOUT disturbing other work: spin up a throwaway worktree on its
-  // branch, test there, remove it. Parallel verifiers in a level touch DISTINCT branches.
-  const verifyOnBranch = (what) => mergeOn
-    ? `Verify IN ISOLATION: \`git worktree add\` a TEMPORARY worktree checked out on ${what} (discover the branch via \`git worktree list --porcelain\` / \`git branch\`; node branches were committed with messages naming what they built), run the tests THERE, then \`git worktree remove\` it. Report results ONLY — do NOT merge or commit.`
+  // The node's branch for a level has a COMPUTED name — no discovery. Verify a node
+  // WITHOUT disturbing other work: a DETACHED throwaway worktree at the branch tip
+  // (allowed even while that branch lives elsewhere), test there, remove it.
+  const nodeBranch = (lvl, name) =>
+    (lvl === 'unit' || lvl === 'component') ? br('component', name)
+      : lvl === 'module' ? br('module', name)
+        : lvl === 'system' ? br('software', name)
+          : br('system')
+  const verifyOnBranch = (branch) => mergeOn
+    ? `Verify IN ISOLATION on a DETACHED worktree at that branch's tip: \`git worktree add --detach ${wt('verify', branch)} ${branch}\`, run the tests THERE, then \`git worktree remove\` it. Report results ONLY — do NOT merge or commit.`
     : `Run the tests against the current working tree (the gated-merge branch tree is disabled). Report results ONLY — do NOT commit.`
   const LEVELS = {
     unit:      { phase: 'Component Tier', ord: 6,  fixes: 'the failing unit(s) — re-run their red→green→refactor loop on the component branch' },
@@ -544,27 +572,27 @@ Confirm the skeleton configures (and, if prior code exists, still builds).${comm
     const L = LEVELS[lvl]; if (!L) return []
     if (lvl === 'unit') return components.map(c => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
-Test level: UNIT (6), scope = component "${c.name}". ${verifyOnBranch(`component "${c.name}"'s implementation branch`)}
+Test level: UNIT (6), scope = component "${c.name}". ${verifyOnBranch(nodeBranch('unit', c.name))}
 Run its unit tests (${tf.unit.tool}) with sanitizers (${sans}) enabled for units
 ${JSON.stringify((c.units || []).map(u => u.name))}; report ${cov} coverage %. Set "scope" to "${c.name}". ${adversarial}`,
         { label: `unit:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'component') return components.map(c => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
-Test level: COMPONENT (7), scope = "${c.name}". ${verifyOnBranch(`component "${c.name}"'s implementation branch`)}
+Test level: COMPONENT (7), scope = "${c.name}". ${verifyOnBranch(nodeBranch('component', c.name))}
 Run the component test (${tf.component.tool}) against its contract "${c.interface}". THIS REQUIRES MOCKING:
 mock the component's collaborators with ${tf.unit.mock || 'a mock framework'} so only this component is
 exercised. Set "scope" to "${c.name}". ${adversarial}`,
         { label: `component:${c.name}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'module') return moduleNames.map(m => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
-Test level: MODULE (8), scope = "${m}". ${verifyOnBranch(`module "${m}"'s integration branch`)}
+Test level: MODULE (8), scope = "${m}". ${verifyOnBranch(nodeBranch('module', m))}
 Prove the components [${componentsInModule(m).map(c => c.name).join(', ')}] compose into module "${m}"
 (per the module_test_plan, ${tf.integration.tool}). THIS REQUIRES MOCKING: mock the OTHER modules at
 "${m}"'s boundary so only this module is exercised. Set "scope" to "${m}". ${adversarial}`,
         { label: `module:${m}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'system') return (deployableNames.length ? deployableNames : ['system']).map(d => () =>
       agent(`You are the Verifier (independent of the implementer). Increment ${tag} @ "${level}".
-Test level: SYSTEM (9), scope = deployable "${d}". ${verifyOnBranch(`executable "${d}"'s integration branch`)}
+Test level: SYSTEM (9), scope = deployable "${d}". ${verifyOnBranch(nodeBranch('system', d))}
 Verify its modules compose into the running executable, and that it participates correctly in the
 "${sys.topology}" topology with the other deployables [${deployableNames.filter(x => x !== d).join(', ') || 'none'}]
 (per the system_test_plan). External systems may be mocked; the deployables themselves are real. Set
@@ -572,7 +600,7 @@ Verify its modules compose into the running executable, and that it participates
         { label: `system:${d}`, phase: L.phase, schema: VERIFY_SCHEMA, model: modelFor('verification') }))
     if (lvl === 'acceptance') return [() =>
       agent(`You are the Validator (independent of the implementer). Increment ${tag} @ "${level}".
-Test level: ACCEPTANCE (10), scope = the whole running SYSTEM — NO mocking. ${verifyOnBranch('the system integration branch (all executables merged + topology wired)')}
+Test level: ACCEPTANCE (10), scope = the whole running SYSTEM — NO mocking. ${verifyOnBranch(nodeBranch('acceptance'))}
 Build and RUN the system (topology "${sys.topology}", deployables [${deployableNames.join(', ')}]) and
 validate it end-to-end against the requirements: ${JSON.stringify(reqs.acceptance_tests)}. Capture concrete
 EVIDENCE (e.g. screenshots / recorded output / exit codes) for each acceptance scenario and reference it
@@ -586,10 +614,11 @@ in your details. Set "scope" to "acceptance". ${adversarial}`,
   const repair = (lvl, failed, round) => {
     const L = LEVELS[lvl]
     const scopes = failed.map(v => v.scope).filter(Boolean)
+    const branches = scopes.map(s => nodeBranch(lvl, s))
     return agent(
       `You are the Fixer for increment ${tag} @ "${level}". The ${lvl.toUpperCase()} test (level ${L.ord}) went RED.
 Failures: ${JSON.stringify(failed.map(v => ({ scope: v.scope, details: v.details })))}.
-${mergeOn ? `Work ON THE FAILING NODE'S OWN BRANCH (the [${scopes.join(', ') || 'failing'}] branch — \`git worktree add\` or check it out in a dedicated worktree).` : `Work in the current working tree.`} Repeat the build loop for ${L.fixes}, scoped to ONLY:
+${mergeOn ? `Work ON THE FAILING NODE'S OWN BRANCH(es) [${branches.join(', ') || nodeBranch(lvl, '')}]: \`git worktree add\` the branch in its own worktree, fix there, commit, then \`git worktree remove\`.` : `Work in the current working tree.`} Repeat the build loop for ${L.fixes}, scoped to ONLY:
 [${scopes.join(', ') || 'the failing element'}]. Do this as a focused red→green→refactor loop: reproduce with
 the failing ${tf.unit.tool} test, make the minimal change to go green, then refactor on demand. Do NOT
 re-implement or modify nodes that already pass — leave green units/components/modules exactly as they are,
@@ -617,34 +646,36 @@ Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing t
       await repair(lvl, failed, round)                                     // fix only the failing node(s), then re-verify
     }
   }
-  // Tier INTEGRATE agents — create the parent node's branch, merge IN its already-
-  // verified child branches, write that tier's glue, ensure it builds. (The component
-  // tier needs none: implementers already built the leaf components on their branches.)
-  const discover = `Discover the relevant child branches with \`git worktree list --porcelain\` and \`git branch\` (each was committed with a message naming what it built).`
+  // Tier INTEGRATE agents — create the parent node's NAMED branch, merge IN its already-
+  // verified child branches (known names, no discovery), write that tier's glue, ensure
+  // it builds. (The component tier needs none: implementers built the leaf components.)
   const moduleIntegrate = (m) => agent(
-    `You are the Integrator for MODULE "${m}" of increment ${tag} @ "${level}". ${discover}
-Create/refresh module "${m}"'s branch and \`git merge --no-ff\` IN the VERIFIED component branches that
-belong to it [${componentsInModule(m).map(c => c.name).join(', ') || 'none'}] (a component shared by several
-modules is merged into EACH module that uses it — built once, referenced by each). Resolve any conflicts so
-ALL components survive. Then write the MODULE-LEVEL glue composing those components into module "${m}" (per
-the module_test_plan). A module may be packaged as a STATIC library, a SHARED library / DLL, or header-only
-— honor the architecture's choice for "${m}" (default static). Confirm it builds with
-${cfg.toolchain.build_system.tool}. Do NOT modify other modules.${commitDirective(tag, level, 8, `Integrate-module-${m}`)}`,
+    `You are the Integrator for MODULE "${m}" of increment ${tag} @ "${level}".
+Create this module's branch+worktree from the working branch — \`git worktree add -b ${br('module', m)} ${wt('module', m)}\` — then \`cd\` in.
+\`git merge --no-ff\` IN its VERIFIED component branches (by name): [${componentsInModule(m).map(c => br('component', c.name)).join(', ') || '(none)'}]
+(a component shared by several modules is merged into EACH module that uses it — built once, referenced by
+each). Resolve any conflicts so ALL components survive. Then write the MODULE-LEVEL glue composing those
+components into module "${m}" (per the module_test_plan). A module may be packaged as a STATIC library, a
+SHARED library / DLL, or header-only — honor the architecture's choice for "${m}" (default static). Confirm
+it builds with ${cfg.toolchain.build_system.tool}. Commit on ${br('module', m)}, then \`git worktree remove\` your worktree
+(the branch ref persists). Do NOT modify other modules.${commitDirective(tag, level, 8, `Integrate-module-${m}`)}`,
     { label: `int:module:${m}`, phase: 'Module Tier', model: modelFor('implementation') })
   const softwareIntegrate = (d) => agent(
-    `You are the Integrator for the EXECUTABLE (deployable) "${d}" of increment ${tag} @ "${level}". ${discover}
-Create/refresh "${d}"'s branch and \`git merge --no-ff\` IN its VERIFIED module branches
-[${moduleNames.filter(m => moduleDeployableOf(m) === d).join(', ') || moduleNames.join(', ')}]. Then LINK those
-modules into the deployable "${d}" (entry point, executable target, link config — static libs linked in,
-shared libs / DLLs resolved at load) and confirm it builds & links with ${cfg.toolchain.build_system.tool}.
-Do NOT modify other executables.${commitDirective(tag, level, 9, `Integrate-software-${d}`)}`,
+    `You are the Integrator for the EXECUTABLE (deployable) "${d}" of increment ${tag} @ "${level}".
+Create this executable's branch+worktree — \`git worktree add -b ${br('software', d)} ${wt('software', d)}\` — then \`cd\` in.
+\`git merge --no-ff\` IN its VERIFIED module branches (by name): [${(moduleNames.filter(m => moduleDeployableOf(m) === d).length ? moduleNames.filter(m => moduleDeployableOf(m) === d) : moduleNames).map(m => br('module', m)).join(', ') || '(none)'}].
+Then LINK those modules into the deployable "${d}" (entry point, executable target, link config — static
+libs linked in, shared libs / DLLs resolved at load) and confirm it builds & links with
+${cfg.toolchain.build_system.tool}. Commit on ${br('software', d)}, then \`git worktree remove\`. Do NOT modify other
+executables.${commitDirective(tag, level, 9, `Integrate-software-${d}`)}`,
     { label: `int:sw:${d}`, phase: 'Software Tier', model: modelFor('implementation') })
   const systemIntegrate = () => agent(
-    `You are the Integrator for the SOFTWARE SYSTEM of increment ${tag} @ "${level}". ${discover}
-Create/refresh the system branch and \`git merge --no-ff\` IN every VERIFIED executable branch
-[${deployableNames.join(', ') || 'the single executable'}]. Then WIRE the executables into the
-"${sys.topology}" topology (deploy/run config, ports/IPC as needed) so the whole system runs together, and
-confirm it builds.${commitDirective(tag, level, 10, 'Integrate-system')}`,
+    `You are the Integrator for the SOFTWARE SYSTEM of increment ${tag} @ "${level}".
+Create the system branch+worktree — \`git worktree add -b ${br('system')} ${wt('system')}\` — then \`cd\` in.
+\`git merge --no-ff\` IN every VERIFIED executable branch (by name): [${(deployableNames.length ? deployableNames : ['system']).map(d => br('software', d)).join(', ')}].
+Then WIRE the executables into the "${sys.topology}" topology (deploy/run config, ports/IPC as needed) so the
+whole system runs together, and confirm it builds. Commit on ${br('system')} (keep the worktree — Acceptance
+verifies this branch and Merge-to-main lands it).${commitDirective(tag, level, 10, 'Integrate-system')}`,
     { label: `int:system:${tag}`, phase: 'System Tier', model: modelFor('implementation') })
 
   // Bottom-up tiers. Each tier (a) pulls the previous tier's VERIFIED child branches up
@@ -675,10 +706,12 @@ confirm it builds.${commitDirective(tag, level, 10, 'Integrate-system')}`,
   if (!climbBroken && mergeOn) {
     phase('System Tier')
     await agent(
-      `You are the Release Integrator for increment ${tag} @ "${level}". The system passed acceptance on its
-system branch. \`git merge --no-ff\` the verified system branch onto the working branch (main), confirm it
-still builds, then PRUNE all per-node worktrees and merged branches created for this increment
-(\`git worktree remove\`, delete merged branches). main must now hold the integrated, verified system.${commitDirective(tag, level, 11, 'Merge-to-main')}`,
+      `You are the Release Integrator for increment ${tag} @ "${level}". The system passed acceptance on branch
+${br('system')}. \`git merge --no-ff ${br('system')}\` onto the working branch (the branch you launched on),
+confirm it still builds, then PRUNE everything this increment created: remove its worktrees
+(\`git worktree prune\` / \`git worktree remove\`) and delete all its branches under the prefix "${refRoot}/"
+(e.g. \`git branch --list "${refRoot}/*" | xargs -r git branch -D\`). The working branch must now hold the
+integrated, verified system.${commitDirective(tag, level, 11, 'Merge-to-main')}`,
       { label: `merge-main:${tag}`, phase: 'System Tier', model: modelFor('implementation') })
   }
 
@@ -772,6 +805,7 @@ if (mvpMode && intake && intake.fully_resolved) {
   return { project: cfg.project.name, language: lang, loop: loopNo, level: levelName, fully_resolved: true, increments: [], interface: { input: inputFile, output: outputFile } }
 }
 log(`Hephaestus loop ${loopNo} @ "${levelName}" for "${cfg.project.name}" — ${lang} — ${backlog.length} increment(s) from ${inputFile}/config.`)
+activeLoop = loopNo   // stamp the loop number into trace paths (mirrors the branch names)
 
 const results = []
 const ledger = []  // carry-forward memory: prior decisions + debt feed later increments
@@ -780,7 +814,7 @@ while (i < backlog.length) {
   let attempt = 0, res
   do {
     if (attempt > 0) log(`↻ Re-looping increment ${backlog[i].id || i + 1} @ ${levelName} (attempt ${attempt + 1})`)
-    res = await runIncrement(backlog[i], i, ledger, levelSpec)
+    res = await runIncrement(backlog[i], i, ledger, levelSpec, loopNo)
     attempt++
   } while (res.status === 'failed' && attempt <= (cfg.agile.max_gate_retries || 0))
   results.push({ ...res, attempts: attempt })

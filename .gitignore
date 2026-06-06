@@ -44,6 +44,9 @@ Thumbs.db
 # ---- Hephaestus examples are a local self-test harness, not a committed artifact -
 examples/
 
+# ---- Hephaestus per-node worktrees / scratch created during a run ----------------
+.hephaestus/
+
 # ---- Claude Code: ship the workflow, ignore machine-local files ----------
 .claude/*
 !.claude/workflows/
