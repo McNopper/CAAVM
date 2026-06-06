@@ -7,6 +7,23 @@
 >
 > Repeat this whole procedure once per entry in `${config.project.backlog}`.
 >
+> **MVP first, deepen by re-running (`${config.strategy}`).** CAAVM is meant to be
+> **run several times**. One run advances the product by exactly **one maturity rung**
+> (`${config.strategy.maturity_levels}` — `mvp → harden → complete`) across the whole
+> backlog: the first run builds the thinnest end-to-end MVP (happy path, edge cases
+> deferred as debt), and each later run reads the state in `OUTPUT.md` and **deepens**
+> until every idea in `INPUT.md` is fully resolved at the top rung. Each rung may relax
+> the quality gates; the **effective gates = `${config.quality_gates}` with that rung's
+> overrides merged on top**.
+>
+> **Commit per phase, on the working branch (`${config.git}`).** Every phase persists its
+> content and commits it onto the current branch as it finishes, so progress lands on
+> `main` incrementally and the loop is resumable. Parallel implementation runs in isolated
+> git worktrees; their branches are merged back in an **Integrate** step before verification.
+> And **every phase writes a small trace file** (`${config.living_artifacts.phase_trace}`)
+> **regardless of the documentation toggle** — a file-level trail, and it keeps each commit
+> non-empty.
+>
 > **Carry-forward:** every stage writes a *persisted* artifact (`${config.living_artifacts}`).
 > Start each increment by loading the prior ADRs, the traceability matrix, and the debt
 > log — they are the shared memory of the loop for **both human and agent**, and last
@@ -32,15 +49,20 @@ creates, derives, or updates is recorded in `OUTPUT.md`.
   design style, tools, gates, docs level, and feature ideas. It can be **super minimal** —
   the config already holds defaults, so you write only what should differ. A single
   sentence is a valid input.
-- **Stage 0 — Intake (process).** *Read* `INPUT.md` and **rewrite the project files to match**:
-  map high-level choices into `config/caav-model.config.yaml` (language, toolchain,
-  quality_gates, toggles.documentation, models, …) and turn feature ideas into backlog
-  increments. Then **write the captured record into `OUTPUT.md`** (what was read, the config
-  changes made, the backlog created). Never write to `INPUT.md`.
+- **Stage 0 — Intake (process).** *Read* `INPUT.md` **and `OUTPUT.md`** (the latter carries prior
+  loops' state) and **rewrite the project files to match**: map high-level choices into
+  `config/caav-model.config.yaml` (language, toolchain, quality_gates, toggles.documentation,
+  models, …) and turn feature ideas into backlog increments. **Choose this loop's maturity rung**
+  from `${config.strategy.maturity_levels}`: the first loop runs `mvp`; each later loop picks the
+  lowest rung not yet completed for the whole backlog. Then **write the captured record into
+  `OUTPUT.md`** (what was read, the config changes made, the backlog, the chosen rung + loop number,
+  and the `INPUT.md` resolution table). Never write to `INPUT.md`.
 - **`OUTPUT.md` (process writes).** Intake seeds it; after each increment Report overwrites it
-  with a short, structured status checklist (per-increment checkbox + stage + gate + the five
-  test levels + debt + next action) plus the captured/resolved-config record. The loop re-reads
-  `INPUT.md` (read only) for new ideas every cycle.
+  with a short, structured status checklist (loop + maturity rung; per-increment checkbox + rung
+  reached + stage + gate + the five test levels + debt/deferred + next action), a **Resolution of
+  `INPUT.md`** table (resolved / partial / queued), and the **next loop's rung**. The loop re-reads
+  `INPUT.md` (read only) for new ideas every cycle. **Re-run the workflow to climb the ladder** until
+  `INPUT.md` is fully resolved.
 
 ## Recommended model per phase
 
@@ -54,6 +76,7 @@ judgment-heavy phases and a cheaper one for mechanical work. Shipped default:
 | Architecture | **opus** |
 | Design | **opus** |
 | Implementation (TDD) | sonnet |
+| Integrate | sonnet |
 | Verification | haiku |
 | Refactor | sonnet |
 | Iteration Gate | **opus** |
@@ -71,7 +94,8 @@ manually for the opus phases if your tool allows, otherwise run the whole loop o
 | Requirements Analyst | Stage 1 + acceptance test spec | to Architect |
 | Architect            | Stage 2 + integration test plan | to Designer |
 | Designer             | Stage 3 + component test specs | to Implementer |
-| Implementer (TDD)    | Stage 4 code + unit tests | to Verifier |
+| Implementer (TDD)    | Stage 4 code + unit tests (in isolated worktrees) | to Integrator |
+| Integrator           | Stage 4b: merge worktree branches onto the working branch | to Verifier |
 | Verifier             | Runs unit→component→module→integration→acceptance | to Refactorer |
 | Refactorer           | Clean-code pass | to Gatekeeper |
 | Gatekeeper           | Quality gates + Definition of Done | next increment |
@@ -166,6 +190,38 @@ plan covers every boundary.
 
 ---
 
+## Stage 4b — Integrate (merge worktrees onto the working branch)
+
+When implementation runs in parallel isolated worktrees (`${config.git.worktree_merge}`), merge
+every implementation branch back onto the working branch before verifying:
+
+- `git worktree list --porcelain` to discover the branches; `git merge --no-ff` each one.
+- Resolve conflicts so **all** components survive; reconcile shared files (build config, shared
+  headers, test registration). Never drop a component.
+- Run the formatter and a build to confirm the assembled code compiles and links.
+- Prune merged worktrees (`git worktree remove`), then commit the integration.
+
+If components were implemented inline (no worktrees), just ensure everything is committed on the
+working branch. Either way, write the phase trace file (below).
+
+---
+
+## Per-phase persistence — commit + trace (every stage)
+
+This applies to **every** stage above, not a stage of its own:
+
+- **Commit-per-phase (`${config.git.commit_per_phase}`).** When a phase finishes, persist its
+  content and commit it onto the current branch — message
+  `${config.git.commit_prefix}(<level>/<INC>): <Phase>`. Progress lands on `main` incrementally and
+  the loop is resumable. (Implementation commits happen inside each worktree; Integrate brings them onto `main`.)
+- **Trace file (always).** Each phase also writes a small markdown file to
+  `${config.living_artifacts.phase_trace}` — key outputs/decisions, anything deferred, files touched,
+  one-line status. This happens **even when `${config.toggles.documentation}` is `minimal` or `off`**:
+  it is process telemetry (a file-level trail), not product documentation, so the doc toggle never
+  switches it off. It also guarantees each per-phase commit is non-empty.
+
+---
+
 ## Stage 5 — Verification (climb the V, bottom-up)
 
 Run in the order `${config.v_model.test_execution_order}`:
@@ -199,8 +255,10 @@ Re-run Stage 5 after refactoring. Record each `smell → technique` change in th
 
 ## Stage 7 — Iteration Gate (Definition of Done)
 
-Pass the increment only if **all** hold (else re-loop, bounded by
-`${config.agile.max_gate_retries}`):
+Judge against the **effective gates for this loop's maturity rung** (the strict
+`${config.quality_gates}` with the rung's relaxations merged on top). Intentionally-deferred
+behavior is **not** a failure at a lower rung — record it as debt for a later loop, don't block on it.
+Pass the increment only if **all** hold (else re-loop, bounded by `${config.agile.max_gate_retries}`):
 
 - [ ] All five test levels green.
 - [ ] Unit line coverage ≥ `${config.quality_gates.unit_line_coverage_min}`%, branch ≥ `${config.quality_gates.unit_branch_coverage_min}`%.

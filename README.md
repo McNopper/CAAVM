@@ -9,12 +9,16 @@
 Requirements ───────────────► Acceptance / SW-Integration test
    Architecture ────────────► Module / Integration test
       Design ───────────────► Component test
-         Implementation ────► Unit test
-                  └► refactor ► quality gate ► next increment
+         Implementation ──┬─► Unit test
+            (worktrees) ──┘ integrate ► refactor ► quality gate ► next increment
+                  └► commit every phase onto main ─ re-run to deepen (mvp→harden→complete)
 ```
 
 Each backlog item runs one full **V-pass** (design top-down, verify bottom-up),
-and the V repeats every iteration — that's the *cyclic agile* part.
+and the V repeats every iteration — that's the *cyclic agile* part. CAAVM builds an
+**MVP first** and is **re-run to deepen**: one run advances the product by one maturity
+rung across the backlog, so `INPUT.md` is resolved over several meaningful loops. Every
+phase **commits onto `main`** as it finishes (and writes a file-level trace).
 
 ## How it's used
 
@@ -40,6 +44,8 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 ## Features
 
 - 🔁 **Cyclic V-Model** — requirements↔acceptance, architecture↔integration, design↔component, implementation↔unit.
+- 🪜 **MVP maturity ladder** — one run = one rung (`mvp → harden → complete`); **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
+- 🌳 **Commit-per-phase on `main`** — every phase persists + commits its content; parallel implementation runs in isolated git worktrees, merged back in an **Integrate** step. A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
 - 🤖 **Agentic** — a dedicated agent per stage; *independent* agents verify (adversarial).
 - 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → integration → acceptance`.
 - 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting, bounded refactor pass every increment.
@@ -75,8 +81,15 @@ You don't have to edit YAML to use CAAVM — you talk to it through two markdown
   resolved configuration, and after each increment a short status checklist (per-increment status,
   stage reached, gate result, the five test levels, open debt, next action).
 
-So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → jot more in `INPUT.md`._
-The process never edits your `INPUT.md`; you never edit its `OUTPUT.md`.
+So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → run again (to deepen) /
+jot more in `INPUT.md`._ The process never edits your `INPUT.md`; you never edit its `OUTPUT.md`.
+
+**Run it several times.** CAAVM follows an **MVP strategy**: one invocation advances the product by
+one maturity rung (`mvp → harden → complete`, see `config.strategy`) across the whole backlog. The
+first run builds the thinnest end-to-end MVP (edge cases deferred as logged debt); each later run
+reads `OUTPUT.md`, deepens, and re-checks `INPUT.md`, until every idea is resolved at the top rung.
+`OUTPUT.md` shows the current rung, the next rung, and a per-idea resolution table. Every phase
+commits its content onto `main` as it finishes, so progress is incremental and a run is resumable.
 
 ## Quick start
 
@@ -110,9 +123,12 @@ Run the caav-model workflow using config/caav-model.config.yaml as args.
 ```
 
 Claude parses the YAML, hands it in as `args` (merged over built-in defaults), and runs every
-increment end-to-end: requirements → architecture → design → TDD implementation → 5-level
-verification (independent agents) → bounded refactor pass → quality gate, returning a per-increment
-report + traceability matrix. The carry-forward ledger feeds each increment into the next.
+increment end-to-end at **this loop's maturity rung**: requirements → architecture → design → TDD
+implementation (parallel, in worktrees) → **integrate** (merge worktrees onto `main`) → 5-level
+verification (independent agents) → bounded refactor pass → quality gate, committing each phase as
+it finishes and returning a per-increment report + traceability matrix. The carry-forward ledger
+feeds each increment into the next; **re-run the workflow to climb to the next rung** until
+`INPUT.md` is fully resolved.
 
 > ⚠️ This spawns many subagents and can use significant tokens — run it when you've opted into
 > multi-agent orchestration (say "use a workflow").
@@ -172,10 +188,13 @@ acceptance verification → refactor (cross-check the refactoring & design-patte
 ```markdown
 <!-- .github/copilot-instructions.md -->
 This repo uses CAAVM. Treat config/caav-model.config.yaml as the single source of truth for
-language, tools, quality gates, reference catalogs, and toggles.documentation. For any feature
-work, follow docs/caav-model.process.md: build each project.backlog item as one V-pass with TDD
-and the five test levels, run the configured formatter/linters/tests as gates, keep docs minimal
-& effective, and carry decisions + debt forward between increments.
+language, tools, quality gates, reference catalogs, strategy, git, and toggles.documentation. For
+any feature work, follow docs/caav-model.process.md: build each project.backlog item as one V-pass
+with TDD and the five test levels, run the configured formatter/linters/tests as gates, keep docs
+minimal & effective, and carry decisions + debt forward between increments. Follow the MVP maturity
+ladder (strategy.maturity_levels: mvp → harden → complete) — build the thinnest slice first and
+deepen on re-runs, judging each loop against that rung's effective gates. Commit each phase onto the
+working branch as it finishes and write the per-phase trace file (living_artifacts.phase_trace).
 ```
 
 > The same file pattern works for **VS Code Copilot** and other Copilot surfaces, so the V-Model

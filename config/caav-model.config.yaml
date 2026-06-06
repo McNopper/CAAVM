@@ -31,6 +31,60 @@ project:
     #   acceptance: "..."
 
 # ---------------------------------------------------------------------------
+# MVP strategy & maturity ladder.
+# ---------------------------------------------------------------------------
+#  CAAVM is meant to be RE-RUN: one workflow invocation advances the product by
+#  exactly ONE maturity level (one "meaningful loop") across the whole backlog.
+#  The first run builds the thinnest end-to-end MVP; each later run reads the
+#  state in OUTPUT.md and DEEPENS the product, until every idea in INPUT.md is
+#  fully resolved at the top level. So the everyday rhythm is:
+#      jot in INPUT.md -> run (loop N) -> read OUTPUT.md -> run again (loop N+1)
+#  Each level may relax the quality_gates below; an empty `gates:` map means
+#  "use the strict quality_gates as-is". Effective gates = quality_gates with
+#  the level's overrides merged on top.
+# ---------------------------------------------------------------------------
+strategy:
+  approach: mvp                # mvp (climb the ladder) | full (strict gates from loop 1)
+  maturity_levels:
+    - name: mvp
+      intent: >
+        Thinnest end-to-end vertical slice that delivers user-visible value.
+        Happy path only; defer edge cases and non-functional hardening as logged
+        debt. The architecture must be extensible (not throwaway), but resist
+        gold-plating (YAGNI). Prove the core works before deepening.
+      gates:                   # relaxed for the first loop
+        unit_line_coverage_min: 50
+        unit_branch_coverage_min: 40
+        public_api_doc_coverage_min: 0
+    - name: harden
+      intent: >
+        Add the edge cases, error handling, and non-functional requirements that
+        were deferred at MVP. Pull items from the debt log and from any INPUT.md
+        ideas not yet resolved. Tighten robustness without changing scope.
+      gates:
+        unit_line_coverage_min: 70
+        unit_branch_coverage_min: 60
+        public_api_doc_coverage_min: 80
+    - name: complete
+      intent: >
+        Fully resolve INPUT.md: every requirement implemented, full robustness,
+        documentation complete, strict gates enforced. Nothing deferred.
+      gates: {}                # empty -> the strict quality_gates apply unchanged
+
+# ---------------------------------------------------------------------------
+# Git integration. Each phase commits its content onto the working branch as it
+# finishes (commit-per-phase), so progress lands on `main` incrementally and the
+# loop is resumable. Parallel implementation runs in isolated worktrees; their
+# branches are merged back onto the working branch in the Integrate phase before
+# verification. Set commit_per_phase:false to disable all workflow commits.
+# ---------------------------------------------------------------------------
+git:
+  commit_per_phase: true
+  branch: current             # "current" = whatever branch you launch on (normally main)
+  worktree_merge: true        # merge parallel impl worktree branches back before Verify
+  commit_prefix: "caav"       # commits look like: caav(mvp/INC-001): Architecture
+
+# ---------------------------------------------------------------------------
 # Feature toggles.
 # ---------------------------------------------------------------------------
 toggles:
@@ -158,12 +212,12 @@ agile:
   max_refactor_rounds: 2      # refactor passes per increment before re-gating
   max_gate_retries: 2         # times an increment may re-loop if a gate fails
   definition_of_done:
-    - "All five test levels green (unit, component, module, integration, acceptance)."
-    - "All quality_gates below satisfied."
-    - "Requirements <-> tests traceability matrix complete."
+    - "All five test levels green (unit, component, module, integration, acceptance) for the requirements IN SCOPE at this maturity level."
+    - "The EFFECTIVE quality_gates for this maturity level satisfied (strict gates with the level's relaxations merged on top)."
+    - "Requirements <-> tests traceability matrix complete for the in-scope requirements."
     - "No new linter/formatter/sanitizer findings."
-    - "Public API documented (minimal & effective)."
-    - "Increment report written and living artifacts updated."
+    - "Public API documented (minimal & effective; coverage scaled by the maturity level)."
+    - "Each phase committed on the working branch with its per-phase trace file written; increment report written and living artifacts updated."
 
 # ---------------------------------------------------------------------------
 # Living artifacts — every phase writes a PERSISTED artifact that is carried
@@ -177,6 +231,10 @@ living_artifacts:
   design:         "docs/design/<INC>.md + component-test specs"
   implementation: "code + tests (the executable specification)"
   increment:      "docs/increments/<INC>-report.md (shipped, gate results, smell->technique refactors, debt)"
+  # Per-phase trail written REGARDLESS of toggles.documentation (even 'off'): a small
+  # markdown file per phase so progress is trackable at the file level and every
+  # commit-per-phase is non-empty. This is process telemetry, not product docs.
+  phase_trace:    "docs/caav-model/trace/<INC>/<level>/<NN-phase>.md (one per phase per loop)"
 
 carry_forward:
   - "Each increment is given the prior ADRs, the current traceability matrix, and the debt log as input context."

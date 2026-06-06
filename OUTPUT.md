@@ -7,6 +7,12 @@
 
 _Last run: not yet run._
 
+## Loop & maturity
+
+<!-- Which loop this is and the maturity rung it ran. CAAVM advances ONE rung per run. -->
+
+- loop: — · this run's level: — · next run's level: — · INPUT.md fully resolved: —
+
 ## Captured from `INPUT.md`
 
 <!-- Intake records here what it read from INPUT.md and what it did with it. -->
@@ -15,18 +21,26 @@ _Last run: not yet run._
 |---------------|-----------|--------|
 | _nothing captured yet_ | — | — |
 
+## Resolution of `INPUT.md`
+
+<!-- How much of INPUT.md is resolved across loops. Status: resolved | partial | queued. -->
+
+| Input idea | Status | Note |
+|------------|--------|------|
+| _nothing captured yet_ | — | — |
+
 ## Resolved configuration (defaults + INPUT overrides)
 
 <!-- The effective settings actually used this run. -->
 
-- language: — · build: — · tests: — · docs toggle: — · per-phase models: —
+- language: — · build: — · tests: — · docs toggle: — · strategy: — · per-phase models: —
 
 ## Increments
 
 <!-- One line per backlog item. Example of the shape Report maintains: -->
 
-- [ ] **INC-001** — _title_ — `queued`
-  - stage reached: — · gate: — · debt: —
+- [ ] **INC-001** — _title_ — `queued` — rung reached: —
+  - stage reached: — · gate: — · debt / deferred to next loop: —
 
 ## Test levels (latest increment)
 
@@ -40,5 +54,7 @@ _Last run: not yet run._
 
 ---
 
-_Legend: `queued` → not started · `in-progress` → mid V-pass · `passed` → gate met ·
-`failed` → gate not met (re-looping). Checkbox ticked = increment passed its gate._
+_Legend: `queued` → not started · `in-progress` → mid V-pass · `passed` → gate met for
+the current rung · `failed` → gate not met (re-looping). Checkbox ticked = increment passed
+its gate at this loop's maturity rung. **Re-run the workflow to climb the ladder
+(mvp → harden → complete) until `INPUT.md` is fully resolved.**_

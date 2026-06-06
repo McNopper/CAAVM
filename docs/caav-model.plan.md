@@ -62,7 +62,54 @@ one short, complete V per increment.
 **Left arm** flows top-down; each stage refines the previous and *also designs the
 test* that will later verify it. **Right arm** executes bottom-up: units first,
 then components, then modules, then the final software-integration/acceptance
-test — exactly the order in `config.v_model.test_execution_order`.
+test — exactly the order in `config.v_model.test_execution_order`. Between the left
+and right arms sits an **Integrate** step that merges the parallel implementation
+worktrees back onto the working branch (see §2c).
+
+---
+
+## 2b. The MVP maturity ladder — run several times to resolve `INPUT.md`
+
+CAAVM does **not** try to build everything in one giant pass. It is meant to be
+**re-run**, and **one run advances the product by exactly one maturity rung** across
+the whole backlog (`config.strategy`):
+
+```
+ INPUT.md ─┐
+           ▼
+   run #1  ► loop @ mvp       ─ thinnest end-to-end slice; edge cases deferred as debt
+   run #2  ► loop @ harden    ─ pull deferred edge cases / non-functional reqs back in
+   run #3  ► loop @ complete  ─ strict gates, full robustness; INPUT.md fully resolved
+           ▲
+           └─ each loop reads OUTPUT.md state, deepens, and re-checks INPUT.md
+```
+
+Each rung may **relax the quality gates**; the *effective* gates are
+`config.quality_gates` with that rung's overrides merged on top (so `mvp` ships at,
+say, 50% coverage and no doc requirement, while `complete` enforces the strict
+defaults). The **Intake** step picks the rung for the run by reading the state in
+`OUTPUT.md`; the **Report** step records how much of `INPUT.md` is *resolved*
+(resolved / partial / queued) and what the next loop will do. So `INPUT.md` is
+"resolved in several meaningful loops": jot → run → read `OUTPUT.md` → run again,
+until everything is resolved at the top rung. Set `strategy.approach: full` to skip
+the ladder and enforce strict gates from loop 1.
+
+This is the MVP discipline folded into the cycle: prove the core works first, then
+deepen — never gold-plate ahead of need (YAGNI), never ship throwaway architecture.
+
+## 2c. Commit-per-phase — progress lands on `main` incrementally
+
+Every phase commits its content onto the working branch as it finishes
+(`config.git.commit_per_phase`), so `main` advances incrementally and a run is
+**resumable**. Implementation parallelizes in **isolated git worktrees**; the
+**Integrate** phase then merges those branches back onto the working branch
+(`git merge --no-ff`, conflicts resolved so no component is dropped) and confirms the
+assembled code still builds — before verification climbs the V. In addition, **every
+phase writes a small trace file** (`config.living_artifacts.phase_trace`,
+e.g. `docs/caav-model/trace/<INC>/<level>/04-implementation.md`) **regardless of the
+documentation toggle** — a file-level trail of the run that also keeps each per-phase
+commit non-empty. The trace is process telemetry; `minimal`/`off` only scale the
+*product* documentation, never this trail.
 
 ---
 
