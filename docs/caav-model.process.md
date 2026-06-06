@@ -20,6 +20,45 @@
 
 ---
 
+## Interface: `INPUT.md` → process → `OUTPUT.md`
+
+The human drives the whole loop through two markdown files at the project root
+(`${config.interface.input}` / `${config.interface.output}`):
+
+- **`INPUT.md` (you write, anytime — even mid-run).** Plain sentences: the language,
+  design style, tools, gates, docs level, and feature ideas. It can be **super minimal** —
+  the config already holds defaults, so you write only what should differ. A single
+  sentence is a valid input.
+- **Stage 0 — Intake (process).** Read `INPUT.md` and **update the project files to match**:
+  map high-level choices into `${config.x}` (language, toolchain, quality_gates,
+  toggles.documentation, models, …) and turn feature ideas into backlog increments. Record
+  what was captured back in `INPUT.md`; never delete the human's prose.
+- **`OUTPUT.md` (process writes).** After each increment, overwrite it with a short, structured
+  status checklist (per-increment checkbox + stage + gate + the five test levels + debt + next
+  action). The human reads state here; the loop re-checks `INPUT.md` for new ideas every cycle.
+
+## Recommended model per phase
+
+When your harness supports per-phase models (`${config.models}`), use a stronger tier for
+judgment-heavy phases and a cheaper one for mechanical work. Shipped default:
+
+| Phase | Recommended tier |
+|-------|------------------|
+| Intake | sonnet |
+| Requirements | sonnet |
+| Architecture | **opus** |
+| Design | **opus** |
+| Implementation (TDD) | sonnet |
+| Verification | haiku |
+| Refactor | sonnet |
+| Iteration Gate | **opus** |
+| Report | sonnet |
+
+On a single-model harness (e.g. Copilot CLI / manual), treat this as guidance — switch model
+manually for the opus phases if your tool allows, otherwise run the whole loop on one capable model.
+
+---
+
 ## Roles (one responsibility each)
 
 | Role | Owns | Hands off |

@@ -4,6 +4,7 @@ export const meta = {
   whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Pass the parsed config/caav-model.config.yaml as args (or rely on the built-in C++ defaults).',
   phases: [
     { title: 'Setup' },
+    { title: 'Intake', model: 'sonnet' },
     { title: 'Requirements', model: 'sonnet' },
     { title: 'Architecture', model: 'opus' },
     { title: 'Design', model: 'opus' },
@@ -11,6 +12,7 @@ export const meta = {
     { title: 'Verification', model: 'haiku' },
     { title: 'Refactor', model: 'sonnet' },
     { title: 'Iteration Gate', model: 'opus' },
+    { title: 'Report', model: 'sonnet' },
   ],
 }
 
@@ -108,7 +110,10 @@ const DEFAULTS = {
     verification: 'haiku',
     refactor: 'sonnet',
     gate: 'opus',
+    intake: 'sonnet',
+    report: 'sonnet',
   },
+  interface: { input: 'INPUT.md', output: 'OUTPUT.md' },
   layout: { source_dir: 'src/', include_dir: 'include/', test_dir: 'tests/', docs_dir: 'docs/', build_dir: 'build/' },
 }
 
@@ -136,6 +141,9 @@ const refs = cfg.references || {}
 // Per-phase model routing. Returns undefined when nothing is configured so the
 // agent inherits the session model (fully backward compatible).
 const modelFor = (key) => (cfg.models && (cfg.models[key] || cfg.models.default)) || undefined
+// Human <-> process interface files (read/written by agents, which have file tools).
+const inputFile = (cfg.interface && cfg.interface.input) || 'INPUT.md'
+const outputFile = (cfg.interface && cfg.interface.output) || 'OUTPUT.md'
 // Documentation toggle: full (arc42 + API docs + UML) | minimal (ADRs + sketch) | off (code/tests only)
 const docMode = (cfg.toggles && cfg.toggles.documentation) || 'full'
 const docInstruction =
@@ -146,6 +154,15 @@ const docInstruction =
       : `DOCUMENTATION IS FULL but MINIMAL & EFFECTIVE: use the arc42 sections ${JSON.stringify((refs.documentation || {}).sections || [])}, plus API docs and UML; document decisions and interfaces, not the obvious; mark irrelevant sections n/a.`
 
 // ---- schemas -------------------------------------------------------------
+const BACKLOG_ITEM = { type: 'object', additionalProperties: false, required: ['id', 'title'], properties: { id: { type: 'string' }, title: { type: 'string' }, acceptance: { type: 'string' } } }
+const BACKLOG_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['backlog'],
+  properties: { backlog: { type: 'array', items: BACKLOG_ITEM }, notes: { type: 'string' } },
+}
+const SYNC_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['new_items'],
+  properties: { new_items: { type: 'array', items: BACKLOG_ITEM }, output_written: { type: 'boolean' } },
+}
 const REQ_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['requirements', 'acceptance_tests'],
@@ -325,19 +342,39 @@ constraints) and debt (carried forward as future work) for the next cycle.`,
 }
 
 // ===========================================================================
-//  DRIVER — cyclic loop over the backlog, with bounded gate retries.
+//  DRIVER — Intake (INPUT.md) -> cyclic loop -> Report (OUTPUT.md).
 // ===========================================================================
 phase('Setup')
-const backlog = (cfg.project.backlog && cfg.project.backlog.length) ? cfg.project.backlog : (Array.isArray(args) ? args : [])
+let backlog = (cfg.project.backlog && cfg.project.backlog.length) ? cfg.project.backlog.slice() : (Array.isArray(args) ? args.slice() : [])
+
+// ---- INTAKE: ingest INPUT.md, update the project files, build the backlog ----
+phase('Intake')
+const intake = await agent(
+  `You are the Intake agent — the bridge between the human's free-form ${inputFile} and the project.
+Use your file tools to READ ${inputFile} at the project root (it holds loose ideas, requirements, and
+changes the human may add at any time). Then:
+1. Turn feature/requirement ideas into vertical-slice backlog increments (id INC-NNN, title, acceptance),
+   merged with the existing backlog ${JSON.stringify(backlog)} WITHOUT duplicating.
+2. If the input implies CONFIGURATION or process changes, UPDATE the project files accordingly and
+   minimally — primarily config/caav-model.config.yaml: language/standard, toolchain tools,
+   quality_gates thresholds, toggles.documentation, models.* routing, project.backlog. Stay consistent;
+   never invent changes the input does not ask for.
+3. In ${inputFile}, append a row to the "Captured" table for each idea you ingested (idea -> increment),
+   without deleting the human's prose.
+Return the full merged backlog.`,
+  { label: 'intake', phase: 'Intake', schema: BACKLOG_SCHEMA, model: modelFor('intake') })
+if (intake && intake.backlog && intake.backlog.length) backlog = intake.backlog
+
 if (!backlog.length) {
-  log('No backlog items found. Populate project.backlog in config/caav-model.config.yaml (or pass items as args).')
+  log(`No backlog items. Add ideas to ${inputFile} (or project.backlog in the config).`)
   return { error: 'empty_backlog', config_used: cfg.project.name }
 }
-log(`CAAVM starting for "${cfg.project.name}" — ${lang} — ${backlog.length} increment(s).`)
+log(`CAAVM starting for "${cfg.project.name}" — ${lang} — ${backlog.length} increment(s) from ${inputFile}/config.`)
 
 const results = []
 const ledger = []  // carry-forward memory: prior decisions + debt feed later increments
-for (let i = 0; i < backlog.length; i++) {
+let i = 0
+while (i < backlog.length) {
   let attempt = 0, res
   do {
     if (attempt > 0) log(`↻ Re-looping increment ${backlog[i].id || i + 1} (attempt ${attempt + 1})`)
@@ -345,10 +382,28 @@ for (let i = 0; i < backlog.length; i++) {
     attempt++
   } while (res.status === 'failed' && attempt <= (cfg.agile.max_gate_retries || 0))
   results.push({ ...res, attempts: attempt })
-  // append a compact summary so the next increment stays consistent with this one
   ledger.push({ tag: res.tag, title: res.title, decisions: res.key_decisions, debt: res.debt })
+
+  // ---- REPORT: rewrite OUTPUT.md and re-check INPUT.md for new/changed items ----
+  phase('Report')
+  const sync = await agent(
+    `You are the Reporting agent. Use your file tools.
+1. OVERWRITE ${outputFile} at the project root with a SHORT, structured checklist of the CURRENT state:
+   one line per backlog increment with a checkbox + status (queued / in-progress / passed / failed), the
+   V-Model stage reached, the gate result, the five test levels for the latest increment, open debt, and a
+   single "next action". Keep it minimal & effective.
+2. RE-READ ${inputFile} for any NEW or changed ideas not already represented in the backlog
+   ${JSON.stringify(backlog.map(b => b.id))}; return them as new_items (empty array if none) and add their
+   rows to the ${inputFile} "Captured" table.
+Current results so far: ${JSON.stringify(results)}.`,
+    { label: `report:${res.tag}`, phase: 'Report', schema: SYNC_SCHEMA, model: modelFor('report') })
+  if (sync && sync.new_items && sync.new_items.length) {
+    const known = new Set(backlog.map(b => b.id))
+    for (const it of sync.new_items) if (it && it.id && !known.has(it.id)) { backlog.push(it); known.add(it.id); log(`+ new item from ${inputFile}: ${it.id} — ${it.title}`) }
+  }
+  i++
 }
 
 const passed = results.filter(r => r.status === 'passed').length
-log(`CAAVM complete: ${passed}/${results.length} increment(s) passed the gate.`)
-return { project: cfg.project.name, language: lang, increments: results, summary: { passed, total: results.length } }
+log(`CAAVM complete: ${passed}/${results.length} increment(s) passed. See ${outputFile}.`)
+return { project: cfg.project.name, language: lang, increments: results, summary: { passed, total: results.length }, interface: { input: inputFile, output: outputFile } }

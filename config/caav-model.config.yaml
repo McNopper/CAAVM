@@ -58,6 +58,19 @@ models:
   verification: haiku       # mostly mechanical: run tests, report pass/fail + coverage
   refactor: sonnet          # smell detection + technique application
   gate: opus                # final Definition-of-Done judgment
+  intake: sonnet            # parse INPUT.md into backlog increments
+  report: sonnet            # write OUTPUT.md + resync with INPUT.md
+
+# ---------------------------------------------------------------------------
+# Human <-> process interface. Two markdown files at the project root:
+#   input  : you write loose ideas/requirements here, anytime (even mid-run);
+#            the Intake step ingests them into the backlog every cycle.
+#   output : the process overwrites this with a short, structured status
+#            checklist after every increment. (Do not hand-edit the output file.)
+# ---------------------------------------------------------------------------
+interface:
+  input: INPUT.md
+  output: OUTPUT.md
 
 # ---------------------------------------------------------------------------
 # Language under test. Change `name`/`standard` to retarget the whole model.

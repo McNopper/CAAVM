@@ -203,6 +203,17 @@ See [`../README.md`](../README.md) for the quickstart. In short:
 
 Both consume the same config file, so automated and manual runs stay consistent.
 
+### The `INPUT.md` / `OUTPUT.md` interface
+
+You normally don't touch YAML. Write plain sentences in `config.interface.input`
+(`INPUT.md`) — the language, design, tools, gates, and feature ideas — and the
+**Intake** step (Stage 0) updates the project files to match: high-level choices are
+written into `config/caav-model.config.yaml`, feature ideas become backlog increments.
+`INPUT.md` can be **super minimal** because the config carries defaults; you write only
+what should differ. After each increment the **Report** step overwrites
+`config.interface.output` (`OUTPUT.md`) with a short status checklist and re-reads
+`INPUT.md` for anything new — so you can keep adding ideas while the loop runs.
+
 ### Per-phase model routing
 
 `config.models` assigns a model tier (`opus`/`sonnet`/`haiku`) to each V-Model

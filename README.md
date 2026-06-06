@@ -29,11 +29,29 @@ and the V repeats every iteration — that's the *cyclic agile* part.
 ## Repository layout
 
 ```
-config/caav-model.config.yaml     # SOURCE OF TRUTH — edit this
+INPUT.md                          # YOU write loose ideas/requirements here (the interface in)
+OUTPUT.md                         # process writes a short status checklist here (the interface out)
+config/caav-model.config.yaml     # SOURCE OF TRUTH (sensible defaults) — Intake updates this
 docs/caav-model.plan.md           # methodology & rationale
 docs/caav-model.process.md        # portable step-by-step spec (any tool)
 .claude/workflows/caav-model.js   # runnable Claude Code workflow
 ```
+
+## The interface: `INPUT.md` ⇄ `OUTPUT.md`
+
+You don't have to edit YAML to use CAAVM — you talk to it through two markdown files:
+
+- **[`INPUT.md`](INPUT.md)** — write plain sentences, anytime (even while it runs): the language,
+  design, tools, gates, and feature ideas. The **Intake** step reads it and **updates the project
+  files to match** — high-level choices are written into `config/caav-model.config.yaml`, and
+  feature ideas become backlog increments. It can be **super minimal**: the config already holds
+  defaults (C++23, CMake+Ninja, clang-tidy/clang-format/cppcheck, GoogleTest, hexagonal design…),
+  so you only write what should *differ* — even a single sentence is a valid input.
+- **[`OUTPUT.md`](OUTPUT.md)** — the process overwrites this after each increment with a short,
+  structured checklist: per-increment status, stage reached, gate result, the five test levels,
+  open debt, and the next action. (Don't hand-edit it.)
+
+So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → jot more in `INPUT.md`._
 
 ## Quick start
 
@@ -44,10 +62,11 @@ docs/caav-model.process.md        # portable step-by-step spec (any tool)
 > plus your agent CLI (Claude Code or GitHub Copilot CLI). CI, if you add it, just re-runs the
 > same gate commands from the config.
 
-**Configure once.** Open [`config/caav-model.config.yaml`](config/caav-model.config.yaml) and set
-`language.*`, `toolchain.*`, `quality_gates.*`, `toggles.documentation`, and your
-`project.backlog` (each item = one V-pass). Every tool below reads this same file, so behavior
-is identical no matter which agent drives it.
+**Configure.** Easiest: write a sentence or two in [`INPUT.md`](INPUT.md) and let the Intake step
+update the config for you. Or edit [`config/caav-model.config.yaml`](config/caav-model.config.yaml)
+directly (`language.*`, `toolchain.*`, `quality_gates.*`, `toggles.documentation`, `models.*`,
+`project.backlog`). Either way it's the same source of truth, so behavior is identical no matter
+which agent drives it.
 
 Then drive it with your agent of choice — Claude Code or GitHub Copilot CLI, both running on your
 workstation.
