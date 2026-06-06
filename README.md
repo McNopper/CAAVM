@@ -18,7 +18,7 @@
  3. Architecture (per executable: modules) ─────►  8. Module test        (mocked)
  4. Design (per component: interface + units) ──►  7. Component test     (mocked)
  5. Implementation (per component: units, TDD) ─►  6. Unit test
-        on demand: integrate (assemble bottom-up) · refactor (any phase) · then quality gate
+        scaffold publishes interfaces + skeleton · each node verified on its branch, merged up only when green · refactor (any phase) · then quality gate
         commit every phase onto main · re-run to deepen (mvp → harden → complete)
 ```
 
@@ -57,11 +57,11 @@ The left arm decides this top-down (**phases 1→5**); the right arm verifies it
 (**phases 6→10**), each test level paired with the stage that produced its tier.
 
 **Why it parallelizes.** The decomposition is **interface-first**: as soon as a tier's interfaces
-exist, the work beneath it is decoupled. So each executable is architected on its own, each component
-is *designed-then-implemented* independently (a component can be implementing while another is still
-being designed), and every test level fans out per sibling (per component, per module, per executable).
-Work is assembled back **bottom-up** — units → components → modules → executables → system — merging
-automatically as each tier comes together. It is **highly parallel**.
+exist, the work beneath it is decoupled. So each executable is architected on its own, every component
+is implemented on its **own branch** in parallel (its units branch from it and merge back), and every
+test level fans out per sibling (per component, per module, per executable). Work is assembled back
+**bottom-up** — units → components → modules → executables → system — each node merging into its parent
+**only once its test is green**. It is **highly parallel**.
 
 **Forward decomposition, clear gates, targeted repair.** The left arm flows **forward only** — no
 backward jumps between design stages. Gaps surface in the **test phases**, which are clear gates. When
@@ -95,10 +95,10 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 
 - 🔁 **Cyclic V-Model (5↔5)** — requirements↔acceptance, software-system↔system, architecture↔module, design↔component, implementation↔unit.
 - 🧱 **Explicit composition hierarchy** — `system → software(executable) → module → component → unit` (each *one or more*; a unit in exactly one component; a component reusable across modules). Every element is **visible** (in `OUTPUT.md` + traces) and **independently tested** at its level.
-- ⚡ **Highly parallel, interface-first** — once a tier's interfaces exist the work decouples: each executable is architected on its own, each component is *designed-then-implemented* in a pipeline (one can implement while another still designs), and every test level fans out per sibling. Assembled back **bottom-up**.
+- ⚡ **Highly parallel, interface-first** — once interfaces are published (single-writer Scaffold) the work decouples: each executable is architected on its own, every component is implemented on its **own branch** (units branch from it, merge back), and every test level fans out per sibling. Assembled back **bottom-up** as a tree of gated merges — which is what lets it scale to **very complex systems**.
 - 🚥 **Clear gates + targeted repair** — the left arm flows forward only (no backward jumps); each test level is a gate. A red gate repeats the build loop for **only the failing element** (same rule at every level — unit, component, module, deployable) + refactor, then re-verifies. Passing siblings are never re-implemented. Bounded by `max_fix_rounds`.
 - 🪜 **MVP maturity ladder** — one run = one rung (`mvp → harden → complete`); **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
-- 🌳 **Commit-per-phase on `main`** — every phase persists + commits its content; parallel implementation runs in isolated git worktrees, merged back **on demand** (bottom-up assembly). A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
+- 🌳 **Commit-per-phase, gated-merge tree** — every phase persists + commits its content; each node is built on its own branch (worktree) and **merged into its parent only once its test is green** (unit→component→module→software→system→`main`), so `main` only ever holds verified work. A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
 - 🤖 **Agentic** — a dedicated agent per stage; *independent* agents verify (adversarial).
 - 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → system → acceptance`.
 - 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting; refactoring is **on-demand inside every phase** (red→green→refactor), with thresholds enforced at the gate.
@@ -176,15 +176,20 @@ Run the hephaestus workflow using config/hephaestus.config.yaml as args.
 ```
 
 Claude parses the YAML, hands it in as `args` (merged over built-in defaults), and runs every
-increment end-to-end at **this loop's maturity rung**: requirements → software system → architecture
-→ per-component design+implementation (parallel pipeline, in worktrees) → **integrate** (assemble
-bottom-up onto `main`) → 5 test gates (unit→component→module→system→acceptance, independent agents,
-refactoring on demand) → quality gate, committing each phase as it finishes and returning a
-per-increment report + traceability matrix. The carry-forward ledger feeds each increment into the
-next; **re-run the workflow to climb to the next rung** until `INPUT.md` is fully resolved.
+increment end-to-end at **this loop's maturity rung**: requirements → software system → architecture →
+design (all components, interfaces only) → **scaffold** (publish interfaces + a glob build skeleton onto the
+branch) → implementation (each component on its own branch, in worktrees) → a **bottom-up tree of gated
+merges** — each node is verified in isolation on its branch and merged into its parent only once green
+(unit→component→module→software→system), with the verified system landing on `main` → quality gate —
+committing each phase as it finishes and returning a per-increment report + traceability matrix. The
+carry-forward ledger feeds each increment into the next; **re-run the workflow to climb to the next rung**
+until `INPUT.md` is fully resolved.
 
-> ⚠️ This spawns many subagents and can use significant tokens — run it when you've opted into
-> multi-agent orchestration (say "use a workflow").
+> ⚠️ **This burns a LOT of tokens.** It spawns a subagent per component, per module, per deployable, per
+> test level, per fix round — across every increment and every maturity loop — so cost scales with the size
+> of your system and can be very large. **Strongly recommended: set a spend/token limit *before* you start**
+> (e.g. a token-budget directive like `+500k` on your prompt, or your client's usage cap) so a deep run
+> can't run away. Only invoke it once you've opted into multi-agent orchestration (say "use a workflow").
 
 **B) Single-agent / manual.** Tell Claude to follow the portable spec instead — useful for one
 increment, smaller token budgets, or step-by-step review:

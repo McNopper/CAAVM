@@ -74,14 +74,15 @@ strategy:
 # ---------------------------------------------------------------------------
 # Git integration. Each phase commits its content onto the working branch as it
 # finishes (commit-per-phase), so progress lands on `main` incrementally and the
-# loop is resumable. Parallel implementation runs in isolated worktrees; their
-# branches are merged back onto the working branch in the Integrate phase before
-# verification. Set commit_per_phase:false to disable all workflow commits.
+# loop is resumable. The right arm is a bottom-up TREE OF GATED MERGES: each node is
+# built on its own branch (worktree) and merged into its parent only once its test is
+# green (unit→component→module→software→system→main), so `main` only holds verified
+# work. Set commit_per_phase:false to disable all workflow commits.
 # ---------------------------------------------------------------------------
 git:
   commit_per_phase: true
   branch: current             # "current" = whatever branch you launch on (normally main)
-  worktree_merge: true        # merge parallel impl worktree branches back before Verify
+  worktree_merge: true        # merge each verified node up into its parent branch (component→module→software→system→main)
   commit_prefix: "hephaestus"       # commits look like: hephaestus(mvp/INC-001): Architecture
 
 # ---------------------------------------------------------------------------

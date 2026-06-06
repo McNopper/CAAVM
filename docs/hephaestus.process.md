@@ -18,8 +18,8 @@
 >
 > **Commit per phase, on the working branch (`${config.git}`).** Every phase persists its
 > content and commits it onto the current branch as it finishes, so progress lands on
-> `main` incrementally and the loop is resumable. Parallel implementation runs in isolated
-> git worktrees; their branches are merged back in an **Integrate** step before verification.
+> `main` incrementally and the loop is resumable. The right arm is a bottom-up **tree of gated
+> merges**: each node is built on its own branch and merged into its parent only once its test is green.
 > And **every phase writes a small trace file** (`${config.living_artifacts.phase_trace}`)
 > **regardless of the documentation toggle** — a file-level trail, and it keeps each commit
 > non-empty.
@@ -94,11 +94,12 @@ manually for the opus phases if your tool allows, otherwise run the whole loop o
 |------|------|-----------|
 | Requirements Analyst | Stage 1 + acceptance test spec | to Systems Architect |
 | Systems Architect    | Stage 2: topology + deployable executables | to Architect |
-| Architect            | Stage 3: per-deployable pattern + modules + module/system test plans | to Designer |
-| Designer             | Stage 4: per-component interface + units + component test spec | to Implementer |
-| Implementer (TDD)    | Stage 5 code + unit tests (in isolated worktrees) | to Integrator |
-| Integrator           | On demand: assemble units→…→system; merge worktrees onto the working branch | to Verifier |
-| Verifier             | Runs unit→component→module→system→acceptance | to Gatekeeper |
+| Architect            | Stage 3: per-deployable pattern + modules (+ packaging: static/shared·DLL/header-only) + module/system test plans | to Designer |
+| Designer             | Stage 4: per-component interface + units + component test spec (returns DATA only) | to Scaffolder |
+| Scaffolder           | Single writer: publish ALL interfaces + a glob build skeleton onto the working branch | to Implementer |
+| Implementer (TDD)    | Stage 5 code + unit tests — each component on its OWN branch (units branch from it, merge back) | to Integrator |
+| Integrator           | Per tier: merge each VERIFIED node into its parent branch (component→module→software→system→main) | to Verifier |
+| Verifier             | Verifies each node IN ISOLATION on its branch (unit→component→module→system→acceptance) | to Gatekeeper |
 | Gatekeeper           | Quality gates + Definition of Done | next increment |
 
 In the agentic version each role is a subagent; verification roles are run by
@@ -166,10 +167,10 @@ system test plan covers how the executables interact.
   `${config.references.software_architecture_patterns.catalog}` (Layered, Microservices,
   Event-Driven, Repository, CQRS, DDD, …) and justify it — e.g. the client may be **Layered with
   three modules**; the server its own pattern.
-- Decompose each deployable into **modules** (record each module's `deployable`) with clear
-  boundaries; apply `${config.clean_code.architecture}` and the dependency rule
-  (`${config.clean_code.dependency_rule}`). One or more modules compose a deployable; one or more
-  deployables compose the system.
+- Decompose each deployable into **modules** (record each module's `deployable`, and its `packaging` —
+  static library / shared library·DLL / header-only, default static) with clear boundaries; apply
+  `${config.clean_code.architecture}` and the dependency rule (`${config.clean_code.dependency_rule}`). One
+  or more modules compose a deployable; one or more deployables compose the system.
 - Define inter-module interface contracts; record decisions as short ADRs (context → decision →
   consequences). **Document using the arc42 template** `${config.references.documentation.sections}`.
 - Emit the coarse **component_plan** (the work-list of components per module — `{name, modules,
@@ -219,10 +220,11 @@ interface has a contract and a component test spec.
 ## Stage 5 — Software Implementation  →  (6) Unit Test (TDD)
 
 **Entry:** approved design (per-component interface + units).
-**Interface-first & parallel:** Stages 4 and 5 form a **per-component pipeline** — once a component's
-interface is designed it can be implemented while OTHER components are still being designed. Each
-component is implemented in its own **isolated git worktree**, coding only against interfaces (mock
-collaborators). State is **partial across loops** — reuse and EXTEND existing units, don't rebuild.
+**Branch-per-component & parallel:** Design completes for **all** components first (returning contracts as
+data), then **Scaffold** publishes their interfaces + the build skeleton; only then does implementation fan
+out — each component on its **own branch** (each unit branches from the component branch and merges back),
+coding only against the **published** interfaces (mock collaborators). State is **partial across loops** —
+reuse and EXTEND existing units, don't rebuild.
 **Do, per unit (red→green→refactor):**
 1. Write the failing unit test from the component contract
    (`${config.toolchain.test_frameworks.unit.tool}`).
@@ -240,23 +242,23 @@ collaborators). State is **partial across loops** — reuse and EXTEND existing 
 
 ---
 
-## Integrate (on demand) — assemble bottom-up onto the working branch
+## Scaffold (single writer) — publish interfaces + build skeleton onto the working branch
 
-Integration happens **when there is something to merge** (the parallel per-component worktrees). It
-assembles the composition hierarchy **bottom-up** — units → components → modules → deployables
-(executables) → system:
+Design returns each component's contract as **data only** (it writes nothing, so the parallel designers
+never race). Then exactly ONE writer prepares the working branch *before* implementation fans out:
 
-- `git worktree list --porcelain` to discover the branches; `git merge --no-ff` each one.
-- Resolve conflicts so **all** components survive; reconcile shared files (build config, shared
-  headers, test registration). Never drop a component; a shared component is integrated once.
-- **Assemble the hierarchy in the build**: group each module's components into its module target, each
-  module into its **deployable (executable)** target, and wire the deployables into the **system**
-  (topology) — so unit → component → module → deployable → system is reflected in the build structure.
-- Run the formatter and a build to confirm every executable compiles and links.
-- Prune merged worktrees (`git worktree remove`), then commit the integration.
+- Publish every component **interface** (headers/contracts under `${config.layout.include_dir}`,
+  component-test specs under `${config.layout.test_dir}`) so any implementer can **mock any collaborator**.
+- Establish a **glob-based build skeleton** (glob sources per target, presets, package manifest) so that
+  **adding a unit's source/test file later needs no edit to shared build config**. Reflect the hierarchy in
+  targets: unit → component → module → deployable (executable) → system. A module may be a **static
+  library, a shared library / DLL, or header-only** — the architecture's per-module choice (default static).
+- Reuse/extend what already exists across loops; never clobber working code. Commit once.
 
-If components were implemented inline (no worktrees), just ensure everything is committed on the
-working branch. Either way, write the phase trace file (below).
+This single-writer step is what keeps every later merge a **disjoint, conflict-free add**: the interfaces
+and the skeleton are the only shared artifacts, and they are on the branch *before* anyone forks from it.
+Implementation (Stage 5) then fans out with **one component per branch**; the bottom-up gated merges happen
+during verification (Stages 6–10 below). Each phase still writes its trace file (below).
 
 ---
 
@@ -276,10 +278,20 @@ This applies to **every** stage above, not a stage of its own:
 
 ---
 
-## Stages 6–10 — Verification (climb the V, bottom-up — fan out, then feed back)
+## Stages 6–10 — Verification & integration (a bottom-up tree of gated merges)
 
-Run the levels in the order `${config.v_model.test_execution_order}`. Each level **mirrors the
-composition hierarchy and fans out in parallel**, then acts as a **barrier** before the next:
+The right arm is a **tree of gated merges that mirrors the composition tree**. Each node is built/
+integrated **on its own branch**, verified **in isolation** by its tier's test, and merged into its
+**parent branch only once green** — unit → its component branch, component → its module branch, module → its
+software (executable) branch, software → the system branch, and the verified system → the working branch
+(`main`). So `main` only ever receives fully-verified work and siblings never collide — which is what lets
+**very complex systems** integrate cleanly.
+
+Each tier first **pulls the previous tier's verified child branches up** (an Integrator creates the parent
+branch, `git merge --no-ff`s the verified children in, writes that tier's glue — linking static libs,
+resolving shared libs/DLLs — and confirms it builds), then a **different agent than the implementer**
+verifies each node in isolation (adversarial). Run the levels in the order
+`${config.v_model.test_execution_order}`; each level is a **barrier/gate** before the next:
 
 6. **Unit tests** — *one verifier per component* (its units), fast, isolated, with
    `${config.toolchain.sanitizers}` enabled; collect coverage via `${config.toolchain.coverage.tool}`.
@@ -288,7 +300,8 @@ composition hierarchy and fans out in parallel**, then acts as a **barrier** bef
 9. **System tests** — *one verifier per deployable*: its modules compose into the executable, and it
    participates correctly in the topology with the other deployables (the system test plan).
 10. **Acceptance test** — *one verifier for the whole running system*, NO mocking: the Stage-1 scenarios
-    end to end, with concrete **evidence** (e.g. screenshots / recorded output / exit codes).
+    end to end, with concrete **evidence** (e.g. screenshots / recorded output / exit codes). On green, the
+    verified **system branch merges onto `main`** and the increment's per-node worktrees/branches are pruned.
 
 **A different agent than the implementer runs these** (adversarial verification).
 

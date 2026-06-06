@@ -53,7 +53,7 @@ that verifies it** (right, bottom-up). Phase **0** is the MVP loop that wraps th
  (5) Implementation ───────────────────────────────────────► ( 6) Unit test
         code (TDD), PER component                                  each unit is correct
                                                                    ▲
-   on demand: Integrate (assemble bottom-up) · Refactor (any phase) · then ITERATION GATE
+   Scaffold (publish interfaces + skeleton) · each node verified on its branch, merged up only when green · Refactor (any phase) · then ITERATION GATE
    gate pass ▸ next increment ·  gate fail ▸ re-loop (bounded)
 ```
 
@@ -69,10 +69,11 @@ software system ─┬─ software (executable) ─┬─ module ─┬─ compo
 **Left arm** flows top-down; each stage refines the previous, defines the *interface/contract*
 of the next, and *also designs the test* that verifies it. **Right arm** executes bottom-up
 in the order `config.v_model.test_execution_order`. The decomposition is **interface-first**,
-so once a level's contracts exist the work below runs **highly in parallel** (§3b, §4): each
-deployable is architected on its own, each component is designed-then-implemented independently,
-and each test level fans out per sibling. An **Integrate** step assembles it back bottom-up —
-units → components → modules → deployables → system (§2c).
+so once a level's contracts exist (published by the single-writer Scaffold) the work below runs **highly
+in parallel** (§3b, §4): each deployable is architected on its own, every component is implemented on its
+**own branch** (units branch from it), and each test level fans out per sibling. It is assembled back
+bottom-up as a **tree of gated merges** — units → components → modules → deployables → system, each node
+merging into its parent only once green (§2c).
 
 ---
 
@@ -105,13 +106,23 @@ the ladder and enforce strict gates from loop 1.
 This is the MVP discipline folded into the cycle: prove the core works first, then
 deepen — never gold-plate ahead of need (YAGNI), never ship throwaway architecture.
 
-## 2c. On-demand integration & refactoring; commit-per-phase
+## 2c. Gated-merge integration & on-demand refactoring; commit-per-phase
 
-**Integration is on-demand and bottom-up.** It happens when there is something to merge: the
-parallel per-component implementations (each in an **isolated git worktree**) are merged back onto
-the working branch (`git merge --no-ff`, conflicts resolved so no component is dropped) and the build
-**assembles the hierarchy** — units → components → modules → deployables (executables) → system — then
-confirms every executable still builds, before verification climbs the V.
+**Integration is a bottom-up TREE OF GATED MERGES.** The git branch tree mirrors the composition tree: a
+**unit** branches from its **component** branch (and merges back once its unit test is green); each
+**component** branch merges into its **module** branch; each **module** into its **software (executable)**
+branch; each **software** into the **system** branch; and the verified **system** finally merges onto the
+working branch (`main`). Every node is built/integrated **on its own branch**, verified **in isolation** by
+its tier's test, and merged into its parent **only once green** (`git merge --no-ff`) — so siblings never
+collide and `main` only ever receives fully-verified work. This per-node isolation is what lets
+**arbitrarily complex systems** integrate cleanly. A red node triggers a targeted repair on **that node's
+branch only**; already-green siblings are untouched. (A module may be packaged as a static library, a
+shared library / DLL, or header-only — the architecture chooses per module.)
+
+**Single-writer Scaffold before the fan-out.** Right after Design, one step publishes every component
+**interface** plus a **glob-based build skeleton** onto the working branch, so each implementer can mock any
+collaborator's contract and adding a unit's file needs no edit to shared build config — which keeps every
+downstream merge a disjoint, conflict-free add.
 
 **Refactoring is on-demand inside every phase** (not a separate numbered phase): whenever an agent
 spots a smell from the catalog while working, it applies the matching technique and keeps tests green
