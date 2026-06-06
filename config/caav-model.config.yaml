@@ -1,0 +1,242 @@
+# ============================================================================
+#  Cyclic Agentic Agile V-Model (CAAVM) — Project Configuration
+# ----------------------------------------------------------------------------
+#  This file is the SINGLE SOURCE OF TRUTH for everything language- and
+#  tool-specific. Edit it per project; the plan, the process spec, and the
+#  workflow all read their parameters from here.
+#
+#  How it reaches the workflow:
+#    The Claude Code Workflow engine cannot read files. When you run the
+#    workflow, the values below are parsed and handed in as `args` (JSON).
+#    Just tell Claude:  "Run the caav-model workflow with config/caav-model.config.yaml"
+#    and it will load this file and pass it through. The workflow also ships
+#    with C++ defaults that are merged UNDER these values, so anything you
+#    omit falls back to a sensible default.
+#
+#  Everything here is data — swap C++ for Rust/Go/Python/TS by editing values,
+#  no prose changes required.
+# ============================================================================
+
+project:
+  name: my-project
+  description: One-line description of what this software does.
+  # The backlog drives the cyclic loop: each increment is ONE full V-pass.
+  # Keep slices vertical (a thin end-to-end feature), not horizontal layers.
+  backlog:
+    - id: INC-001
+      title: "Example: parse and validate input file"
+      acceptance: "Given a malformed file, the tool reports the first error with line number and exits non-zero."
+    # - id: INC-002
+    #   title: "..."
+    #   acceptance: "..."
+
+# ---------------------------------------------------------------------------
+# Feature toggles.
+# ---------------------------------------------------------------------------
+toggles:
+  # Documentation switch — turn all the arc42/Doxygen/UML documentation on or off:
+  #   full    : arc42 architecture doc + API docs (toolchain.docs) + UML diagrams
+  #             (still kept minimal & effective per references.documentation.principle)
+  #   minimal : ADRs + a brief building-block sketch only; no full arc42 / API docs / UML
+  #   off     : no separate documentation — the code and tests are the specification
+  # When 'off', the "Public API documented" item is dropped from the Definition of Done.
+  documentation: full
+
+# ---------------------------------------------------------------------------
+# Language under test. Change `name`/`standard` to retarget the whole model.
+# ---------------------------------------------------------------------------
+language:
+  name: "C++"
+  standard: "c++20"            # c++17 | c++20 | c++23
+  compilers:                  # used for the build matrix
+    - "clang++ >= 17"
+    - "g++ >= 13"
+  style_guide: "C++ Core Guidelines"
+
+# ---------------------------------------------------------------------------
+# Toolchain. Each entry is referenced by name inside stage prompts and gates,
+# so naming a different tool here changes the commands the agents reason about.
+# ---------------------------------------------------------------------------
+toolchain:
+  build_system:
+    tool: "cmake"             # cmake | bazel | meson | make
+    generator: "Ninja"        # preferred generator (fast, cross-platform)
+    min_version: "3.28"
+    presets_file: "CMakePresets.json"
+  package_manager:
+    tool: "vcpkg"             # vcpkg | conan | none
+    manifest: "vcpkg.json"
+
+  formatter:
+    tool: "clang-format"
+    config_file: ".clang-format"
+    check_command: "clang-format --dry-run --Werror $FILES"
+    fix_command: "clang-format -i $FILES"
+
+  linters:
+    - tool: "clang-tidy"
+      config_file: ".clang-tidy"
+      command: "clang-tidy -p build $FILES"
+      fail_on_warning: true
+    - tool: "cppcheck"
+      command: "cppcheck --enable=all --error-exitcode=1 src/"
+      fail_on_warning: true
+
+  static_analysis:
+    - tool: "clang static analyzer"
+      command: "scan-build cmake --build build"
+
+  sanitizers:                 # enabled in the test build
+    - asan                    # address
+    - ubsan                   # undefined behavior
+    - tsan                    # thread (separate build)
+
+  test_frameworks:
+    unit:        { tool: "GoogleTest", mock: "GoogleMock" }   # or Catch2 / doctest
+    component:   { tool: "GoogleTest" }
+    integration: { tool: "ctest" }
+    acceptance:  { tool: "ctest + scenario harness" }          # or Cucumber-cpp for BDD
+
+  coverage:
+    tool: "llvm-cov"          # llvm-cov | gcovr | lcov
+    report_command: "llvm-cov report"
+
+  docs:
+    tool: "doxygen"
+    config_file: "Doxyfile"
+
+# ---------------------------------------------------------------------------
+# V-Model mapping. LEFT arm = decomposition/design, RIGHT arm = test level
+# that verifies it. Edit the descriptions, not the structure.
+# ---------------------------------------------------------------------------
+v_model:
+  # left stage            ->  right (verifying) test level
+  requirements:    { verifies_with: "acceptance / system / final software-integration test" }
+  architecture:    { verifies_with: "module integration test" }
+  design:          { verifies_with: "component test" }
+  implementation:  { verifies_with: "unit test" }
+  # Bottom-up test execution order on the right arm:
+  test_execution_order: [unit, component, module, software-integration, acceptance]
+
+# ---------------------------------------------------------------------------
+# Agile loop controls.
+# ---------------------------------------------------------------------------
+agile:
+  iteration_name: "sprint"
+  increment_scope: "one vertical feature slice from project.backlog"
+  tdd: true                   # red -> green -> refactor per unit
+  max_refactor_rounds: 2      # refactor passes per increment before re-gating
+  max_gate_retries: 2         # times an increment may re-loop if a gate fails
+  definition_of_done:
+    - "All five test levels green (unit, component, module, integration, acceptance)."
+    - "All quality_gates below satisfied."
+    - "Requirements <-> tests traceability matrix complete."
+    - "No new linter/formatter/sanitizer findings."
+    - "Public API documented (minimal & effective)."
+    - "Increment report written and living artifacts updated."
+
+# ---------------------------------------------------------------------------
+# Living artifacts — every phase writes a PERSISTED artifact that is carried
+# into the next cycle: living documentation that is the shared memory of the
+# project for BOTH the human and the agent. Keep them minimal & effective
+# (see references.documentation) and subject to the toggles.documentation switch.
+# ---------------------------------------------------------------------------
+living_artifacts:
+  requirements:   "docs/requirements/<INC>.md + a traceability matrix that grows each increment"
+  architecture:   "docs/architecture/arc42-*.md + ADRs (append-only) + UML diagrams"
+  design:         "docs/design/<INC>.md + component-test specs"
+  implementation: "code + tests (the executable specification)"
+  increment:      "docs/increments/<INC>-report.md (shipped, gate results, smell->technique refactors, debt)"
+
+carry_forward:
+  - "Each increment is given the prior ADRs, the current traceability matrix, and the debt log as input context."
+  - "Decisions and debt logged in one cycle become requirements/constraints for later cycles."
+  - "The agent uses these artifacts to stay consistent across iterations; the human uses them to review and steer."
+
+# ---------------------------------------------------------------------------
+# Quality gates. The Iteration Gate phase fails the increment if any are unmet.
+# Numbers are easy knobs; tighten them as the codebase matures.
+# ---------------------------------------------------------------------------
+quality_gates:
+  unit_line_coverage_min: 80          # %
+  unit_branch_coverage_min: 70        # %
+  cyclomatic_complexity_max: 10       # per function
+  function_length_max_lines: 60
+  clang_tidy_warnings_max: 0
+  cppcheck_warnings_max: 0
+  format_check: "enforced"            # enforced | advisory
+  sanitizers_clean: true
+  public_api_doc_coverage_min: 100    # %
+  traceability: "every requirement maps to >=1 acceptance test"
+
+# ---------------------------------------------------------------------------
+# Clean code / clean architecture guardrails the refactor pass enforces.
+# ---------------------------------------------------------------------------
+clean_code:
+  principles: [SOLID, DRY, KISS, YAGNI, "Law of Demeter", "Composition over inheritance"]
+  architecture: "Ports & Adapters (Hexagonal) — domain core has no I/O dependencies"
+  dependency_rule: "source dependencies point inward, toward the domain"
+  naming: "intention-revealing; no abbreviations; nouns for types, verbs for functions"
+  error_handling: "exceptions for exceptional flow; std::expected/Result for expected failures; no raw error codes"
+  resource_management: "RAII everywhere; no naked new/delete; smart pointers at ownership boundaries"
+  forbidden_smells:
+    - "god class / long parameter list"
+    - "primitive obsession"
+    - "feature envy"
+    - "shotgun surgery"
+    - "duplicated logic"
+    - "deep nesting (> 3 levels)"
+
+# ---------------------------------------------------------------------------
+# External reference catalogs — the authority sources each stage cross-checks
+# against. Swap a URL to change the authority; the embedded lists are the
+# canonical entries so agents can work without network access.
+# ---------------------------------------------------------------------------
+references:
+  software_architecture_patterns:
+    source: "https://tecnovy.com/en/top-10-software-architecture-patterns"
+    catalog: ["Layered (N-Tier)", "Client-Server", "Microservices", "Event-Driven",
+              "MVC", "Service-Oriented (SOA)", "Repository", "CQRS",
+              "Domain-Driven Design (DDD)", "Peer-to-Peer"]
+    rule: "The Architecture stage MUST name the chosen pattern(s) from this catalog and justify the choice in an ADR."
+  design_patterns:
+    source: "https://refactoring.guru/design-patterns"
+    creational: ["Factory Method", "Abstract Factory", "Builder", "Prototype", "Singleton"]
+    structural: ["Adapter", "Bridge", "Composite", "Decorator", "Facade", "Flyweight", "Proxy"]
+    behavioral: ["Chain of Responsibility", "Command", "Iterator", "Mediator", "Memento",
+                 "Observer", "State", "Strategy", "Template Method", "Visitor"]
+    rule: "The Design stage MUST justify each pattern it uses by name; never add a pattern without a problem it solves."
+  refactoring:
+    source: "https://refactoring.guru/refactoring"
+    smells:
+      bloaters: ["Long Method", "Large Class", "Primitive Obsession", "Long Parameter List", "Data Clumps"]
+      oo_abusers: ["Switch Statements", "Temporary Field", "Refused Bequest", "Alternative Classes with Different Interfaces"]
+      change_preventers: ["Divergent Change", "Shotgun Surgery", "Parallel Inheritance Hierarchies"]
+      dispensables: ["Comments", "Duplicate Code", "Lazy Class", "Data Class", "Dead Code", "Speculative Generality"]
+      couplers: ["Feature Envy", "Inappropriate Intimacy", "Message Chains", "Middle Man"]
+    techniques:
+      composing_methods: ["Extract Method", "Inline Method", "Extract Variable", "Replace Temp with Query", "Replace Method with Method Object", "Substitute Algorithm"]
+      moving_features: ["Move Method", "Move Field", "Extract Class", "Inline Class", "Hide Delegate", "Remove Middle Man"]
+      organizing_data: ["Self Encapsulate Field", "Replace Data Value with Object", "Replace Array with Object", "Change Value to Reference"]
+      simplifying_conditionals: ["Decompose Conditional", "Consolidate Conditional Expression", "Replace Nested Conditional with Guard Clauses", "Replace Conditional with Polymorphism", "Introduce Null Object"]
+      simplifying_calls: ["Rename Method", "Add/Remove Parameter", "Separate Query from Modifier", "Parameterize Method", "Preserve Whole Object"]
+      generalization: ["Pull Up/Push Down Method", "Extract Superclass", "Extract Interface", "Collapse Hierarchy", "Form Template Method", "Replace Inheritance with Delegation"]
+    rule: "The Refactor stage MUST name each detected smell from this catalog and the technique applied to remove it."
+  documentation:
+    source: "https://docs.arc42.org/home/"
+    template: "arc42"
+    sections: ["Introduction and Goals", "Constraints", "Context and Scope", "Solution Strategy",
+               "Building Block View", "Runtime View", "Deployment View", "Crosscutting Concepts",
+               "Architecture Decisions", "Quality Requirements", "Risks and Technical Debt", "Glossary"]
+    principle: "MINIMAL & EFFECTIVE — use the arc42 lean subset; document decisions, interfaces and rationale, not the obvious. Prefer a diagram over prose; mark irrelevant sections n/a. Avoid the 'Comments' and 'Speculative Generality' smells."
+    rule: "Architecture documentation MUST follow the arc42 section structure (only the sections that carry signal); API docs via toolchain.docs."
+
+# ---------------------------------------------------------------------------
+# Repository layout the agents assume (adjust to your project).
+# ---------------------------------------------------------------------------
+layout:
+  source_dir: "src/"
+  include_dir: "include/"
+  test_dir: "tests/"
+  docs_dir: "docs/"
+  build_dir: "build/"
