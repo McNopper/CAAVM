@@ -98,8 +98,8 @@ manually for the opus phases if your tool allows, otherwise run the whole loop o
 | Architect            | Stage 3: per-deployable pattern + modules (+ packaging: static/shared·DLL/header-only) + module/system test plans | to Designer |
 | Designer             | Stage 4: per-component interface + units + component test spec (returns DATA only) | to Scaffolder |
 | Scaffolder           | Single writer: publish ALL interfaces + a glob build skeleton onto the working branch | to Implementer |
-| Implementer (TDD)    | Stage 5 code + unit tests — each component on its OWN branch (units branch from it, merge back) | to Integrator |
-| Integrator           | Per tier: merge each VERIFIED node into its parent branch (component→module→software→system→main) | to Verifier |
+| Implementer (TDD)    | Stage 5 code + unit tests — each **unit** on its OWN branch (developer-style) | to Integrator |
+| Integrator           | Per tier: merge each VERIFIED node into its parent branch (unit→component→module→software→system→main) | to Verifier |
 | Verifier             | Verifies each node IN ISOLATION on its branch (unit→component→module→system→acceptance) | to Gatekeeper |
 | Gatekeeper           | Quality gates + Definition of Done | next increment |
 
@@ -148,7 +148,9 @@ increment fails its gate and re-loops (per `${config.agile.max_gate_retries}`).
 - Choose the system **topology** (e.g. standalone, **client-server**, service + CLI) and justify it.
 - Decompose the system into its **deployables** — the concrete **executables** it ships as. A
   client-server topology yields **two executables** (a client and a server). Give each
-  `{name, kind (executable/service/library), responsibility}`.
+  `{name, kind (executable/service/library), responsibility, interface}`. A software/executable **has an
+  interface too** — it just looks different: how it's driven and talks (CLI args, network protocol/port,
+  IPC, public API).
 - Capture the system **context**, **external interfaces**, and key **quality scenarios**.
 - Write the **system test plan**: how the deployables run **together** in the topology.
 **Exit criteria:** topology chosen; every deployable (executable) named with a responsibility; the
@@ -199,7 +201,8 @@ requirement maps to ≥1 module; the component_plan covers every module; arc42 d
   (Creational/Structural/Behavioral — Adapter, Strategy, Factory Method, Observer, …);
   justify each by the problem it solves — no pattern for its own sake (avoid the
   _Speculative Generality_ smell).
-- **unit(s) → component:** list the **units** that make up each component, each with a
+- **unit(s) → component:** list the **units** that make up each component, each with its own **interface**
+  (the unit's signature/contract — what its implementer codes against and what sibling units mock) and a
   unit-test spec. A unit belongs to **exactly one** component.
 - **component(s) → module:** record the module(s) each component is assigned to. A component
   **may serve several modules** — reuse it (it is implemented once), don't duplicate it.
@@ -221,11 +224,11 @@ interface has a contract and a component test spec.
 ## Stage 5 — Software Implementation  →  (6) Unit Test (TDD)
 
 **Entry:** approved design (per-component interface + units).
-**Branch-per-component & parallel:** Design completes for **all** components first (returning contracts as
+**Branch-per-unit & parallel:** Design completes for **all** components first (returning contracts as
 data), then **Scaffold** publishes their interfaces + the build skeleton; only then does implementation fan
-out — each component on its **own branch** (each unit branches from the component branch and merges back),
-coding only against the **published** interfaces (mock collaborators). State is **partial across loops** —
-reuse and EXTEND existing units, don't rebuild.
+out — **each unit on its own branch** (developer-style), coding only against the **published** interfaces
+(mock collaborators, including sibling units). The Component Tier later merges a component's unit branches
+into the component branch. State is **partial across loops** — reuse and EXTEND existing units, don't rebuild.
 **Do, per unit (red→green→refactor):**
 1. Write the failing unit test from the component contract
    (`${config.toolchain.test_frameworks.unit.tool}`).
@@ -262,8 +265,9 @@ never race). Then exactly ONE writer prepares the working branch *before* implem
 
 This single-writer step is what keeps every later merge a **disjoint, conflict-free add**: the interfaces
 and the skeleton are the only shared artifacts, and they are on the branch *before* anyone forks from it.
-Implementation (Stage 5) then fans out with **one component per branch**; the bottom-up gated merges happen
-during verification (Stages 6–10 below). Each phase still writes its trace file (below).
+Implementation (Stage 5) then fans out with **one unit per branch**; the bottom-up gated merges happen
+during verification (Stages 6–10 below), starting with the Component Tier merging a component's unit
+branches. Each phase still writes its trace file (below).
 
 ---
 
@@ -299,8 +303,9 @@ verifies each node in isolation (adversarial). **Each verifier builds and runs O
 target** (its CMake) — never the whole project; only the acceptance test builds the full system. Run the
 levels in the order `${config.v_model.test_execution_order}`; each level is a **barrier/gate** before the next:
 
-6. **Unit tests** — *one verifier per component*: build the component **once** and run all its unit tests
-   as a **batch**, with `${config.toolchain.sanitizers}` enabled; collect coverage via `${config.toolchain.coverage.tool}`.
+6. **Unit tests** — the Component Tier's Integrator first merges the component's **unit branches** into the
+   component branch; then *one verifier per component* builds it **once** and runs all its unit tests as a
+   **batch**, with `${config.toolchain.sanitizers}` enabled; collect coverage via `${config.toolchain.coverage.tool}`.
 7. **Component tests** — *one verifier per component*, each against its contract, collaborators **mocked**.
 8. **Module tests** — *one verifier per module*: its components compose; OTHER modules **mocked** at the boundary.
 9. **System tests** — *one verifier per deployable*: its modules compose into the executable, and it

@@ -70,17 +70,19 @@ software system ─┬─ software (executable) ─┬─ module ─┬─ compo
 of the next, and *also designs the test* that verifies it. **Right arm** executes bottom-up
 in the order `config.v_model.test_execution_order`. The decomposition is **interface-first**,
 so once a level's contracts exist (published by the single-writer Scaffold) the work below runs **highly
-in parallel** (§3b, §4): each deployable is architected on its own, every component is implemented on its
-**own branch** (units branch from it), and each test level fans out per sibling. It is assembled back
-bottom-up as a **tree of gated merges** — units → components → modules → deployables → system, each node
-merging into its parent only once green (§2c).
+in parallel** (§3b, §4): each deployable is architected on its own, every **unit** is implemented on its
+**own branch** (developer-style), and each test level fans out per sibling. It is assembled back bottom-up
+as a **tree of gated merges** — units → components → modules → deployables → system, each node merging into
+its parent only once green (§2c).
 
 ### The abstract shape — a lattice of gems
 
-Strip away the labels and each phase pair has one shape: a **down-phase takes one input and produces
-one-or-more outputs** (decompose, 1→N), and the paired **up-phase takes those several inputs and produces
-one output** (integrate + verify, N→1). So every node **splits then rejoins** — a **gem** ◆ — and because
-the split recurses all the way down, the whole increment isn't a flat "V" but a **lattice of nested gems**:
+Strip away the labels and this is **divide-and-conquer**: *divide* on the way down, *conquer* the leaves
+(the units), *combine* on the way up. Each phase pair has one shape — a **down-phase takes one input and
+produces one-or-more outputs** (divide, 1→N), and the paired **up-phase takes those several inputs and
+produces one output** (combine = integrate + verify, N→1). So every node **splits then rejoins** — a
+**gem** ◆ — and because the split recurses all the way down, the whole increment isn't a flat "V" but a
+**lattice of nested gems**:
 
 ```
               ◆ system            (1 → deployables → 1)
@@ -115,6 +117,14 @@ only the **interfaces** it mocks against (published once by Scaffold; Ports & Ad
 deliberately *blind* to everything outside its own facet. That blindness is not a limitation — it is what
 **licenses** cutting all of a gem's facets in parallel and rejoining them without conflict. The interface is
 the only thing that ever crosses a node boundary, up or down.
+
+**Every node has an interface — they just look different.** A system's interface is its external
+protocols/APIs; a **software (executable)'s** is how it's driven and talks (CLI args, network protocol/port,
+IPC, public API); a **module's** is its API contract; a **component's** is its class/function contract; a
+**unit's** is its signature. So the entire down-arm is one activity repeated at ever-finer grain — *define
+the interface of the next level* — and the **only place real code is written is the leaf unit**, against its
+own interface. Decomposition = interface definition; implementation = the leaves. (Each interface is
+published by Scaffold so it exists before anyone forks beneath it.)
 
 ---
 

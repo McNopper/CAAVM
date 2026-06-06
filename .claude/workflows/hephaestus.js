@@ -10,7 +10,7 @@ export const meta = {
     { title: 'Architecture', model: 'opus' },            // 3  modules define each deployable (validated by 8)
     { title: 'Design', model: 'opus' },                  // 4  components + units, interfaces (validated by 7) — returns DATA only
     { title: 'Scaffold', model: 'sonnet' },              // single writer: publish all interfaces + glob build skeleton onto the working branch
-    { title: 'Implementation (TDD)', model: 'sonnet' },  // 5  units (validated by 6) — each component on its OWN branch; units branch from it
+    { title: 'Implementation (TDD)', model: 'sonnet' },  // 5  units (validated by 6) — each unit on its OWN branch (developer-style), merged into its component
     // Right arm = a bottom-up TREE OF GATED MERGES. Each tier verifies a node IN ISOLATION on its
     // branch, then merges it into its PARENT branch; only the verified system lands on main.
     // (Tier phases mix verification (haiku) + integrate/repair (implementation) → no single model.)
@@ -271,7 +271,8 @@ const SYSTEM_SCHEMA = {
   required: ['topology', 'deployables'],
   properties: {
     topology: { type: 'string' },                                          // e.g. "standalone", "client-server", "service + CLI"
-    deployables: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'responsibility'], properties: { name: { type: 'string' }, kind: { type: 'string' }, responsibility: { type: 'string' } } } }, // e.g. { client, executable, ... }, { server, executable, ... }
+    deployables: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'kind', 'responsibility', 'interface'], properties: { name: { type: 'string' }, kind: { type: 'string' }, responsibility: { type: 'string' }, interface: { type: 'string' } } } }, // interface = HOW it's driven / talks: CLI args, network protocol/port, IPC, public API
+
     context: { type: 'string' },
     external_interfaces: { type: 'array', items: { type: 'string' } },
     quality_scenarios: { type: 'array', items: { type: 'string' } },
@@ -309,7 +310,7 @@ const COMPONENT_SCHEMA = {
     modules: { type: 'array', minItems: 1, items: { type: 'string' } },        // M:N — a component can serve several modules
     interface: { type: 'string' },                                             // the CONTRACT that decouples parallel work
     patterns: { type: 'array', items: { type: 'string' } },
-    units: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'unit_test_spec'], properties: { name: { type: 'string' }, unit_test_spec: { type: 'string' } } } },  // 1 unit : 1 component
+    units: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['name', 'interface', 'unit_test_spec'], properties: { name: { type: 'string' }, interface: { type: 'string' }, unit_test_spec: { type: 'string' } } } },  // 1 unit : 1 component; interface = the unit's signature/contract
     component_test_spec: { type: 'string' },
   },
 }
@@ -365,15 +366,17 @@ gates for this level (relaxations already merged over the strict gates): ${effGa
   // Every node's branch has a COMPUTED name, so no tier ever has to DISCOVER
   // branches — it knows exactly what to merge. The name reads like a path through
   // the V-tree and is a self-describing HINT: which loop, which V-stage, which kind,
-  // which node (readable slugs, not hashes). E.g.:
-  //   hephaestus/loop1/inc-001/mvp/s05-component/csv-parser
+  // which node (readable slugs, not hashes). The stage number is the test level that
+  // verifies that tier, so the name says how it will be checked. E.g.:
+  //   hephaestus/loop1/inc-001/mvp/s06-unit/csv-parser-tokenize
+  //   hephaestus/loop1/inc-001/mvp/s07-component/csv-parser
   //   hephaestus/loop1/inc-001/mvp/s08-module/core
   //   hephaestus/loop1/inc-001/mvp/s09-software/client
   //   hephaestus/loop1/inc-001/mvp/s10-system
-  // Tree: component ◄ module ◄ software ◄ system, all under one loop+increment+level
-  // prefix so the whole increment's branches are listable and prunable together.
+  // Tree: unit ◄ component ◄ module ◄ software ◄ system, all under one loop+increment+
+  // level prefix so the whole increment's branches are listable and prunable together.
   const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-  const stageOf = { component: '05', module: '08', software: '09', system: '10' }   // owning V-stage per kind
+  const stageOf = { unit: '06', component: '07', module: '08', software: '09', system: '10' }   // verifying V-stage per kind
   const refRoot = `${commitPrefix}/loop${loop}/${slug(tag)}/${slug(level)}`
   const br = (kind, name) => `${refRoot}/s${stageOf[kind] || '00'}-${kind}${name ? '/' + slug(name) : ''}`     // branch name (readable path)
   const wt = (kind, name) => `.hephaestus/wt/loop${loop}/${slug(tag)}/${slug(level)}/${kind}${name ? '/' + slug(name) : ''}` // worktree dir (gitignored)
@@ -402,7 +405,9 @@ ${mvpBanner}
 Define the SOFTWARE SYSTEM as a whole — the TOP of the composition hierarchy:
   • topology: choose the system style (e.g. standalone, client-server, service + CLI) and justify it briefly.
   • deployables: the concrete DELIVERABLES the system decomposes into — e.g. a client-server topology
-    yields TWO executables (a client and a server). Give each {name, kind (executable/service/library), responsibility}.
+    yields TWO executables (a client and a server). Give each {name, kind (executable/service/library),
+    responsibility, interface}. A software/executable HAS an interface too — it just looks different: HOW it
+    is driven and how it talks (CLI args, network protocol/port, IPC, or public API). Define it.
   • context, external_interfaces, and key quality_scenarios.
 At the "${level}" level keep this minimal but EXTENSIBLE. Each deployable will be architected into modules next.${commitDirective(tag, level, 2, 'Software-System')}`,
     { label: `system:${tag}`, phase: 'Software System', schema: SYSTEM_SCHEMA, model: modelFor('system') })
@@ -438,8 +443,9 @@ ${mvpBanner}
 INTERFACE-FIRST: define this component's public INTERFACE/contract precisely — that contract is what
 lets its implementation and its collaborators proceed IN PARALLEL (collaborators mock this interface).
 Then make the lower hierarchy explicit:
-  • units: list the UNITS that compose this component, each with a unit_test_spec. A unit belongs to
-    EXACTLY ONE component.
+  • units: list the UNITS that compose this component, each with its own INTERFACE (the unit's
+    signature/contract — function or class API) and a unit_test_spec. The unit interface is what its
+    implementer codes against and what SIBLING units mock; a unit belongs to EXACTLY ONE component.
   • modules: the module(s) this component serves (one or more), from ${JSON.stringify(plan.modules || [])}.
 Choose design patterns ONLY from this catalog (justify each by the problem it solves; YAGNI at the
 "${level}" level): creational ${JSON.stringify(dp.creational || [])}, structural ${JSON.stringify(dp.structural || [])},
@@ -450,36 +456,32 @@ Return the contract as DATA ONLY — do NOT write files and do NOT commit; the S
 component interfaces together as a single writer.`,
     { label: `design:${plan.name}`, phase: 'Design', schema: COMPONENT_SCHEMA, model: modelFor('design') })
 
-  // Implement ONE component on ITS OWN named branch+worktree, branched from the
-  // interface-complete working branch. Units branch FROM the component branch and merge
-  // BACK into it; the component branch (known name) is later merged into its module branch.
-  const implementComponent = (c) => agent(
-    `You are the Implementer using TDD in ${lang}. Implement component "${c.name}", which belongs to
-module(s) [${(c.modules || []).join(', ')}] and is composed of these UNITS: ${JSON.stringify((c.units || []).map(u => u.name))}.
+  // Implement ONE unit on ITS OWN named branch+worktree — like a developer working on
+  // their own branch — branched from the interface-complete working branch. The unit's
+  // source+test land in its component's dirs (its component's CMake globs them). The unit
+  // branch (known name) is merged into the component branch at the Component Tier.
+  const unitBranch = (c, u) => br('unit', `${c.name}-${u.name}`)
+  const implementUnit = (c, u) => agent(
+    `You are the Implementer — a developer on YOUR OWN branch — using TDD in ${lang}. Implement UNIT "${u.name}"
+of component "${c.name}" (module(s) [${(c.modules || []).join(', ')}]).
 ${mvpBanner}
-Interface/contract: ${c.interface}. Patterns: ${(c.patterns || []).join(', ')}.
-WORK IN ISOLATION on THIS COMPONENT'S BRANCH: create it from the working branch and check it out in its own
-worktree — \`git worktree add -b ${br('component', c.name)} ${wt('component', c.name)}\` — then \`cd\` there.
-Every component's interface was already published to the working branch (Scaffold), so mock any collaborator
-against its PUBLISHED contract. Touch ONLY this component's own files.
-PARTIAL STATE across loops: INSPECT existing code first; REUSE and EXTEND it, implement only the units
-missing or needing deepening at this level, and keep existing tests green — do not rebuild or duplicate.
-RECURSIVE BRANCHING (unit ◄ component): for EACH unit, \`git checkout -b\` a local unit branch FROM this
-component branch, do its red→green→refactor there (write the FAILING ${tf.unit.tool} test from its
-unit_test_spec, then minimal code to pass, then tidy), and MERGE the unit branch BACK into the component
-branch once its unit test is green. Units are disjoint, so they never collide. A unit's branch and any
-per-unit build target are TEMPORARY (for that inner loop only) — the unit's source/test land in THIS
-component's CMakeLists; nothing per-unit is committed as a build file. Unit specs: ${JSON.stringify(c.units || [])}.
-Then build the component ONCE and run ALL its unit tests as a single BATCH, plus the component self-test
-(collaborators mocked), so the component branch is green in isolation. At the "${level}" level implement only what the slice needs; defer the rest as TODO+debt.
-Put code under ${cfg.layout.source_dir}/${cfg.layout.include_dir}, tests under ${cfg.layout.test_dir}.
+YOUR unit's interface (code to satisfy it): ${u.interface}. Component contract: ${c.interface}. Patterns: ${(c.patterns || []).join(', ')}. Unit spec: ${JSON.stringify(u)}.
+WORK IN ISOLATION on YOUR UNIT BRANCH: create it from the working branch in its own worktree —
+\`git worktree add -b ${unitBranch(c, u)} ${wt('unit', `${c.name}-${u.name}`)}\` — then \`cd\` there.
+All interfaces were published to the working branch (Scaffold), so code ONLY against interfaces and MOCK
+every collaborator — including any SIBLING unit you depend on, against ITS published unit interface — so your
+unit branch builds in ISOLATION. Touch ONLY this unit's own files.
+PARTIAL STATE across loops: INSPECT existing code first; REUSE and EXTEND it, keep existing tests green —
+do not rebuild or duplicate.
+TDD: write the FAILING ${tf.unit.tool} test from the unit_test_spec, then the minimal code to pass, then tidy.
 ${refactorOnDemand}
-Return your "component" name and "units_implemented".
-Run ${fmt} and ${linters} on touched files. ${scopedBuild(`component "${c.name}" — its units and this component's own tests`)}
-Commit on branch ${br('component', c.name)} — \`git add -A\` and \`git commit -m "${commitPrefix}(${level}/${tag}): impl ${c.name}"\`.
-Then \`git worktree remove\` your worktree (the BRANCH ref persists for the Module Tier to merge up). Do NOT
-touch the working branch or other components' branches.`,
-    { label: `impl:${c.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, model: modelFor('implementation') })
+The unit has NO build file of its own — it compiles via component "${c.name}"'s CMakeLists, which globs its
+sources (on your branch only your unit's file is present, so it builds just this unit). ${scopedBuild(`unit "${u.name}" (build its test target, run only \`ctest -R ${slug(u.name)}\`)`)}
+Place source under ${cfg.layout.source_dir}/${cfg.layout.include_dir}, test under ${cfg.layout.test_dir}.
+Run ${fmt} and ${linters} on touched files. Commit on ${unitBranch(c, u)} — \`git add -A\` and
+\`git commit -m "${commitPrefix}(${level}/${tag}): impl unit ${c.name}/${u.name}"\` — then \`git worktree remove\`
+(the branch ref persists for the Component Tier to merge up). Do NOT touch the working branch or other units' branches.`,
+    { label: `impl:${c.name}/${u.name}`, phase: 'Implementation (TDD)', schema: IMPL_SCHEMA, model: modelFor('implementation') })
 
   // Forward pass through the upper-left stages.
   phase('Requirements');     const reqs = await runRequirements();       if (!reqs) return { tag, status: 'aborted', stage: 'requirements' }
@@ -520,17 +522,19 @@ touch the working branch or other components' branches.`,
   await agent(
     `You are the Scaffolder — the SINGLE WRITER that prepares the working branch before implementation fans
 out for increment ${tag} @ "${level}". ${docInstruction}
-1. Publish every component's INTERFACE/contract as header/interface files under ${cfg.layout.include_dir}
-   (and component-test specs under ${cfg.layout.test_dir}) so implementers can mock ANY collaborator.
-   Components & contracts: ${JSON.stringify(designed.map(c => ({ name: c.name, modules: c.modules, interface: c.interface, units: (c.units || []).map(u => u.name) })))}.
+1. Publish every INTERFACE as header/interface files under ${cfg.layout.include_dir} (and component-test
+   specs under ${cfg.layout.test_dir}) so any implementer can code/mock against a published contract — BOTH
+   each component's interface AND each unit's interface (its signature/contract). Interfaces &
+   contracts: ${JSON.stringify(designed.map(c => ({ name: c.name, modules: c.modules, interface: c.interface, units: (c.units || []).map(u => ({ name: u.name, interface: u.interface })) })))}.
 2. Establish/refresh a HIERARCHICAL ${cfg.toolchain.build_system.tool} build that MIRRORS the composition
    tree — ONE build file per PERSISTENT node: a CMakeLists.txt per component, per module, and per executable,
    composed bottom-up via add_subdirectory (a component's CMakeLists globs its unit sources and builds its
    tests; its module add_subdirectory's its components; the executable add_subdirectory's its modules; the
    root composes the system). UNITS have NO build file of their own — their source/test live inside their
-   component's CMakeLists (a single unit is exercised with a TEMPORARY throwaway target during TDD, mirroring
-   its temporary branch). So every persistent node has its OWN build file + target and builds & tests IN
-   ISOLATION, and adding a file is a LOCAL edit to that node's CMakeLists — never the root. Use generator
+   component's CMakeLists, which GLOBS them; each unit is developed on its OWN branch (it builds via that
+   glob — on a unit branch only that unit's file is present, so it builds just that unit) and is merged into
+   the component at the Component Tier. So every node builds & tests IN ISOLATION, and adding a file is a
+   LOCAL edit to its component's CMakeLists — never the root. Use generator
    ${cfg.toolchain.build_system.generator || '(configured)'}, presets, and the
    ${(cfg.toolchain.package_manager || {}).tool || 'package'} manifest. A MODULE may be built as a STATIC library, a
    SHARED library / DLL, or header-only — use what the architecture chose per module; default to static if
@@ -541,9 +545,12 @@ out for increment ${tag} @ "${level}". ${docInstruction}
 Confirm the skeleton configures (and, if prior code exists, still builds).${commitDirective(tag, level, 4, 'Scaffold')}`,
     { label: `scaffold:${tag}`, phase: 'Scaffold', model: modelFor('implementation') })
 
-  // ---- IMPLEMENTATION (fan out): each component on its OWN branch, from the branch --
+  // ---- IMPLEMENTATION (fan out): each UNIT on its OWN branch (developer-style) -------
+  // Fan out per unit across all components; each unit is built in isolation against the
+  // published interfaces (collaborators mocked). The Component Tier merges the unit
+  // branches into their component branch.
   phase('Implementation (TDD)')
-  await parallel(designed.map(c => () => implementComponent(c)))
+  await parallel(designed.flatMap(c => (c.units || []).map(u => () => implementUnit(c, u))))
 
   // ---- RIGHT ARM — a bottom-up TREE OF GATED MERGES (adversarial verifiers) --------
   // The branch tree mirrors the composition tree: unit ◄ component ◄ module ◄
@@ -662,11 +669,20 @@ Re-run ${fmt}/${linters} and the affected tests; keep every previously-passing t
   }
   // ---- ONE integrate operator, PARAMETERIZED PER TIER ----------------------
   // Same operator, different payload: create the node's NAMED branch+worktree,
-  // `git merge --no-ff` its already-verified child branches (known names, no
-  // discovery), write that tier's glue, build, commit. Only the per-kind rows below
-  // differ (role wording, which children, the glue, ordinal/phase, worktree lifetime).
-  // The component tier needs no integrator — implementers built the leaf components.
+  // `git merge --no-ff` its already-built child branches (known names, no discovery),
+  // write that tier's glue, build, commit. Only the per-kind rows below differ (role
+  // wording, which children, the glue, ordinal/phase, worktree lifetime). The operator
+  // runs at EVERY persistent merge boundary — unit ◄ component ◄ module ◄ software ◄
+  // system — children are durable branches built by OTHER agents, merged here by an
+  // independent Integrator and then verified adversarially.
   const INTEGRATORS = {
+    component: {
+      ord: 7, phase: 'Component Tier',
+      role: (c) => `COMPONENT "${c}"`,
+      children: (c) => { const comp = components.find(x => x.name === c); return ((comp && comp.units) || []).map(u => br('unit', `${c}-${u.name}`)) },
+      glue: (c) => `write/refresh component "${c}"'s CMakeLists so it GLOBS the merged unit sources + tests into the component target, then build the component ONCE and run all its unit tests as a BATCH`,
+      keepWorktree: false, isolate: 'Do NOT modify other components.',
+    },
     module: {
       ord: 8, phase: 'Module Tier',
       role: (m) => `MODULE "${m}"`,
@@ -711,7 +727,7 @@ ${wtTail} ${S.isolate}${commitDirective(tag, level, S.ord, `Integrate-${kind}${n
   const verifications = []
   let climbBroken = false
   const tiers = [
-    { phase: 'Component Tier', levels: ['unit', 'component'], integrate: null },
+    { phase: 'Component Tier', levels: ['unit', 'component'], integrate: () => parallel(components.map(c => () => integrate('component', c.name))) },
     { phase: 'Module Tier',    levels: ['module'],            integrate: () => parallel(moduleNames.map(m => () => integrate('module', m))) },
     { phase: 'Software Tier',  levels: ['system'],            integrate: () => parallel((deployableNames.length ? deployableNames : ['system']).map(d => () => integrate('software', d))) },
     { phase: 'System Tier',    levels: ['acceptance'],        integrate: () => integrate('system') },

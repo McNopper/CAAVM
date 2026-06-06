@@ -57,9 +57,9 @@ The left arm decides this top-down (**phases 1→5**); the right arm verifies it
 (**phases 6→10**), each test level paired with the stage that produced its tier.
 
 **Why it parallelizes.** The decomposition is **interface-first**: as soon as a tier's interfaces
-exist, the work beneath it is decoupled. So each executable is architected on its own, every component
-is implemented on its **own branch** in parallel (its units branch from it and merge back), and every
-test level fans out per sibling (per component, per module, per executable). Work is assembled back
+exist, the work beneath it is decoupled. So each executable is architected on its own, every **unit** is
+implemented on its **own branch** in parallel (developer-style), and every test level fans out per sibling
+(per component, per module, per executable). Work is assembled back
 **bottom-up** — units → components → modules → executables → system — each node merging into its parent
 **only once its test is green**. It is **highly parallel**.
 
@@ -95,7 +95,7 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 
 - 🔁 **Cyclic V-Model (5↔5)** — requirements↔acceptance, software-system↔system, architecture↔module, design↔component, implementation↔unit.
 - 🧱 **Explicit composition hierarchy** — `system → software(executable) → module → component → unit` (each *one or more*; a unit in exactly one component; a component reusable across modules). Every element is **visible** (in `OUTPUT.md` + traces) and **independently tested** at its level.
-- ⚡ **Highly parallel, interface-first** — once interfaces are published (single-writer Scaffold) the work decouples: each executable is architected on its own, every component is implemented on its **own branch** (units branch from it, merge back), and every test level fans out per sibling. Assembled back **bottom-up** as a tree of gated merges — which is what lets it scale to **very complex systems**.
+- ⚡ **Highly parallel, interface-first** — once interfaces are published (single-writer Scaffold) the work decouples: each executable is architected on its own, every **unit** is implemented on its **own branch** (developer-style), and every test level fans out per sibling. Assembled back **bottom-up** as a tree of gated merges (unit→component→module→software→system) — which is what lets it scale to **very complex systems**.
 - 🚥 **Clear gates + targeted repair** — the left arm flows forward only (no backward jumps); each test level is a gate. A red gate repeats the build loop for **only the failing element** (same rule at every level — unit, component, module, deployable) + refactor, then re-verifies. Passing siblings are never re-implemented. Bounded by `max_fix_rounds`.
 - 🪜 **MVP maturity ladder** — one run = one rung (`mvp → harden → complete`); **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
 - 🌳 **Commit-per-phase, gated-merge tree** — every phase persists + commits its content; each node is built on its own branch (worktree) and **merged into its parent only once its test is green** (unit→component→module→software→system→`main`), so `main` only ever holds verified work. A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
