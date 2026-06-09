@@ -34,7 +34,9 @@
 ## ✨ Features / requirements (what the software should do)
 
 > One idea per bullet is easiest, but free prose is fine. Each becomes a backlog
-> increment (one vertical V-pass).
+> increment (one vertical V-pass). The process builds each as a **walking skeleton** first
+> (the thinnest end-to-end slice that works) and deepens it over later runs — so you may
+> optionally hint at the riskiest part or the thinnest useful version, but you don't have to.
 
 - 
 

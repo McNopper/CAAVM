@@ -1,15 +1,16 @@
 export const meta = {
   name: 'hephaestus',
-  description: 'Cyclic Agentic Agile V-Model with an MVP maturity ladder: ONE run advances the product by one maturity level (loop) across the backlog — re-run to deepen until INPUT.md is fully resolved. Per increment it runs a full V-pass (requirements->software-system->architecture->design->implementation, mirrored by acceptance/system/module/component/unit tests) with TDD, adversarial verification, a clean-code refactor pass, and quality gates, committing each phase onto the working branch. Language/toolchain are fully config-driven (default: C++).',
-  whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates. Re-runnable: each invocation is one MVP/deepening loop. Pass the parsed config/hephaestus.config.yaml as args (or rely on the built-in C++ defaults).',
+  description: 'Cyclic Agentic Agile V-Model — HYBRID top-down + bottom-up. Top-down decomposition is PROVISIONAL (a hypothesis); each increment builds a WALKING SKELETON first (the thinnest end-to-end vertical slice of real units, bottom-up), they meet in the middle, and an ADAPTATION step promotes validated contracts provisional->stable and revises what the running code disproved (controlled feedback up). Maturity is tracked PER SLICE (mvp->harden->complete); a run advances every slice that is ready — re-run to deepen until INPUT.md is fully resolved. Per increment it runs a full V-pass (requirements->software-system->architecture->design->slice-select->implementation, mirrored by acceptance/system/module/component/unit tests) with TDD, adversarial verification, on-demand refactoring, an assumption-debt ledger, and quality gates, committing each phase onto the working branch. Language/toolchain are fully config-driven (default: C++).',
+  whenToUse: 'Building or extending software increment-by-increment with V-Model traceability, TDD, and enforced clean-code gates, where the architecture should be proven by running code (walking skeleton) rather than fully pinned down up front. Re-runnable: each invocation deepens the slices that are ready. Pass the parsed config/hephaestus.config.yaml as args (or rely on the built-in C++ defaults).',
   phases: [
     { title: 'Setup' },
     { title: 'Intake', model: 'sonnet' },
     { title: 'Requirements', model: 'sonnet' },          // 1  (validated by 10)
     { title: 'Software System', model: 'opus' },         // 2  topology + deployables/executables (validated by 9)
-    { title: 'Architecture', model: 'opus' },            // 3  modules define each deployable (validated by 8)
-    { title: 'Design', model: 'opus' },                  // 4  components + units, interfaces (validated by 7) — returns DATA only
-    { title: 'Scaffold', model: 'sonnet' },              // single writer: publish all interfaces + glob build skeleton onto the working branch
+    { title: 'Architecture', model: 'opus' },            // 3  modules define each deployable (validated by 8) — PROVISIONAL contracts
+    { title: 'Design', model: 'opus' },                  // 4  components + units, interfaces (validated by 7) — PROVISIONAL, returns DATA only
+    { title: 'Slice Selection', model: 'sonnet' },       // 4b pick the walking-skeleton vertical slice; seed the assumption-debt ledger
+    { title: 'Scaffold', model: 'sonnet' },              // single writer: publish THIS slice's interfaces + glob build skeleton (partial, grows each cycle)
     { title: 'Implementation (TDD)', model: 'sonnet' },  // 5  units (validated by 6) — each unit on its OWN branch (developer-style), merged into its component
     // Right arm = a bottom-up TREE OF GATED MERGES. Each tier verifies a node IN ISOLATION on its
     // branch, then merges it into its PARENT branch; only the verified system lands on main.
@@ -18,6 +19,7 @@ export const meta = {
     { title: 'Module Tier' },                            // 8    module test (others mocked); merge each verified module → its software branch
     { title: 'Software Tier' },                          // 9    system test per executable; merge each verified executable → the system branch
     { title: 'System Tier' },                            // 10   acceptance (whole system, no mocks); merge the verified system → main
+    { title: 'Adaptation', model: 'opus' },              // controlled feedback up: promote provisional→stable, revise disproven design, retire stubs, produce traceability
     { title: 'Iteration Gate', model: 'opus' },
     { title: 'Report', model: 'sonnet' },
   ],
@@ -64,13 +66,26 @@ const DEFAULTS = {
     design: { verifies_with: 'component test (mocked)' },
     implementation: { verifies_with: 'unit test' },
     test_execution_order: ['unit', 'component', 'module', 'system', 'acceptance'],
+    // CONTROLLED BIDIRECTIONAL FEEDBACK (not forward-only): the left arm decomposes
+    // PROVISIONALLY (a hypothesis), the right arm proves it bottom-up, and the
+    // Adaptation step is the ONLY place evidence flows back UP to revise the design —
+    // preserving traceability. Bounded by agile.max_adaptation_rounds.
+    adaptation: {
+      runs_after: 'the bottom-up tiers verify the walking-skeleton slice',
+      promotes: 'contracts validated by running code: provisional -> stable',
+      revises: 'architecture/design the running code disproved (re-decompose only the affected branch)',
+      retires: 'stubs/drivers whose retirement condition is now met (assumption-debt ledger)',
+      resyncs: 'the requirements<->tests traceability matrix (produced as a persisted artifact)',
+    },
   },
   agile: {
-    iteration_name: 'sprint', tdd: true, max_refactor_rounds: 2, max_gate_retries: 2, max_fix_rounds: 2,
+    iteration_name: 'sprint', tdd: true, max_refactor_rounds: 2, max_gate_retries: 2, max_fix_rounds: 2, max_adaptation_rounds: 2,
     definition_of_done: [
-      'All five test levels green (unit, component, module, system, acceptance) for the requirements IN SCOPE at this maturity level.',
+      'All five test levels green (unit, component, module, system, acceptance) for the requirements IN SCOPE at this slice/maturity level.',
       "The EFFECTIVE quality_gates for this maturity level satisfied (strict gates with the level's relaxations merged on top).",
-      'Requirements <-> tests traceability matrix complete for the in-scope requirements.',
+      'Requirements <-> tests traceability matrix PRODUCED (persisted artifact) and complete for the in-scope requirements.',
+      'Adaptation done: contracts validated by running code promoted provisional -> stable; design the code disproved revised.',
+      'Assumption/stub debt ledger updated: every provisional contract/stub/driver has an owner and a retirement condition; satisfied ones retired.',
       'No new linter/formatter/sanitizer findings.',
       'Public API documented (minimal & effective; coverage scaled by the maturity level).',
       'Each phase committed on the working branch with its per-phase trace file written; increment report written and living artifacts updated.',
@@ -113,15 +128,29 @@ const DEFAULTS = {
       sections: ['Introduction and Goals', 'Constraints', 'Context and Scope', 'Solution Strategy', 'Building Block View', 'Runtime View', 'Deployment View', 'Crosscutting Concepts', 'Architecture Decisions', 'Quality Requirements', 'Risks and Technical Debt', 'Glossary'],
     },
   },
-  // MVP maturity ladder: one run advances the product by ONE level across the
-  // backlog; re-run to climb. Each level may relax quality_gates (merged on top).
+  // HYBRID construction with a PER-SLICE MVP maturity ladder. The top-down
+  // decomposition is PROVISIONAL; each increment builds a WALKING SKELETON (thinnest
+  // end-to-end slice) first, bottom-up, then climbs its own rung. A run advances every
+  // slice that is ready; re-run to deepen. Each level may relax quality_gates (merged on top).
   strategy: {
-    approach: 'mvp',  // mvp | full
+    approach: 'mvp',          // mvp | full
+    construction: 'hybrid',   // hybrid (top-down intent + bottom-up evidence) | top_down
+    spine_first: true,        // build the walking-skeleton vertical slice before widening
+    maturity_scope: 'per_slice', // per_slice (each slice climbs its own ladder) | whole_backlog
     maturity_levels: [
       { name: 'mvp', intent: 'Thinnest end-to-end vertical slice that delivers user-visible value. Happy path only; defer edge cases and non-functional hardening as logged debt. Architecture extensible (not throwaway), but resist gold-plating (YAGNI).', gates: { unit_line_coverage_min: 50, unit_branch_coverage_min: 40, public_api_doc_coverage_min: 0 } },
       { name: 'harden', intent: 'Add the edge cases, error handling, and non-functional requirements deferred at MVP. Pull items from the debt log and from INPUT.md ideas not yet resolved. Tighten robustness without changing scope.', gates: { unit_line_coverage_min: 70, unit_branch_coverage_min: 60, public_api_doc_coverage_min: 80 } },
       { name: 'complete', intent: 'Fully resolve INPUT.md: every requirement implemented, full robustness, documentation complete, strict gates enforced. Nothing deferred.', gates: {} },
     ],
+  },
+  // HYBRID top-down + bottom-up specifics (walking skeleton / sandwich integration).
+  hybrid: {
+    walking_skeleton: 'the thinnest executable end-to-end slice that crosses every tier (unit->...->system) and exercises the riskiest architectural assumptions; built bottom-up with REAL units (not stubs end-to-end)',
+    slice_selection: 'pick the slice anchored to a requirement / risk probe / architectural seam — never an arbitrary pile of easy utilities (no reverse-YAGNI)',
+    contract_states: ['provisional', 'stable'], // provisional = hypothesis (may change); stable = validated by running code
+    partial_scaffold: true,   // Scaffold publishes only THIS slice's interfaces + skeleton; it grows cycle by cycle
+    feedback: 'controlled_bidirectional', // evidence may revise the design, but ONLY through the Adaptation gate
+    assumption_debt: 'every provisional interface, stub or driver is first-class debt with an owner and a retirement condition; tracked in the ledger and retired as soon as real code replaces it',
   },
   // Commit-per-phase: each phase lands its content on the working branch as it
   // finishes; parallel impl worktrees are merged back in the Integrate phase.
@@ -135,9 +164,11 @@ const DEFAULTS = {
     system: 'opus',
     architecture: 'opus',
     design: 'opus',
+    slice: 'sonnet',
     implementation: 'sonnet',
     verification: 'haiku',
     refactor: 'sonnet',
+    adaptation: 'opus',
     gate: 'opus',
     intake: 'sonnet',
     report: 'sonnet',
@@ -196,6 +227,13 @@ const ladderNames = ladder.map(l => l.name)
 const levelByName = (name) => ladder.find(l => l.name === name) || ladder[0]
 // Effective gates for a level = strict quality_gates with the level's relaxations merged on top.
 const gatesForLevel = (lvl) => JSON.stringify({ ...cfg.quality_gates, ...((lvl && lvl.gates) || {}) })
+// HYBRID construction flags: build a walking-skeleton vertical slice first (bottom-up)
+// before widening, and track maturity PER SLICE rather than across the whole backlog.
+const hybridOn = (strategy.construction || 'top_down') === 'hybrid'
+const spineFirst = hybridOn && strategy.spine_first !== false
+const perSlice = (strategy.maturity_scope || 'whole_backlog') === 'per_slice'
+const maxAdaptRounds = (cfg.agile && cfg.agile.max_adaptation_rounds != null) ? cfg.agile.max_adaptation_rounds : 2
+const hybridCfg = cfg.hybrid || {}
 
 // ---- commit-per-phase + per-phase trace ------------------------------------
 // Appended to every phase prompt so the phase's content lands on the working
@@ -215,6 +253,11 @@ const docsDir = (cfg.layout && cfg.layout.docs_dir) || 'docs/'
 let activeLoop = 1
 const tracePath = (tag, level, n, phaseName) =>
   `${docsDir}hephaestus/trace/${tag}/loop${activeLoop}-${level}/${String(n).padStart(2, '0')}-${phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
+// Persisted hybrid living artifacts (produced AND read back across increments/loops):
+//  • the requirements<->tests traceability matrix grows per increment (one file per increment id);
+//  • the assumption/stub debt ledger is a SINGLE shared file every increment appends to and reads.
+const traceabilityPath = (tag) => `${docsDir}hephaestus/traceability/${String(tag).toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`
+const assumptionLedgerPath = `${docsDir}hephaestus/debt/assumptions.md`
 // n = phase ordinal within the V-pass (for stable, sortable trace filenames).
 const commitDirective = (tag, level, n, phaseName) => {
   const trace = `\nTRACE (always, regardless of the documentation toggle): write a short markdown file to "${tracePath(tag, level, n, phaseName)}" capturing this phase — heading "${phaseName} — ${tag} @ ${level}", then a few bullets: key outputs/decisions, anything DEFERRED to a later loop, files touched, and a one-line status. Keep it minimal & effective; it is a file-level trail, not product documentation.`
@@ -231,7 +274,7 @@ const maxRefactorRounds = (cfg.agile && cfg.agile.max_refactor_rounds != null) ?
 const refactorOnDemand = `REFACTORING IS ON-DEMAND (part of this phase, not a separate phase): whenever you spot a smell from the catalog while working, apply the matching technique right away and keep all tests green. Keep it bounded — at most ${maxRefactorRounds} focused refactor pass(es) within this phase (YAGNI; don't gold-plate). Smells ${JSON.stringify((refs.refactoring || {}).smells || [])}; techniques ${JSON.stringify((refs.refactoring || {}).techniques || [])}; honor clean-code rules ${cc}.`
 
 // ---- schemas -------------------------------------------------------------
-const BACKLOG_ITEM = { type: 'object', additionalProperties: false, required: ['id', 'title'], properties: { id: { type: 'string' }, title: { type: 'string' }, acceptance: { type: 'string' } } }
+const BACKLOG_ITEM = { type: 'object', additionalProperties: false, required: ['id', 'title'], properties: { id: { type: 'string' }, title: { type: 'string' }, acceptance: { type: 'string' }, level: { type: 'string' } } } // level = this slice's OWN maturity rung (per-slice ladder); omitted => use the loop default
 const RESOLUTION_ITEM = { type: 'object', additionalProperties: false, required: ['input', 'status'], properties: { input: { type: 'string' }, status: { type: 'string', enum: ['resolved', 'partial', 'queued'] }, note: { type: 'string' } } }
 // Intake returns the merged backlog AND the maturity rung to run this loop,
 // plus how much of INPUT.md is resolved so far (read from OUTPUT.md state).
@@ -344,6 +387,33 @@ const GATE_SCHEMA = {
     debt: { type: 'array', items: { type: 'string' } },           // carried forward as future work
   },
 }
+// Slice Selection (4b): the walking-skeleton vertical slice for this pass — the subset
+// of components/units to build bottom-up first — plus the assumption-debt it incurs
+// (provisional contracts mocked at the slice boundary, with a retirement condition each).
+const SLICE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['slice_name', 'components'],
+  properties: {
+    slice_name: { type: 'string' },
+    rationale: { type: 'string' },                                 // the requirement / risk / seam it anchors to
+    components: { type: 'array', items: { type: 'string' } },      // in-slice component names (subset of the design)
+    units: { type: 'array', items: { type: 'string' } },          // optional in-slice unit names ("component/unit" or "unit")
+    assumption_debt: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['item', 'owner', 'retire_when'], properties: { item: { type: 'string' }, owner: { type: 'string' }, retire_when: { type: 'string' } } } },
+  },
+}
+// Adaptation (controlled feedback up): what running code proved/disproved, contract
+// promotions provisional->stable, design revisions, retired stubs, traceability status.
+const ADAPT_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['promotions', 'traceability_written'],
+  properties: {
+    promotions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['contract', 'to'], properties: { contract: { type: 'string' }, to: { type: 'string', enum: ['stable', 'provisional'] }, evidence: { type: 'string' } } } },
+    revisions: { type: 'array', items: { type: 'string' } },       // design/architecture changes the evidence forced
+    retired_debt: { type: 'array', items: { type: 'string' } },    // stubs/drivers whose retirement condition was met
+    open_debt: { type: 'array', items: { type: 'string' } },       // still-provisional contracts/stubs carried forward
+    traceability_written: { type: 'boolean' },                     // the matrix artifact was produced/refreshed
+  },
+}
 
 // ===========================================================================
 //  One full V-pass for a single backlog increment.
@@ -381,11 +451,14 @@ gates for this level (relaxations already merged over the strict gates): ${effGa
   const br = (kind, name) => `${refRoot}/s${stageOf[kind] || '00'}-${kind}${name ? '/' + slug(name) : ''}`     // branch name (readable path)
   const wt = (kind, name) => `.hephaestus/wt/loop${loop}/${slug(tag)}/${slug(level)}/${kind}${name ? '/' + slug(name) : ''}` // worktree dir (gitignored)
 
-  // ---- LEFT ARM — straight, forward decomposition (NO backward jumps) -------
-  // The decomposition flows forward only: requirements → system → architecture →
-  // (per-component) design → implement. We do NOT bounce a stage back to its
-  // predecessor; any real gap surfaces in the TEST PHASES (right arm), where the
-  // fix is a TARGETED repeat of the failing element's build loop (see below).
+  // ---- LEFT ARM — PROVISIONAL forward decomposition (a hypothesis to be proven) ----
+  // The decomposition flows forward (requirements → system → architecture → design →
+  // slice-select → implement), but the contracts it emits are PROVISIONAL: a hypothesis
+  // the bottom-up walking skeleton then validates. We do NOT bounce a stage back to its
+  // predecessor INLINE; instead, evidence that disproves the design is fed back UP at the
+  // explicit ADAPTATION step (after the tiers go green) — the one controlled feedback path.
+  // Any real gap also surfaces in the TEST PHASES (right arm), where the immediate fix is a
+  // TARGETED repeat of the failing element's build loop (see below).
   const dp = refs.design_patterns || {}
 
   const runRequirements = () => agent(
@@ -425,7 +498,8 @@ and the rule "${cfg.clean_code.dependency_rule}". Set each module's "packaging" 
 SHARED library / DLL, a STATIC library, or be header-only (default static if it doesn't need to be shared);
 choose per module. At the "${level}" level keep it small but EXTENSIBLE.
 COMPOSITION HIERARCHY: modules compose their deployable; deployables compose the system. Define each
-module's interface contract and ADRs. ${docInstruction}
+module's interface contract and ADRs. These contracts are PROVISIONAL (a hypothesis) — mark them so; the
+walking skeleton will validate them and the Adaptation step promotes the proven ones to stable. ${docInstruction}
 Produce TWO test plans: (1) module_test_plan — how each module's components compose into the module
 (${tf.integration.tool}); (2) system_test_plan — how the deployables run together as the topology.
 Map every REQ id to a module. Also produce the component_plan: the coarse WORK-LIST of components per
@@ -435,7 +509,7 @@ modules is listed ONCE. Design details each component.${commitDirective(tag, lev
 
   // Design ONE component (interface-first). Returns the contract as DATA ONLY — it
   // writes NO files and makes NO commit, so the parallel designers never race on the
-  // working branch. The Scaffold step (single writer) publishes every interface at once.
+  // working branch. The Scaffold step (single writer) publishes the in-slice interfaces at once.
   const designComponent = (plan) => agent(
     `You are the Designer detailing ONE component from the architecture's work-list: ${JSON.stringify(plan)}.
 Architecture context (modules, boundaries, ADRs): ${JSON.stringify({ modules: arch.modules, adrs: arch.adrs })}.
@@ -452,8 +526,10 @@ Choose design patterns ONLY from this catalog (justify each by the problem it so
 behavioral ${JSON.stringify(dp.behavioral || [])}. Specify error handling
 ("${cfg.clean_code.error_handling}") and ownership ("${cfg.clean_code.resource_management}").
 Give the component_test_spec (collaborators mocked with ${tf.unit.mock || 'a mock framework'}).
-Return the contract as DATA ONLY — do NOT write files and do NOT commit; the Scaffold step publishes all
-component interfaces together as a single writer.`,
+This interface is PROVISIONAL — a hypothesis the walking skeleton will prove; keep it minimal and don't
+over-commit to detail the running code hasn't validated yet (YAGNI).
+Return the contract as DATA ONLY — do NOT write files and do NOT commit; the Scaffold step publishes the
+in-slice component interfaces together as a single writer.`,
     { label: `design:${plan.name}`, phase: 'Design', schema: COMPONENT_SCHEMA, model: modelFor('design') })
 
   // Implement ONE unit on ITS OWN named branch+worktree — like a developer working on
@@ -489,24 +565,31 @@ Run ${fmt} and ${linters} on touched files. Commit on ${unitBranch(c, u)} — \`
   phase('Architecture');     const arch = await runArchitecture(reqs, sys); if (!arch) return { tag, status: 'aborted', stage: 'architecture' }
 
   // ---- HIERARCHY (explicit): unit -> component -> module -> deployable -> system
-  let components, moduleNames, totalUnits
+  // moduleNames/deployableNames are derived from the components ACTUALLY IN SCOPE this
+  // pass, so when a walking-skeleton slice narrows the components, the modules and
+  // deployables it touches narrow with it (the rest stay provisional seams for a later slice).
+  let components, moduleNames, totalUnits, deployableNames
   const componentsInModule = (m) => components.filter(c => (c.modules || []).includes(m))
   const moduleDeployableOf = (m) => { const mm = (arch.modules || []).find(x => x.name === m); return mm && mm.deployable }
   const deriveHierarchy = (designed) => {
     components = designed
-    moduleNames = ((arch.modules || []).map(m => m.name).length)
-      ? (arch.modules || []).map(m => m.name)
-      : [...new Set(components.flatMap(c => c.modules || []))]
+    const present = new Set(components.flatMap(c => c.modules || []))
+    const archModuleNames = (arch.modules || []).map(m => m.name).filter(n => present.has(n))
+    moduleNames = archModuleNames.length ? archModuleNames : [...present]
+    const deployablesAll = (sys.deployables || []).map(d => d.name)
+    const touched = deployablesAll.filter(d => moduleNames.some(m => moduleDeployableOf(m) === d))
+    deployableNames = touched.length ? touched : deployablesAll
     totalUnits = components.reduce((n, c) => n + ((c.units || []).length), 0)
     log(`  hierarchy: ${moduleNames.length} module(s) ◄ ${components.length} component(s) ◄ ${totalUnits} unit(s)`)
   }
 
-  // ---- DESIGN (barrier): design EVERY component, then PUBLISH all contracts --------
-  // Architecture emitted the modules AND the component work-list. We design all
-  // components in parallel (interface-first, DATA only), then a SINGLE WRITER (Scaffold)
-  // publishes every interface + the glob build skeleton onto the working branch — so
-  // when implementation fans out, each component can mock ANY collaborator's contract
-  // and adding a unit file needs no edit to shared build config. Forward only.
+  // ---- DESIGN (barrier): design EVERY component (PROVISIONAL), then SELECT the slice --
+  // Architecture emitted the modules AND the component work-list. We design all components
+  // in parallel (interface-first, DATA only) as a PROVISIONAL hypothesis; Slice Selection then
+  // picks the walking-skeleton subset, and a SINGLE WRITER (Scaffold) publishes that slice's
+  // interfaces + the glob build skeleton onto the working branch — so when implementation fans
+  // out, each unit can mock ANY collaborator's contract (in or out of slice) and adding a unit
+  // file needs no edit to shared build config. Contracts are revisited at Adaptation, not inline.
   phase('Design')
   const plan = (arch.component_plan || [])
   if (!plan.length) { log(`No component_plan from architecture for ${tag}.`); return { tag, status: 'aborted', stage: 'architecture' } }
@@ -514,18 +597,58 @@ Run ${fmt} and ${linters} on touched files. Commit on ${unitBranch(c, u)} — \`
   if (!designed.length) { log(`No components designed for ${tag}.`); return { tag, status: 'aborted', stage: 'design' } }
   deriveHierarchy(designed)
 
+  // ---- SLICE SELECTION (4b): the WALKING SKELETON — build the spine first -----------
+  // Hybrid construction: instead of implementing the whole provisional design at once, pick
+  // the thinnest end-to-end vertical slice (anchored to a requirement / risk / seam) and build
+  // its REAL units bottom-up. The rest of the design stays a provisional seam for a later slice.
+  // Every contract mocked at the slice boundary becomes tracked ASSUMPTION DEBT (owner + retire
+  // condition). The slice is selected only when hybrid+spine_first are on AND this is the first
+  // (mvp) rung; at higher rungs (harden/complete) the slice has widened to the full design.
+  let slice = null
+  const isMvpRung = level === ladderNames[0]
+  if (spineFirst && isMvpRung && designed.length > 1) {
+    phase('Slice Selection')
+    slice = await agent(
+      `You are the Slice Planner. The increment ${tag} @ "${level}" has a PROVISIONAL top-down design; your job is
+to pick its WALKING SKELETON — the thinnest end-to-end vertical slice to build FIRST, bottom-up, with REAL units.
+${hybridCfg.walking_skeleton ? `Walking skeleton = ${hybridCfg.walking_skeleton}.` : ''}
+${hybridCfg.slice_selection ? `Selection rule: ${hybridCfg.slice_selection}.` : ''}
+Provisional design (components, their modules + units): ${JSON.stringify(designed.map(c => ({ name: c.name, modules: c.modules, units: (c.units || []).map(u => u.name) })))}.
+Topology "${sys.topology}", deployables ${JSON.stringify((sys.deployables || []).map(d => d.name))}, requirements ${JSON.stringify((reqs.requirements || []).map(r => r.id))}.
+Choose the SMALLEST set of "components" (and optionally specific "units") that still crosses every tier
+(unit→component→module→software→system) for ONE thin end-to-end path that exercises the riskiest assumptions.
+Anchor the slice to a real requirement / risk probe / architectural seam — NOT an arbitrary pile of easy
+utilities (no reverse-YAGNI). For EVERY collaborator you leave OUT of the slice but still must mock to make the
+spine run, record it in "assumption_debt" with an owner and a precise "retire_when" condition (when its real
+code replaces the stub). Return DATA ONLY — write no files, make no commit.`,
+      { label: `slice:${tag}`, phase: 'Slice Selection', schema: SLICE_SCHEMA, model: modelFor('slice') })
+    const pickNames = new Set((slice && slice.components) || [])
+    const sliceComponents = pickNames.size ? designed.filter(c => pickNames.has(c.name)) : designed
+    if (sliceComponents.length && sliceComponents.length < designed.length) {
+      deriveHierarchy(sliceComponents)   // narrow modules/deployables to the spine
+      log(`  walking skeleton "${(slice && slice.slice_name) || tag}": ${sliceComponents.length}/${designed.length} component(s) in the spine; rest deferred as provisional seams.`)
+    }
+  }
+  // Seed/refresh the persisted assumption-debt ledger with this slice's debt (produced AND
+  // read back by later increments/loops at the Adaptation step).
+  const sliceDebt = (slice && slice.assumption_debt) || []
+
   // ---- SCAFFOLD (single writer): interfaces + glob build skeleton onto the branch --
   // The one place that writes shared artifacts, so the parallel work below stays
   // conflict-free: published contracts (mockable by anyone) + a glob-based build
-  // skeleton (adding a unit's file needs no shared-config edit).
+  // skeleton (adding a unit's file needs no shared-config edit). PARTIAL: it publishes
+  // only the IN-SLICE interfaces + skeleton this cycle; it grows as later slices land.
   phase('Scaffold')
   await agent(
     `You are the Scaffolder — the SINGLE WRITER that prepares the working branch before implementation fans
 out for increment ${tag} @ "${level}". ${docInstruction}
-1. Publish every INTERFACE as header/interface files under ${cfg.layout.include_dir} (and component-test
+This is a PARTIAL scaffold: publish ONLY the IN-SLICE interfaces + skeleton below; collaborators OUTSIDE the
+slice stay provisional seams (mocked, tracked as assumption debt) until a later slice builds them.
+${sliceDebt.length ? `Assumption debt for this slice (provisional contracts you stub at the boundary, each with an owner + retire condition): ${JSON.stringify(sliceDebt)}.` : ''}
+1. Publish every IN-SLICE INTERFACE as header/interface files under ${cfg.layout.include_dir} (and component-test
    specs under ${cfg.layout.test_dir}) so any implementer can code/mock against a published contract — BOTH
    each component's interface AND each unit's interface (its signature/contract). Interfaces &
-   contracts: ${JSON.stringify(designed.map(c => ({ name: c.name, modules: c.modules, interface: c.interface, units: (c.units || []).map(u => ({ name: u.name, interface: u.interface })) })))}.
+   contracts: ${JSON.stringify(components.map(c => ({ name: c.name, modules: c.modules, interface: c.interface, units: (c.units || []).map(u => ({ name: u.name, interface: u.interface })) })))}.
 2. Establish/refresh a HIERARCHICAL ${cfg.toolchain.build_system.tool} build that MIRRORS the composition
    tree — ONE build file per PERSISTENT node: a CMakeLists.txt per component, per module, and per executable,
    composed bottom-up via add_subdirectory (a component's CMakeLists globs its unit sources and builds its
@@ -539,18 +662,18 @@ out for increment ${tag} @ "${level}". ${docInstruction}
    ${(cfg.toolchain.package_manager || {}).tool || 'package'} manifest. A MODULE may be built as a STATIC library, a
    SHARED library / DLL, or header-only — use what the architecture chose per module; default to static if
    unspecified. Topology: ${sys.topology}; deployables: ${JSON.stringify((sys.deployables || []).map(d => d.name))};
-   modules: ${JSON.stringify(moduleNames)}.
+   modules: ${JSON.stringify(moduleNames)}. Build ONLY what the slice needs now; later slices extend it.
 3. Ensure \`.hephaestus/\` is in .gitignore (it holds the per-node worktrees/scratch the tiers create).
 4. PARTIAL STATE: reuse/extend what already exists; do not clobber working code.
 Confirm the skeleton configures (and, if prior code exists, still builds).${commitDirective(tag, level, 4, 'Scaffold')}`,
     { label: `scaffold:${tag}`, phase: 'Scaffold', model: modelFor('implementation') })
 
   // ---- IMPLEMENTATION (fan out): each UNIT on its OWN branch (developer-style) -------
-  // Fan out per unit across all components; each unit is built in isolation against the
-  // published interfaces (collaborators mocked). The Component Tier merges the unit
-  // branches into their component branch.
+  // Fan out per unit across the IN-SLICE components; each unit is built in isolation against
+  // the published interfaces (collaborators — in or out of slice — mocked). The Component
+  // Tier merges the unit branches into their component branch.
   phase('Implementation (TDD)')
-  await parallel(designed.flatMap(c => (c.units || []).map(u => () => implementUnit(c, u))))
+  await parallel(components.flatMap(c => (c.units || []).map(u => () => implementUnit(c, u))))
 
   // ---- RIGHT ARM — a bottom-up TREE OF GATED MERGES (adversarial verifiers) --------
   // The branch tree mirrors the composition tree: unit ◄ component ◄ module ◄
@@ -562,7 +685,7 @@ Confirm the skeleton configures (and, if prior code exists, still builds).${comm
   // A RED node triggers a TARGETED repair on THAT node's branch only (bounded by
   // max_fix_rounds); already-green siblings are never touched.
   const adversarial = `Be adversarial: try to find a failing or missing case (within the "${level}" maturity scope — intentionally-deferred behavior is out of scope, not a failure).`
-  const deployableNames = (sys.deployables || []).map(d => d.name)
+  // deployableNames is derived in deriveHierarchy and narrowed to the slice's deployables.
   // The gated-merge TREE needs git (commit-per-phase + worktree merges). When ON, each
   // node is verified on its own branch in a throwaway worktree, then merged up; when OFF,
   // the run degrades to verifying the inline working tree (no branch tree, no merges).
@@ -757,6 +880,34 @@ integrated, verified system.${commitDirective(tag, level, 11, 'Merge-to-main')}`
       { label: `merge-main:${tag}`, phase: 'System Tier', model: modelFor('implementation') })
   }
 
+  // ---- ADAPTATION (controlled feedback up) — the ONE backward path ----------------
+  // After the walking skeleton goes green, evidence from the running code flows UP to
+  // revise the PROVISIONAL design: promote validated contracts provisional->stable, revise
+  // what the code disproved, retire stubs whose retirement condition is now met, and PRODUCE
+  // the requirements<->tests traceability matrix as a persisted artifact. This is the only
+  // place the design changes after construction; it is bounded by max_adaptation_rounds and
+  // preserves traceability. It also reconciles the persisted assumption-debt ledger.
+  let adapt = null
+  if (!climbBroken) {
+    phase('Adaptation')
+    adapt = await agent(
+      `You are the Reconciler for increment ${tag} @ "${level}". The walking-skeleton slice passed all five test
+levels, so its PROVISIONAL contracts now have executable evidence. Apply CONTROLLED feedback up (bounded — at
+most ${maxAdaptRounds} round(s); do NOT re-architect from scratch):
+1. PROMOTE every contract the running code validated from PROVISIONAL to STABLE (record in "promotions" with
+   the evidence — which test proved it). Leave genuinely-unproven contracts provisional.
+2. REVISE only the design/architecture the evidence DISPROVED (list in "revisions"); keep it minimal and
+   localized — adjust the affected contract/seam, not the whole tree.
+3. ASSUMPTION-DEBT LEDGER (read back + update the shared file "${assumptionLedgerPath}"): retire every stub/
+   driver whose retirement condition is now met (record in "retired_debt"); carry the rest forward in
+   "open_debt". This slice incurred: ${JSON.stringify(sliceDebt)}. Prior decisions/debt to honor: ${carry}.
+4. PRODUCE THE TRACEABILITY MATRIX as a persisted artifact at "${traceabilityPath(tag)}": a table mapping each
+   in-scope requirement (${JSON.stringify((reqs.requirements || []).map(r => r.id))}) to the unit/component/
+   module/system/acceptance test(s) that cover it, with provisional/stable contract status per row. Set
+   traceability_written=true once written. Use your file tools; commit on the current branch.${commitDirective(tag, level, 11.5, 'Adaptation')}`,
+      { label: `adapt:${tag}`, phase: 'Adaptation', schema: ADAPT_SCHEMA, model: modelFor('adaptation') })
+  }
+
   // ---- ITERATION GATE (Definition of Done, scaled to the maturity level) ----
   phase('Iteration Gate')
   const gate = await agent(
@@ -764,8 +915,12 @@ integrated, verified system.${commitDirective(tag, level, 11, 'Merge-to-main')}`
 Evaluate the Definition of Done and the EFFECTIVE quality gates for THIS level: ${effGates}.
 (These are the strict gates relaxed for "${level}"; judge against them, not the strict ones.)
 DoD: ${JSON.stringify(cfg.agile.definition_of_done)}.
-Verifications: ${JSON.stringify(verifications)}. Confirm the requirements<->tests traceability
-matrix is complete for the requirements IN SCOPE at this level (${cfg.quality_gates.traceability}).
+Verifications: ${JSON.stringify(verifications)}. Adaptation outcome: ${JSON.stringify(adapt || {})}.
+Confirm the requirements<->tests traceability matrix was PRODUCED as an artifact at "${traceabilityPath(tag)}"
+and is complete for the requirements IN SCOPE at this level (${cfg.quality_gates.traceability}); set
+traceability_complete accordingly (a gate-check alone is NOT enough — the file must exist).
+Confirm the assumption-debt ledger ("${assumptionLedgerPath}") is current: every provisional contract/stub
+left open has an owner + retirement condition; satisfied ones are retired.
 Intentionally-deferred behavior is NOT a failure at this level — record it as debt, do not block on it.
 Pass ONLY if every effective gate for this level is met.
 Documentation mode is "${docMode}": if "off", DO NOT require the documentation DoD item; otherwise enforce it.
@@ -792,9 +947,16 @@ constraints) and debt / deferred-to-next-loop items (carried forward as future w
       totals: { deployables: (sys.deployables || []).length, modules: moduleNames.length, components: components.length, units: totalUnits },
     },
     architecture_pattern: (arch.deployable_patterns || []).map(p => `${p.deployable}: ${p.pattern}`),
+    // Hybrid visibility for OUTPUT.md: which walking-skeleton slice was built, the
+    // provisional->stable promotions, and the open assumption/stub debt carried forward.
+    slice: slice ? { name: slice.slice_name, components: slice.components || [], rationale: slice.rationale } : null,
+    spine_first: spineFirst,
+    promotions: (adapt && adapt.promotions) || [],
+    assumption_debt: (adapt && adapt.open_debt) || sliceDebt.map(d => `${d.item} (owner ${d.owner}; retire when ${d.retire_when})`),
+    traceability: traceabilityPath(tag),
     key_decisions: (gate && gate.key_decisions) || [],
     debt: (gate && gate.debt) || [],
-    verifications, gate,
+    verifications, gate, adaptation: adapt,
   }
 }
 
@@ -818,11 +980,16 @@ just one sentence), AND READ ${outputFile} if it exists (it carries the state fr
 2. If the input implies CONFIGURATION/process changes, REWRITE config/hephaestus.config.yaml accordingly
    and minimally — language/standard, toolchain tools, quality_gates, toggles.documentation, models.*,
    project.backlog. Leave everything else at its default; never invent changes the input does not ask for.
-3. MVP MATURITY LADDER (strategy.approach="${strategy.approach}"). One run advances the product by exactly
-   ONE rung across the whole backlog; the human RE-RUNS to climb. The ordered rungs are: ${JSON.stringify(ladderNames)}.
+3. MATURITY LADDER (strategy.approach="${strategy.approach}", scope="${strategy.maturity_scope || 'whole_backlog'}").
+   The ordered rungs are: ${JSON.stringify(ladderNames)}. The human RE-RUNS to climb; a run advances every
+   slice that is READY.
    ${mvpMode
-      ? `Decide which rung to run THIS loop by reading ${outputFile}'s recorded state: if no prior loop ran, choose "${ladderNames[0]}" (the MVP). A NEW loop only ADVANCES to the next rung when the previous cycle COMPLETELY FINISHED — i.e. every increment in the backlog passed its gate at that rung. If the previous loop did NOT fully finish (any increment still queued / in-progress / failed), STAY on that same rung this loop to complete it; do not advance. So: choose the LOWEST rung not yet completed for the WHOLE backlog. Set "loop" to the 1-based loop counter (prior loop + 1). If every increment has passed the TOP rung ("${ladderNames[ladderNames.length - 1]}") and INPUT.md has nothing unresolved, set fully_resolved=true.`
-      : `strategy.approach is "full", so set level to the top rung "${ladderNames[ladderNames.length - 1]}" every run (no MVP laddering).`}
+      ? (perSlice
+        ? `PER-SLICE ladder: each backlog increment is a vertical slice that climbs its OWN rung mvp→harden→complete. Read ${outputFile}'s recorded state and set EACH backlog item's "level" to the LOWEST rung that item has not yet completed (a brand-new item starts at "${ladderNames[0]}", the walking-skeleton MVP; an item that passed its gate at a rung advances to the next; an item that did NOT finish stays on its current rung to complete it). Set the loop-level "level" to the lowest rung still open across the backlog (a summary/default), and "loop" to the 1-based loop counter (prior loop + 1). If EVERY increment has passed the TOP rung ("${ladderNames[ladderNames.length - 1]}") and INPUT.md has nothing unresolved, set fully_resolved=true.`
+        : `WHOLE-BACKLOG ladder: one run advances the product by exactly ONE rung across the whole backlog. If no prior loop ran, choose "${ladderNames[0]}" (the MVP). Advance to the next rung only when the previous cycle COMPLETELY FINISHED (every increment passed its gate at that rung); otherwise STAY on that rung to complete it. Choose the LOWEST rung not yet completed for the WHOLE backlog. Set "loop" to the 1-based loop counter. If every increment passed the TOP rung ("${ladderNames[ladderNames.length - 1]}") and INPUT.md is fully resolved, set fully_resolved=true.`)
+      : `strategy.approach is "full", so set level (and every item's level) to the top rung "${ladderNames[ladderNames.length - 1]}" every run (no MVP laddering).`}
+   Note: at the "${ladderNames[0]}" rung an increment is built as a WALKING SKELETON — the thinnest end-to-end
+   vertical slice of real units — then deepened on later rungs (hybrid construction="${strategy.construction || 'top_down'}").
 4. Track RESOLUTION of ${inputFile}: for each distinct idea/requirement in ${inputFile}, return its status —
    resolved (done at the top rung), partial (some loops done, more to deepen), or queued (not started).
 5. WRITE ${outputFile} with this loop's state: an "Intake" section recording what you captured from
@@ -838,10 +1005,12 @@ if (!backlog.length) {
   return { error: 'empty_backlog', config_used: cfg.project.name }
 }
 
-// Resolve this loop's maturity rung (validated against the ladder; fallback = first rung).
+// Resolve this loop's DEFAULT maturity rung (validated against the ladder; fallback = first
+// rung). With per-slice maturity each backlog item may carry its OWN "level" (resolved below).
 const loopNo = (intake && intake.loop) || 1
 const levelName = (intake && ladderNames.includes(intake.level)) ? intake.level : ladderNames[0]
 const levelSpec = levelByName(levelName)
+const itemLevelSpec = (it) => (perSlice && it && ladderNames.includes(it.level)) ? levelByName(it.level) : levelSpec
 if (mvpMode && intake && intake.fully_resolved) {
   log(`INPUT.md is fully resolved at the top rung "${ladderNames[ladderNames.length - 1]}". Nothing to deepen — see ${outputFile}.`)
   return { project: cfg.project.name, language: lang, loop: loopNo, level: levelName, fully_resolved: true, increments: [], interface: { input: inputFile, output: outputFile } }
@@ -854,13 +1023,15 @@ const ledger = []  // carry-forward memory: prior decisions + debt feed later in
 let i = 0
 while (i < backlog.length) {
   let attempt = 0, res
+  const itemSpec = itemLevelSpec(backlog[i])
+  const itemLevel = (itemSpec && itemSpec.name) || levelName
   do {
-    if (attempt > 0) log(`↻ Re-looping increment ${backlog[i].id || i + 1} @ ${levelName} (attempt ${attempt + 1})`)
-    res = await runIncrement(backlog[i], i, ledger, levelSpec, loopNo)
+    if (attempt > 0) log(`↻ Re-looping increment ${backlog[i].id || i + 1} @ ${itemLevel} (attempt ${attempt + 1})`)
+    res = await runIncrement(backlog[i], i, ledger, itemSpec, loopNo)
     attempt++
   } while (res.status === 'failed' && attempt <= (cfg.agile.max_gate_retries || 0))
   results.push({ ...res, attempts: attempt })
-  ledger.push({ tag: res.tag, title: res.title, level: levelName, decisions: res.key_decisions, debt: res.debt })
+  ledger.push({ tag: res.tag, title: res.title, level: itemLevel, decisions: res.key_decisions, debt: res.debt })
 
   // ---- REPORT: rewrite OUTPUT.md and re-check INPUT.md for new/changed items ----
   phase('Report')
@@ -869,15 +1040,18 @@ while (i < backlog.length) {
 OWNERSHIP RULE (strict): ${inputFile} is HUMAN-ONLY — READ it, NEVER modify it. ${outputFile} is PROCESS-ONLY.
 1. OVERWRITE ${outputFile} at the project root with a SHORT, structured checklist of the CURRENT state:
    the current loop number + maturity level; one line per backlog increment with a checkbox + status
-   (queued / in-progress / passed / failed) AND the rung it has reached so far, the V-Model stage reached,
-   the gate result, the five test levels for the latest increment, open debt / items deferred to a later
-   loop, and a single "next action". ALSO write a "Resolution of ${inputFile}" table (one row per input
-   idea: resolved / partial / queued) so the human can see how much of ${inputFile} is resolved. Keep it
-   minimal & effective.
-2. Decide the NEXT loop's maturity level (next_level): the lowest rung from ${JSON.stringify(ladderNames)} not
-   yet completed for the whole backlog; if every increment passed the top rung and ${inputFile} has nothing
-   unresolved, set fully_resolved=true and next_level to the top rung. Record next_level + "what the next
-   loop will do" in ${outputFile}.
+   (queued / in-progress / passed / failed) AND the PER-SLICE rung it has reached so far (mvp/harden/complete),
+   the V-Model stage reached, the gate result, the five test levels for the latest increment, open debt /
+   items deferred to a later loop, and a single "next action". ALSO write:
+     • a "Per-slice maturity" table (one row per increment: slice/walking-skeleton name, its current rung, next rung);
+     • a "Provisional vs stable contracts" list (which contracts the Adaptation step promoted to stable vs still provisional);
+     • an "Assumption / stub debt" log (open items with owner + retirement condition, from the ledger);
+     • a "Resolution of ${inputFile}" table (one row per input idea: resolved / partial / queued)
+   so the human can see how much of ${inputFile} is resolved. Keep it minimal & effective.
+2. Decide the NEXT loop's maturity level (next_level): with the PER-SLICE ladder, the lowest rung from
+   ${JSON.stringify(ladderNames)} still open across the slices (each slice climbs its own ladder); if every
+   increment passed the top rung and ${inputFile} has nothing unresolved, set fully_resolved=true and
+   next_level to the top rung. Record next_level + "what the next loop will do" in ${outputFile}.
 3. RE-READ ${inputFile} (read only) for any NEW or changed ideas not already represented in the backlog
    ${JSON.stringify(backlog.map(b => b.id))}; return them as new_items (empty array if none) and note them
    in ${outputFile}. Do NOT write to ${inputFile}.

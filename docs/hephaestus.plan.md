@@ -1,12 +1,19 @@
 # Hephaestus — Plan & Methodology
 
-> The **Cyclic Agentic Agile V-Model**. ([Why "Hephaestus"?](https://en.wikipedia.org/wiki/Hephaestus) — the Greek god of the forge who built automatons.)
+> The **Cyclic Agentic Agile V-Model** — *hybrid top-down + bottom-up (walking-skeleton-first)*. ([Why "Hephaestus"?](https://en.wikipedia.org/wiki/Hephaestus) — the Greek god of the forge who built automatons.)
 
 > A reusable, language-agnostic methodology for building software increment by
 > increment, where **every design stage is paired with the test level that
 > verifies it** (the V), the V is **repeated each iteration** (the cycle), and
 > **autonomous agents** drive each stage under enforced **clean-code and
 > refactoring** gates.
+>
+> **Hybrid construction.** The top-down arm sets *intent* but its architecture is a
+> **hypothesis** (contracts start *provisional*); the bottom-up arm *proves* it by
+> building real units for the thinnest end-to-end **vertical slice** first (a **walking
+> skeleton**). They meet in the middle, and an **adaptation gate** lets running code
+> revise the provisional architecture before it hardens — *traceable V-Model outside,
+> evolutionary architecture inside.*
 >
 > All language/tool specifics live in [`../config/hephaestus.config.yaml`](../config/hephaestus.config.yaml).
 > This document never hard-codes C++ — it reads `${config.*}` placeholders.
@@ -21,10 +28,24 @@
 | **Agentic** | Each stage is executed by a dedicated agent with a single responsibility; verification is adversarial (separate agents try to break the work). |
 | **Agile**   | Small vertical slices, working software every iteration, refactoring as a first-class step. |
 | **V-Model** | Strict traceability: requirements ↔ acceptance, software system ↔ system, architecture ↔ module, design ↔ component, implementation ↔ unit. |
+| **Hybrid**  | Top-down *intent* (provisional architecture) **plus** bottom-up *evidence* (a walking skeleton of real units), meeting in the middle, with controlled feedback up. |
 
 The classic V-Model's weakness is that it is waterfall — one giant pass. Hephaestus
 keeps the V-Model's traceability discipline but **folds it into the agile loop**:
 one short, complete V per increment.
+
+**Why pure top-down fails for an agent — and why we went hybrid.** A strict top-down V
+forces the agent to fully specify *every* interface before any running code validates the
+design, so an early architectural guess propagates unchecked into the scaffold, the branch
+tree and the tests, and a wrong assumption only surfaces — expensively — at the gates. The
+cure is not to abandon the V; it is to treat **architecture as a hypothesis validated by
+executable evidence**. So the left arm still decomposes top-down, but its contracts are
+**provisional**; each increment first builds a **walking skeleton** — the thinnest end-to-end
+vertical slice, built from *real* units bottom-up — which proves (or disproves) the
+architecture early. Top-down and bottom-up **meet in the middle** (a sandwich), and an
+**adaptation gate** (§2c, §4) feeds what the code taught back up before the architecture
+hardens. This is the engineering meaning of the user's goal: *"have an architecture, but
+start with the small, obvious units as an MVP, and iterate the loops until all is complete."*
 
 ---
 
@@ -53,8 +74,8 @@ that verifies it** (right, bottom-up). Phase **0** is the MVP loop that wraps th
  (5) Implementation ───────────────────────────────────────► ( 6) Unit test
         code (TDD), PER component                                  each unit is correct
                                                                    ▲
-   Scaffold (publish interfaces + skeleton) · each node verified on its branch, merged up only when green · Refactor (any phase) · then ITERATION GATE
-   gate pass ▸ next increment ·  gate fail ▸ re-loop (bounded)
+   Scaffold (publish THIS slice's interfaces + skeleton) · each node verified on its branch, merged up only when green · Adaptation (promote provisional→stable, revise) · Refactor (any phase) · then ITERATION GATE
+   gate pass ▸ next slice / deepen ·  gate fail ▸ re-loop (bounded)
 ```
 
 The composition hierarchy these stages build (each *one or more*):
@@ -66,14 +87,40 @@ software system ─┬─ software (executable) ─┬─ module ─┬─ compo
        server         phase 2)                 phase 3)   phase 4)
 ```
 
-**Left arm** flows top-down; each stage refines the previous, defines the *interface/contract*
-of the next, and *also designs the test* that verifies it. **Right arm** executes bottom-up
-in the order `config.v_model.test_execution_order`. The decomposition is **interface-first**,
-so once a level's contracts exist (published by the single-writer Scaffold) the work below runs **highly
-in parallel** (§3b, §4): each deployable is architected on its own, every **unit** is implemented on its
-**own branch** (developer-style), and each test level fans out per sibling. It is assembled back bottom-up
-as a **tree of gated merges** — units → components → modules → deployables → system, each node merging into
-its parent only once green (§2c).
+**Left arm** flows top-down to set *intent*; each stage refines the previous, defines the
+*provisional interface/contract* of the next, and *also designs the test* that verifies it.
+**Right arm** executes bottom-up in the order `config.v_model.test_execution_order`. The
+decomposition is **interface-first**, so once a slice's contracts exist (published by the
+single-writer **partial** Scaffold) the work below runs **highly in parallel** (§3b, §4): each
+deployable is architected on its own, every **unit** is implemented on its **own branch**
+(developer-style), and each test level fans out per sibling. It is assembled back bottom-up as a
+**tree of gated merges** — units → components → modules → deployables → system, each node merging
+into its parent only once green (§2c).
+
+### 2a. Hybrid construction — walking skeleton first, then meet in the middle
+
+The five stages above are not a one-shot top-down waterfall; they run in a **hybrid** rhythm
+(`config.strategy.construction: hybrid`, `config.hybrid`):
+
+1. **Provisional decomposition (top-down intent).** Stages 1→4 produce the architecture as a
+   *hypothesis* — every contract/ADR is tagged **provisional**, not frozen.
+2. **Slice selection.** Pick the **walking skeleton**: the thinnest executable vertical slice that
+   crosses *every* tier (unit→…→acceptance) and exercises the **riskiest, most load-bearing**
+   assumptions — obvious **and** architecturally anchored, never an arbitrary pile of easy
+   utilities (that would be *reverse-YAGNI*). Every bottom-up unit attaches to a requirement, this
+   slice, a risk probe, or a known architectural seam.
+3. **Partial scaffold.** Publish only **this slice's** interfaces + build skeleton; the rest of the
+   system stays a provisional seam and the scaffold grows cycle by cycle (§2c).
+4. **Bottom-up build (evidence).** Implement the slice's **real units** (TDD) and verify upward
+   through the gated-merge tree — this is where the architecture meets reality.
+5. **Adaptation (controlled feedback up).** Promote contracts the running code validated
+   provisional→stable, revise the ones it disproved, retire stubs, re-sync traceability (§2c, §4).
+6. **Deepen / widen.** Climb the slice's maturity ladder (§2b) or seed the next slice — repeat.
+
+So the top-down arm and the bottom-up arm **meet in the middle** (a *sandwich*): intent selects a
+slice; evidence validates it; feedback hardens it. The retained V guarantees (traceability,
+gated-merge bottom-up integration, per-node isolation) are untouched — only the *order* and the
+*provisional-then-validated* discipline change.
 
 ### The abstract shape — a lattice of gems
 
@@ -111,12 +158,15 @@ one small **recursive procedure parameterized per phase**, which is exactly why 
 generic (one verify-then-merge loop) with only the agent's prompt swapped per kind. Learn the gem once and
 you understand every phase at every scale.
 
-**Contracts are the only coupling.** Because decomposition is strictly **top-down**, a child node is handed
-its contract by its parent and needs **nothing else** — not a sibling's internals, not another node's code,
-only the **interfaces** it mocks against (published once by Scaffold; Ports & Adapters). A node is
-deliberately *blind* to everything outside its own facet. That blindness is not a limitation — it is what
-**licenses** cutting all of a gem's facets in parallel and rejoining them without conflict. The interface is
-the only thing that ever crosses a node boundary, up or down.
+**Contracts are the only coupling.** A child node is handed its contract by its parent and needs
+**nothing else** — not a sibling's internals, not another node's code, only the **interfaces** it
+mocks against (published by the partial Scaffold for the current slice; Ports & Adapters). A node is
+deliberately *blind* to everything outside its own facet. That blindness is not a limitation — it is
+what **licenses** cutting all of a gem's facets in parallel and rejoining them without conflict. The
+interface is the only thing that ever crosses a node boundary — and it crosses **both ways**: it
+flows *down* as a provisional contract, and once a unit's running code has exercised it, evidence
+flows *up* through the Adaptation gate (§2c, §4) to promote it to **stable** or revise it. So the
+coupling is a contract that the bottom is allowed to correct, not a decree the bottom must obey.
 
 **Every node has an interface — they just look different.** A system's interface is its external
 protocols/APIs; a **software (executable)'s** is how it's driven and talks (CLI args, network protocol/port,
@@ -128,36 +178,40 @@ published by Scaffold so it exists before anyone forks beneath it.)
 
 ---
 
-## 2b. The MVP maturity ladder — run several times to resolve `INPUT.md`
+## 2b. The MVP maturity ladder — **per slice** — run several times to resolve `INPUT.md`
 
 Hephaestus does **not** try to build everything in one giant pass. It is meant to be
-**re-run**, and **one run advances the product by exactly one maturity rung** across
-the whole backlog (`config.strategy`):
+**re-run**, and maturity is tracked **per slice / capability**
+(`config.strategy.maturity_scope: per_slice`): each validated vertical slice climbs its **own**
+rung ladder, and one run **advances every slice that is ready** — a new slice starts at `mvp`
+(its walking skeleton) while an already-proven slice may move on to `harden` or `complete` in
+the *same* run:
 
 ```
  INPUT.md ─┐
-           ▼
-   run #1  ► loop @ mvp       ─ thinnest end-to-end slice; edge cases deferred as debt
-   run #2  ► loop @ harden    ─ pull deferred edge cases / non-functional reqs back in
-   run #3  ► loop @ complete  ─ strict gates, full robustness; INPUT.md fully resolved
+           ▼   (each slice has its OWN rung; a run advances whichever slices are ready)
+  slice A  ► mvp (walking skeleton) ──► harden ──► complete
+  slice B  ►            mvp ──► harden ──► …
+  slice C  ►                    mvp ──► …
            ▲
-           └─ each loop reads OUTPUT.md state, deepens, and re-checks INPUT.md
+           └─ each run reads OUTPUT.md per-slice state, deepens ready slices, re-checks INPUT.md
 ```
 
-Each rung may **relax the quality gates**; the *effective* gates are
-`config.quality_gates` with that rung's overrides merged on top (so `mvp` ships at,
-say, 50% coverage and no doc requirement, while `complete` enforces the strict
-defaults). The **Intake** step picks the rung for the run by reading the state in
-`OUTPUT.md`; the **Report** step records how much of `INPUT.md` is *resolved*
-(resolved / partial / queued) and what the next loop will do. So `INPUT.md` is
-"resolved in several meaningful loops": jot → run → read `OUTPUT.md` → run again,
-until everything is resolved at the top rung. Set `strategy.approach: full` to skip
-the ladder and enforce strict gates from loop 1.
+Each rung may **relax the quality gates**; the *effective* gates are `config.quality_gates` with
+that rung's overrides merged on top (so `mvp` ships at, say, 50% coverage and no doc requirement,
+while `complete` enforces the strict defaults). The **Intake** step reads the per-slice state in
+`OUTPUT.md` and picks each slice's rung for the run; the **Report** step records how much of
+`INPUT.md` is *resolved* (resolved / partial / queued) per slice and what the next loop will do.
+So `INPUT.md` is "resolved in several meaningful loops": jot → run → read `OUTPUT.md` → run again,
+until every slice is at the top rung. Set `strategy.approach: full` to skip the ladder and enforce
+strict gates from loop 1; set `strategy.maturity_scope: whole_backlog` for the legacy one-rung-per-
+run behavior.
 
-This is the MVP discipline folded into the cycle: prove the core works first, then
-deepen — never gold-plate ahead of need (YAGNI), never ship throwaway architecture.
+This is the MVP discipline folded into the cycle: prove each slice's core works first (a real
+walking skeleton), then deepen it — never gold-plate ahead of need (YAGNI), never ship throwaway
+architecture.
 
-## 2c. Gated-merge integration & on-demand refactoring; commit-per-phase
+## 2c. Gated-merge integration, the Adaptation gate, assumption debt; commit-per-phase
 
 **Integration is a bottom-up TREE OF GATED MERGES.** The git branch tree mirrors the composition tree: a
 **unit** branches from its **component** branch (and merges back once its unit test is green); each
@@ -178,14 +232,40 @@ prefix, so they list and prune together; verifiers read a branch via a *detached
 branch checked out elsewhere is never an obstacle), and per-node scratch worktrees live under a gitignored
 `.hephaestus/` dir.
 
-**Single-writer Scaffold before the fan-out.** Right after Design, one step publishes every component
-**interface** plus a **glob-based build skeleton** onto the working branch, so each implementer can mock any
-collaborator's contract and adding a unit's file needs no edit to shared build config — which keeps every
-downstream merge a disjoint, conflict-free add.
+**Single-writer, INCREMENTAL Scaffold before each fan-out.** Right after Slice Selection, one step
+publishes — onto the working branch — the **interfaces** for *this slice's* components plus a
+**glob-based build skeleton**, so each implementer can mock any collaborator's contract and adding a
+unit's file needs no edit to shared build config (every downstream merge stays a disjoint, conflict-free
+add). Crucially the scaffold is **partial and provisional** (`config.hybrid.partial_scaffold`): it covers
+only the current slice and marks everything else a provisional seam, then **grows cycle by cycle** as more
+slices are built and more contracts become stable — so the agent never has to invent the *entire* system's
+interfaces before a line of code validates any of them.
+
+**The Adaptation gate — controlled feedback up (no uncontrolled backward jumps).** After a slice's test
+levels are green, an explicit Adaptation step (`config.v_model.adaptation`, model `config.models.adaptation`)
+runs *before* the Iteration Gate: it **promotes** the provisional contracts/ADRs the running code validated
+to **stable**, **revises** the ones the code disproved (re-verifying only the affected nodes, bounded by
+`config.hybrid.max_adaptation_rounds`), **retires** stubs whose retirement condition is now met, and
+**re-syncs** the traceability matrix and the assumption-debt ledger. This is how the bottom legitimately
+informs the top — *only* through this gate, and always keeping traceability and tests in sync.
+
+**Assumption-debt ledger (the sandwich-integration safeguard).** Meeting in the middle risks a squeezed
+middle layer full of stubs and drivers. To bound it, **every stub, driver, mock, and provisional interface
+is logged** in `config.living_artifacts.assumption_debt` with an **owner** and a **retirement condition**,
+carried forward (`config.carry_forward`), preferentially burned down before new breadth is added, and
+retired by the Adaptation gate when its condition is met. A slice cannot reach `complete` with provisional
+contracts still inside it.
 
 **Refactoring is on-demand inside every phase** (not a separate numbered phase): whenever an agent
 spots a smell from the catalog while working, it applies the matching technique and keeps tests green
 (red → green → refactor). The clean-code thresholds are still enforced at the Iteration Gate.
+
+**Commit-per-phase.** Every phase commits its content onto the working branch as it finishes
+(`config.git.commit_per_phase`), so `main` advances incrementally and a run is **resumable**. Every
+phase also writes a small **trace file** (`config.living_artifacts.phase_trace`,
+e.g. `docs/hephaestus/trace/<INC>/<level>/05-implementation.md`) **regardless of the documentation
+toggle** — a file-level trail that also keeps each commit non-empty. The trace is process telemetry;
+`minimal`/`off` only scale the *product* documentation, never this trail.
 
 **Commit-per-phase.** Every phase commits its content onto the working branch as it finishes
 (`config.git.commit_per_phase`), so `main` advances incrementally and a run is **resumable**. Every
@@ -259,12 +339,18 @@ system and acceptance levels.
 
 ---
 
-## 4. Forward decomposition, clear gates, targeted repair
+## 4. Forward construction, backward learning, clear gates, targeted repair
 
-The left arm flows **forward only** — Requirements → Software System → Architecture → (per-component)
-Design → Implementation. There is **no backward jump** from one design stage to its predecessor: a
-stage does its best with what it has, because any real gap will surface concretely in the **test
-phases**. This keeps the decomposition simple and lets it run in parallel without speculative rework.
+The left arm flows **forward** to set intent — Requirements → Software System → Architecture →
+(per-component) Design → Implementation — but it is **not** a one-way decree. Its contracts are
+**provisional**, and there are **no *uncontrolled* backward jumps**: a stage does its best with what
+it has, the slice is built, and any real gap surfaces concretely in the **test phases**. What the
+running code teaches is then fed back **up**, but *only* through the explicit **Adaptation gate**
+(§2c) — which promotes validated contracts to **stable**, revises the disproven ones (re-verifying
+just the affected nodes, bounded by `config.hybrid.max_adaptation_rounds`), and keeps the
+traceability matrix and assumption-debt ledger in sync. So the rule is **forward construction,
+backward learning through a controlled gate** — never a silent rewrite of an upstream stage, never a
+frozen contract the bottom may not correct.
 
 Each test level is a **clear gate** (a barrier): the climb to the next level proceeds only once the
 current level is green. When a gate goes red, Hephaestus applies a **targeted repair** — it repeats the
@@ -283,6 +369,10 @@ build loop **only for the failing element** and re-verifies, bounded by `config.
 | module (8)      | the failing **module(s)** (the component wiring at that boundary) |
 | system (9)      | the failing **deployable(s)** (how its modules assemble in the topology) |
 | acceptance (10) | the specific behavior the scenario exercises, across the running system |
+
+A red gate is also the moment the **bottom may disprove the top**: if repair reveals the failure is
+not a coding bug but a wrong *provisional* contract, the Adaptation gate (§2c) is where that contract
+is revised rather than worked around — the legitimate, bounded backward path.
 
 **Already-passing siblings are never re-implemented.** Only if a level stays red after
 `config.agile.max_fix_rounds` does the climb stop and the increment fail its gate — then it re-loops
@@ -303,7 +393,9 @@ The **Iteration Gate** (step 6) blocks the increment until every threshold in
 - Formatter check `enforced`.
 - Sanitizers clean.
 - Public API documentation coverage = `public_api_doc_coverage_min`.
-- Traceability matrix complete.
+- Traceability matrix **produced** (persisted to `config.living_artifacts.traceability`) and complete.
+- Adaptation done: no **provisional** contract remains inside a slice that reached `complete`.
+- Assumption-debt ledger up to date: every open stub/provisional interface has an owner + retirement condition.
 
 A failed gate re-loops the increment up to `config.agile.max_gate_retries` times;
 persistent failure is surfaced, never silently passed.
@@ -352,16 +444,19 @@ they are the project's shared memory, not throwaway by-products. See
 
 | Phase | Artifact (lives in the repo) | Used next cycle by… |
 |-------|------------------------------|---------------------|
-| Requirements | `docs/requirements/<INC>.md` + a **traceability matrix that grows** | human: scope review · agent: regression awareness |
-| Architecture | arc42 doc + **append-only ADRs** + UML | human: onboarding · agent: keeps decisions consistent |
-| Design | `docs/design/<INC>.md` + component-test specs | both: contract reference |
+| Requirements | `docs/requirements/<INC>.md` | human: scope review · agent: regression awareness |
+| Architecture | arc42 doc + **append-only ADRs** (each `provisional`/`stable`) + UML | human: onboarding · agent: keeps decisions consistent |
+| Design | `docs/design/<INC>.md` + component-test specs + per-component contracts (`provisional`/`stable`) | both: contract reference |
 | Implementation | code + tests (**executable specification**) | both: ground truth |
-| Increment close | `docs/increments/<INC>-report.md` (gates, `smell→technique`, **debt log**) | human: steering · agent: next-increment input |
+| Traceability | `docs/hephaestus/traceability/<INC>.md` — **produced** matrix (REQ → unit/component/module/system/acceptance) | human: coverage review · agent: regression map |
+| Assumption debt | `docs/hephaestus/debt/assumptions.md` — open stubs/provisional contracts (owner + retirement condition) | human: risk view · agent: what to retire first |
+| Increment close | `docs/increments/<INC>-report.md` (gates, `smell→technique`, **debt log**, provisional→stable promotions) | human: steering · agent: next-increment input |
 
-**Carry-forward rule:** each increment is *given* the prior ADRs, the current
-traceability matrix, and the debt log as input context. Decisions and debt recorded
-in one cycle become **requirements/constraints** for later cycles — so the loop
-accumulates knowledge instead of repeating itself.
+**Carry-forward rule:** each increment is *given* the prior ADRs (with their `provisional`/`stable`
+state), the current traceability matrix, the debt log, and the **assumption-debt ledger** as input
+context. Decisions and debt recorded in one cycle become **requirements/constraints** for later
+cycles, and open assumption debt is preferentially retired before breadth is added — so the loop
+accumulates knowledge (and burns down its own scaffolding) instead of repeating itself.
 
 **Keep it minimal & effective.** Per `config.references.documentation.principle`
 (arc42 lean subset): document decisions, interfaces and rationale — not the obvious.

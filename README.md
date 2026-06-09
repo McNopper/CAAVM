@@ -1,31 +1,36 @@
 # 🔱 Hephaestus
 
-### Cyclic Agentic Agile V-Model
+### Cyclic Agentic Agile V-Model — *hybrid top-down + bottom-up*
 
 > Build software increment by increment with full V-Model traceability, TDD,
 > adversarial verification, and enforced clean-code gates — driven by autonomous
-> agents and **configured in one file**. Defaults target **C++**; retarget any
-> language by editing config.
+> agents and **configured in one file**. Top-down sets the architecture *intent*;
+> a bottom-up **walking skeleton** of real units proves it; they meet in the middle
+> and an **adaptation** step lets the running code refine the design. Defaults target
+> **C++**; retarget any language by editing config.
 
 > **Why "Hephaestus"?** [Hephaestus](https://en.wikipedia.org/wiki/Hephaestus) is the Greek god of
 > craft and the forge — and the one who built *automatons* (Talos, the golden mechanical attendants).
 > A fitting patron for a disciplined, agent-driven build process.
 
 ```
- 0. MVP loop (INPUT.md ⇄ OUTPUT.md, re-run to deepen)
+ 0. MVP loop (INPUT.md ⇄ OUTPUT.md, re-run to deepen — maturity tracked PER SLICE)
  1. Requirements ───────────────────────────────► 10. Acceptance test   (run the system; screenshots/E2E)
  2. Software System (topology + executables) ───►  9. System test       (deployables run together)
- 3. Architecture (per executable: modules) ─────►  8. Module test        (mocked)
- 4. Design (per component: interface + units) ──►  7. Component test     (mocked)
+ 3. Architecture (per executable: modules) ─────►  8. Module test        (mocked)     ┐ contracts
+ 4. Design (per component: interface + units) ──►  7. Component test     (mocked)     ┘ PROVISIONAL
+ 4b. Slice select (walking skeleton: thinnest end-to-end vertical slice of REAL units)
  5. Implementation (per component: units, TDD) ─►  6. Unit test
-        scaffold publishes interfaces + skeleton · each node verified on its branch, merged up only when green · refactor (any phase) · then quality gate
-        commit every phase onto main · re-run to deepen (mvp → harden → complete)
+        partial scaffold publishes THIS slice's interfaces + skeleton · each node verified on its branch, merged up only when green
+        Adaptation: promote provisional→stable, revise what the code disproved, retire stubs · refactor (any phase) · then quality gate
+        commit every phase onto main · re-run to deepen each slice (mvp → harden → complete)
 ```
 
-Each backlog item runs one full **V-pass** (decompose top-down, verify bottom-up),
-and the V repeats every iteration — that's the *cyclic agile* part. Hephaestus builds an
-**MVP first** and is **re-run to deepen**: one run advances the product by one maturity
-rung across the backlog, so `INPUT.md` is resolved over several meaningful loops. Every
+Each backlog item runs one full **V-pass** — top-down for *intent*, bottom-up for *evidence*, meeting
+in the middle (a **walking skeleton** first), with controlled feedback up — and the V repeats every
+iteration (the *cyclic agile* part). The architecture is **provisional** until running code validates
+it. Hephaestus builds an **MVP first** and is **re-run to deepen**, with maturity tracked **per slice**:
+a run advances every slice that is ready, so `INPUT.md` is resolved over several meaningful loops. Every
 phase **commits onto `main`** as it finishes (and writes a file-level trace).
 
 ## The mental model — how the V is structured
@@ -53,8 +58,10 @@ Spelled out as relationships (each "one or more"):
 - **a unit** belongs to exactly **one** component. (A component may be *reused* by several modules —
   it is built once.)
 
-The left arm decides this top-down (**phases 1→5**); the right arm verifies it bottom-up
-(**phases 6→10**), each test level paired with the stage that produced its tier.
+The left arm decides this top-down (**phases 1→5**) but its contracts are **provisional**; the right
+arm verifies bottom-up (**phases 6→10**), each test level paired with the stage that produced its tier.
+Each increment first builds a **walking skeleton** — the thinnest end-to-end vertical slice of *real*
+units (chosen at phase 4b) — so the architecture is proven by running code before breadth is added.
 
 **Why it parallelizes.** The decomposition is **interface-first**: as soon as a tier's interfaces
 exist, the work beneath it is decoupled. So each executable is architected on its own, every **unit** is
@@ -63,8 +70,10 @@ implemented on its **own branch** in parallel (developer-style), and every test 
 **bottom-up** — units → components → modules → executables → system — each node merging into its parent
 **only once its test is green**. It is **highly parallel**.
 
-**Forward decomposition, clear gates, targeted repair.** The left arm flows **forward only** — no
-backward jumps between design stages. Gaps surface in the **test phases**, which are clear gates. When
+**Forward construction, backward learning, clear gates, targeted repair.** The left arm flows **forward**
+to set intent, but its contracts are provisional and there are **no *uncontrolled* backward jumps**. Gaps
+surface in the **test phases** (clear gates); what the running code teaches flows back **up** only through
+the explicit **Adaptation** step (promote provisional→stable, revise the disproven, retire stubs). When
 a gate goes red, Hephaestus repeats the build loop for **only the failing element** (a unit, a component, a
 module, a deployable — the rule is the same at every level) plus refactoring, then re-verifies —
 bounded by `max_fix_rounds`. **Already-passing siblings are never re-implemented.** If it can't go
@@ -94,16 +103,18 @@ source are untouched). Treat the kit like a versioned dependency you periodicall
 ## Features
 
 - 🔁 **Cyclic V-Model (5↔5)** — requirements↔acceptance, software-system↔system, architecture↔module, design↔component, implementation↔unit.
+- 🥪 **Hybrid top-down + bottom-up** — top-down sets **provisional** architecture (a hypothesis); a bottom-up **walking skeleton** of real units proves it; they meet in the middle. An **Adaptation** step then promotes validated contracts `provisional→stable` and revises what the code disproved.
 - 🧱 **Explicit composition hierarchy** — `system → software(executable) → module → component → unit` (each *one or more*; a unit in exactly one component; a component reusable across modules). Every element is **visible** (in `OUTPUT.md` + traces) and **independently tested** at its level.
-- ⚡ **Highly parallel, interface-first** — once interfaces are published (single-writer Scaffold) the work decouples: each executable is architected on its own, every **unit** is implemented on its **own branch** (developer-style), and every test level fans out per sibling. Assembled back **bottom-up** as a tree of gated merges (unit→component→module→software→system) — which is what lets it scale to **very complex systems**.
-- 🚥 **Clear gates + targeted repair** — the left arm flows forward only (no backward jumps); each test level is a gate. A red gate repeats the build loop for **only the failing element** (same rule at every level — unit, component, module, deployable) + refactor, then re-verifies. Passing siblings are never re-implemented. Bounded by `max_fix_rounds`.
-- 🪜 **MVP maturity ladder** — one run = one rung (`mvp → harden → complete`); **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
+- ⚡ **Highly parallel, interface-first** — once a slice's interfaces are published (single-writer **partial** Scaffold) the work decouples: each executable is architected on its own, every **unit** is implemented on its **own branch** (developer-style), and every test level fans out per sibling. Assembled back **bottom-up** as a tree of gated merges (unit→component→module→software→system) — which is what lets it scale to **very complex systems**.
+- 🔄 **Controlled feedback (no uncontrolled backward jumps)** — the left arm flows forward to set intent; the bottom informs the top **only** through the explicit Adaptation gate. Each test level is a gate; a red gate repeats the build loop for **only the failing element** (same rule at every level — unit, component, module, deployable) + refactor, then re-verifies. Passing siblings are never re-implemented. Bounded by `max_fix_rounds`.
+- 🧾 **Assumption-debt ledger** — every stub/driver/provisional interface is logged with an **owner** + **retirement condition**, carried forward and burned down as slices harden (bounds the sandwich-integration squeeze).
+- 🪜 **Per-slice MVP maturity ladder** — each validated slice climbs its **own** rungs (`mvp → harden → complete`); a run advances every slice that is ready; **re-run to deepen** until `INPUT.md` is fully resolved. Each rung scales the quality gates.
 - 🌳 **Commit-per-phase, gated-merge tree** — every phase persists + commits its content; each node is built on its own branch (worktree) and **merged into its parent only once its test is green** (unit→component→module→software→system→`main`), so `main` only ever holds verified work. A per-phase **trace file** is written even when docs are `minimal`/`off`, for a file-level trail.
 - 🤖 **Agentic** — a dedicated agent per stage; *independent* agents verify (adversarial).
 - 🧪 **TDD** — red→green→refactor; tests climb `unit → component → module → system → acceptance`.
 - 🧹 **Clean code** — SOLID, Ports & Adapters, smell hunting; refactoring is **on-demand inside every phase** (red→green→refactor), with thresholds enforced at the gate.
-- 🚦 **Quality gates** — coverage, complexity, zero-warning lint/format, sanitizers, doc coverage, traceability.
-- 🎚️ **Per-phase model routing** — run each phase on a different model tier (`opus`/`sonnet`/`haiku`), e.g. Opus for architecture/design/gate, Haiku for mechanical verification.
+- 🚦 **Quality gates** — coverage, complexity, zero-warning lint/format, sanitizers, doc coverage, **produced** traceability matrix, no provisional contracts left in a completed slice.
+- 🎚️ **Per-phase model routing** — run each phase on a different model tier (`opus`/`sonnet`/`haiku`), e.g. Opus for architecture/design/adaptation/gate, Haiku for mechanical verification.
 - 🛠️ **One-file config** — language, version, tools (clang-format, clang-tidy, cmake, GoogleTest, …), toggles and models are all plain data.
 
 ## Repository layout
@@ -137,12 +148,14 @@ You don't have to edit YAML to use Hephaestus — you talk to it through two mar
 So the everyday loop is: _jot in `INPUT.md` → run → read `OUTPUT.md` → run again (to deepen) /
 jot more in `INPUT.md`._ The process never edits your `INPUT.md`; you never edit its `OUTPUT.md`.
 
-**Run it several times.** Hephaestus follows an **MVP strategy**: one invocation advances the product by
-one maturity rung (`mvp → harden → complete`, see `config.strategy`) across the whole backlog. The
-first run builds the thinnest end-to-end MVP (edge cases deferred as logged debt); each later run
-reads `OUTPUT.md`, deepens, and re-checks `INPUT.md`, until every idea is resolved at the top rung.
-`OUTPUT.md` shows the current rung, the next rung, and a per-idea resolution table. Every phase
-commits its content onto `main` as it finishes, so progress is incremental and a run is resumable.
+**Run it several times.** Hephaestus follows an **MVP strategy** with **per-slice** maturity: a slice's
+first touch builds its walking skeleton at `mvp`, and a slice that passed its gate advances toward
+`harden → complete` on later runs (`config.strategy`) — so one invocation advances **every slice that is
+ready** (set `strategy.maturity_scope: whole_backlog` for the legacy one-rung-per-run behavior). Each
+later run reads `OUTPUT.md`, deepens ready slices, and re-checks `INPUT.md`, until every idea is resolved
+at the top rung. `OUTPUT.md` shows each slice's rung, the provisional-vs-stable contracts, the
+assumption-debt log, and a per-idea resolution table. Every phase commits its content onto `main` as it
+finishes, so progress is incremental and a run is resumable.
 
 ## Quick start
 
@@ -176,14 +189,16 @@ Run the hephaestus workflow using config/hephaestus.config.yaml as args.
 ```
 
 Claude parses the YAML, hands it in as `args` (merged over built-in defaults), and runs every
-increment end-to-end at **this loop's maturity rung**: requirements → software system → architecture →
-design (all components, interfaces only) → **scaffold** (publish interfaces + a glob build skeleton onto the
-branch) → implementation (each component on its own branch, in worktrees) → a **bottom-up tree of gated
-merges** — each node is verified in isolation on its branch and merged into its parent only once green
-(unit→component→module→software→system), with the verified system landing on `main` → quality gate —
-committing each phase as it finishes and returning a per-increment report + traceability matrix. The
-carry-forward ledger feeds each increment into the next; **re-run the workflow to climb to the next rung**
-until `INPUT.md` is fully resolved.
+increment end-to-end at **each slice's maturity rung**: requirements → software system → architecture →
+design (all components, interfaces only — **provisional**) → **slice select** (the walking skeleton) →
+**partial scaffold** (publish that slice's interfaces + a glob build skeleton onto the branch) →
+implementation (each component on its own branch, in worktrees) → a **bottom-up tree of gated merges** —
+each node is verified in isolation on its branch and merged into its parent only once green
+(unit→component→module→software→system) → **adaptation** (promote provisional→stable, revise what the
+code disproved, retire stubs), with the verified system landing on `main` → quality gate — committing
+each phase as it finishes and returning a per-increment report + the produced traceability matrix. The
+carry-forward ledger (decisions, debt, assumption-debt) feeds each increment into the next; **re-run the
+workflow to deepen each slice** until `INPUT.md` is fully resolved.
 
 > ⚠️ **This burns a LOT of tokens.** It spawns a subagent per component, per module, per deployable, per
 > test level, per fix round — across every increment and every maturity loop — so cost scales with the size
@@ -209,8 +224,10 @@ cheaper tiers:
 models:
   default: sonnet
   system: opus           # topology + deployables (executables)
-  architecture: opus     # per-deployable pattern, modules, boundaries, ADRs
-  design: opus           # component interfaces + design patterns
+  architecture: opus     # per-deployable pattern, modules, boundaries, ADRs (provisional)
+  design: opus           # component interfaces + design patterns (provisional)
+  slice: sonnet          # pick the walking-skeleton vertical slice
+  adaptation: opus       # promote provisional→stable + revise disproven architecture
   gate: opus             # final Definition-of-Done judgment
   implementation: sonnet # high-volume parallel TDD (per component)
   requirements: sonnet
@@ -234,10 +251,12 @@ Then instruct it:
 
 ```text
 Act as the Hephaestus agent. Read config/hephaestus.config.yaml (the single source of truth) and
-follow docs/hephaestus.process.md. Build project.backlog item INC-001 as one V-pass:
-requirements → architecture → design → TDD implementation → unit/component/module/system/
-acceptance verification → refactor (cross-check the refactoring & design-pattern catalogs in
-`references`) → quality gate. Honor toggles.documentation and the carry_forward rule.
+follow docs/hephaestus.process.md. Build project.backlog item INC-001 as one HYBRID V-pass:
+requirements → software-system → architecture → design (contracts PROVISIONAL) → slice-select
+(walking skeleton) → partial scaffold → TDD implementation → unit/component/module/system/acceptance
+verification → adaptation (promote provisional→stable, revise, retire stubs) → refactor (cross-check
+the refactoring & design-pattern catalogs in `references`) → quality gate. Honor toggles.documentation,
+the per-slice maturity ladder, and the carry_forward rule (incl. the assumption-debt ledger).
 ```
 
 **Make it automatic** — drop a custom-instructions file so you don't repeat the context each run
@@ -247,12 +266,16 @@ acceptance verification → refactor (cross-check the refactoring & design-patte
 <!-- .github/copilot-instructions.md -->
 This repo uses Hephaestus. Treat config/hephaestus.config.yaml as the single source of truth for
 language, tools, quality gates, reference catalogs, strategy, git, and toggles.documentation. For
-any feature work, follow docs/hephaestus.process.md: build each project.backlog item as one V-pass
-with TDD and the five test levels, run the configured formatter/linters/tests as gates, keep docs
-minimal & effective, and carry decisions + debt forward between increments. Follow the MVP maturity
-ladder (strategy.maturity_levels: mvp → harden → complete) — build the thinnest slice first and
-deepen on re-runs, judging each loop against that rung's effective gates. Commit each phase onto the
-working branch as it finishes and write the per-phase trace file (living_artifacts.phase_trace).
+any feature work, follow docs/hephaestus.process.md: build each project.backlog item as one HYBRID
+V-pass — top-down architecture is PROVISIONAL, build a walking-skeleton vertical slice of real units
+first (partial scaffold), verify bottom-up through the five test levels, then run Adaptation to promote
+validated contracts provisional→stable and revise what the code disproved (controlled feedback up, no
+uncontrolled backward jumps). Run the configured formatter/linters/tests as gates, produce the
+traceability matrix, keep the assumption-debt ledger current, keep docs minimal & effective, and carry
+decisions + debt forward. Follow the PER-SLICE maturity ladder (strategy.maturity_levels: mvp → harden →
+complete) — build each slice's thinnest skeleton first and deepen on re-runs, judging against that rung's
+effective gates. Commit each phase onto the working branch as it finishes and write the per-phase trace
+file (living_artifacts.phase_trace).
 ```
 
 > The same file pattern works for **VS Code Copilot** and other Copilot surfaces, so the V-Model

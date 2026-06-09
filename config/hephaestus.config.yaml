@@ -31,13 +31,19 @@ project:
     #   acceptance: "..."
 
 # ---------------------------------------------------------------------------
-# MVP strategy & maturity ladder.
+# MVP strategy & maturity ladder (HYBRID top-down + bottom-up).
 # ---------------------------------------------------------------------------
-#  Hephaestus is meant to be RE-RUN: one workflow invocation advances the product by
-#  exactly ONE maturity level (one "meaningful loop") across the whole backlog.
-#  The first run builds the thinnest end-to-end MVP; each later run reads the
-#  state in OUTPUT.md and DEEPENS the product, until every idea in INPUT.md is
-#  fully resolved at the top level. So the everyday rhythm is:
+#  Hephaestus is meant to be RE-RUN. Construction is HYBRID: the top-down arm gives
+#  PROVISIONAL architecture/intent (a hypothesis), and the bottom-up arm proves it by
+#  building real units for the thinnest end-to-end VERTICAL SLICE first (a "walking
+#  skeleton"). The two meet in the middle; an ADAPTATION gate then lets the evidence
+#  from running code revise the provisional architecture before it hardens.
+#
+#  Maturity is tracked PER SLICE (maturity_scope: per_slice): each validated slice/
+#  capability climbs its OWN ladder mvp -> harden -> complete, and a run advances every
+#  slice that is ready (rather than nudging the whole backlog by one rung). The first
+#  touch of a slice builds its walking skeleton; each later run reads OUTPUT.md and
+#  DEEPENS that slice, until every idea in INPUT.md is fully resolved. Everyday rhythm:
 #      jot in INPUT.md -> run (loop N) -> read OUTPUT.md -> run again (loop N+1)
 #  Each level may relax the quality_gates below; an empty `gates:` map means
 #  "use the strict quality_gates as-is". Effective gates = quality_gates with
@@ -45,13 +51,18 @@ project:
 # ---------------------------------------------------------------------------
 strategy:
   approach: mvp                # mvp (climb the ladder) | full (strict gates from loop 1)
+  construction: hybrid         # hybrid (top-down intent + bottom-up walking skeleton) | top_down (legacy strict)
+  spine_first: true            # begin each increment by building a walking skeleton (thinnest end-to-end vertical slice)
+  maturity_scope: per_slice    # per_slice (each validated slice climbs its own ladder) | whole_backlog (legacy)
   maturity_levels:
     - name: mvp
       intent: >
-        Thinnest end-to-end vertical slice that delivers user-visible value.
-        Happy path only; defer edge cases and non-functional hardening as logged
-        debt. The architecture must be extensible (not throwaway), but resist
-        gold-plating (YAGNI). Prove the core works before deepening.
+        Walking skeleton: the thinnest end-to-end vertical slice that delivers
+        user-visible value, built from REAL units (not stubs) so it proves the
+        provisional architecture actually runs. Happy path only; defer edge cases
+        and non-functional hardening as logged debt. The architecture must be
+        extensible (not throwaway), but resist gold-plating (YAGNI). Prove the
+        core works before deepening.
       gates:                   # relaxed for the first loop
         unit_line_coverage_min: 50
         unit_branch_coverage_min: 40
@@ -70,6 +81,36 @@ strategy:
         Fully resolve INPUT.md: every requirement implemented, full robustness,
         documentation complete, strict gates enforced. Nothing deferred.
       gates: {}                # empty -> the strict quality_gates apply unchanged
+
+# ---------------------------------------------------------------------------
+# HYBRID construction (top-down intent + bottom-up evidence).
+# ---------------------------------------------------------------------------
+#  The left arm still decomposes top-down, but its output is a HYPOTHESIS: contracts
+#  start `provisional` and only become `stable` once running code validates them. Each
+#  increment builds a WALKING SKELETON first (bottom-up, real units for one thin slice),
+#  the partial Scaffold publishes only that slice's seams, and an ADAPTATION gate feeds
+#  what the code taught back into the architecture (controlled bidirectional feedback)
+#  before the next slice. Sandwich-integration risk is bounded by tracking every stub /
+#  provisional interface as ASSUMPTION DEBT with an explicit retirement condition.
+# ---------------------------------------------------------------------------
+hybrid:
+  walking_skeleton: >
+    The thinnest executable path that crosses every architectural tier end-to-end
+    (unit -> component -> module -> software -> system -> acceptance) for ONE slice,
+    built from real units. It is the bottom-up seed that proves the provisional
+    architecture before breadth is added.
+  slice_selection: >
+    Pick the slice that is both OBVIOUS and ARCHITECTURALLY ANCHORED: it must map to a
+    requirement and exercise the riskiest/most load-bearing assumptions. Never start
+    from arbitrary easy utilities (reverse-YAGNI) — every bottom-up unit attaches to a
+    requirement, the current slice, a risk probe, or a known architectural seam.
+  contract_states: [provisional, stable]   # interfaces/ADRs carry a state; Scaffold + Adaptation manage the transition
+  partial_scaffold: true        # Scaffold publishes ONLY the current slice's interfaces + skeleton (provisional seams elsewhere), and expands per cycle
+  feedback: controlled_bidirectional   # evidence from units may revise the architecture, but ONLY through the Adaptation gate
+  max_adaptation_rounds: 2      # bounded rounds of provisional->stable promotion / architecture revision per slice
+  assumption_debt: >
+    Every stub, driver, mock, and provisional interface is logged with an OWNER and a
+    RETIREMENT CONDITION, carried forward, and burned down as slices harden.
 
 # ---------------------------------------------------------------------------
 # Git integration. Each phase commits its content onto the working branch as it
@@ -110,9 +151,11 @@ models:
   system: opus              # software-system topology + deployables/executables
   architecture: opus        # per-deployable pattern, modules, boundaries, ADRs
   design: opus              # component interfaces + design-pattern selection
+  slice: sonnet             # pick the walking-skeleton vertical slice for the increment
   implementation: sonnet    # high-volume TDD coding, runs in parallel per component
   verification: haiku       # mostly mechanical: run tests, report pass/fail + coverage
   refactor: sonnet          # smell detection + technique application
+  adaptation: opus          # promote provisional->stable + revise disproven architecture (judgment-heavy)
   gate: opus                # final Definition-of-Done judgment
   intake: sonnet            # parse INPUT.md into backlog increments
   report: sonnet            # write OUTPUT.md + resync with INPUT.md
@@ -221,11 +264,23 @@ v_model:
   # and is a BARRIER before the next. Component & module tests REQUIRE MOCKING; acceptance runs the
   # real system (e.g. screenshots / E2E).
   test_execution_order: [unit, component, module, system, acceptance]
-  # The left arm flows FORWARD ONLY — no backward jumps between design stages. Each test level is a
-  # CLEAR GATE: the climb proceeds only when it is green. A RED gate triggers a TARGETED REPAIR — repeat
-  # the build loop for ONLY the failing element at that level (a unit / component / module / deployable;
-  # the rule is the same at every level) plus refactoring, then re-verify — bounded by agile.max_fix_rounds.
-  # Already-passing siblings are NEVER re-implemented. Persistent failure fails the gate and re-loops.
+  # CONTROLLED BIDIRECTIONAL FEEDBACK (replaces the old "forward only" rule). The left arm
+  # still flows top-down to set intent, but its contracts are PROVISIONAL until running code
+  # validates them. Each test level is a CLEAR GATE: the climb proceeds only when green, and a
+  # RED gate triggers a TARGETED REPAIR — repeat the build loop for ONLY the failing element
+  # (a unit / component / module / deployable; same rule at every level) plus refactoring, then
+  # re-verify — bounded by agile.max_fix_rounds. Already-passing siblings are NEVER re-implemented.
+  # AFTER a slice verifies, the ADAPTATION gate (below) lets evidence flow UP: promote validated
+  # contracts provisional->stable, revise disproven architecture, retire stubs, and re-sync the
+  # traceability matrix — bounded by hybrid.max_adaptation_rounds. So backward revision is allowed,
+  # but ONLY through this explicit gate (never uncontrolled jumps), and it must keep traceability
+  # and tests in sync. Persistent failure fails the gate and re-loops.
+  adaptation:
+    runs_after: "the slice's test levels are green (bottom-up evidence collected)"
+    promotes: "validated provisional contracts/ADRs -> stable"
+    revises: "disproven provisional architecture/design, then re-verifies affected nodes"
+    retires: "stubs/drivers/mocks whose assumption-debt retirement condition is now met"
+    resyncs: "the traceability matrix and the assumption-debt ledger"
 
 # ---------------------------------------------------------------------------
 # Agile loop controls.
@@ -237,10 +292,13 @@ agile:
   max_refactor_rounds: 2      # hint for the on-demand refactor effort within a phase
   max_fix_rounds: 2           # targeted-repair rounds for a RED gate (repeat the failing element's loop) before the climb stops
   max_gate_retries: 2         # times an increment may re-loop if a gate fails
+  max_adaptation_rounds: 2    # see hybrid.max_adaptation_rounds — rounds of provisional->stable promotion / architecture revision after a slice verifies
   definition_of_done:
     - "All five test levels green (unit, component, module, system, acceptance) for the requirements IN SCOPE at this maturity level."
     - "The EFFECTIVE quality_gates for this maturity level satisfied (strict gates with the level's relaxations merged on top)."
-    - "Requirements <-> tests traceability matrix complete for the in-scope requirements."
+    - "Requirements <-> tests traceability matrix PRODUCED and complete for the in-scope requirements (the persisted matrix artifact, not just an assertion)."
+    - "Adaptation done: validated contracts promoted provisional->stable; no provisional contract left inside a slice that reached 'complete'."
+    - "Assumption-debt ledger up to date: every remaining stub/driver/provisional interface has an owner and a retirement condition (and any whose condition was met are retired)."
     - "No new linter/formatter/sanitizer findings."
     - "Public API documented (minimal & effective; coverage scaled by the maturity level)."
     - "Each phase committed on the working branch with its per-phase trace file written; increment report written and living artifacts updated."
@@ -254,18 +312,25 @@ agile:
 living_artifacts:
   requirements:   "docs/requirements/<INC>.md + a traceability matrix that grows each increment"
   software_system: "docs/system/<INC>.md — topology + deployables (executables) + context + external interfaces"
-  architecture:   "docs/architecture/arc42-*.md + ADRs (append-only, per-deployable patterns) + UML diagrams"
-  design:         "docs/design/<INC>.md + per-component interface contracts + component-test specs"
+  architecture:   "docs/architecture/arc42-*.md + ADRs (append-only, per-deployable patterns, each marked provisional|stable) + UML diagrams"
+  design:         "docs/design/<INC>.md + per-component interface contracts (provisional|stable) + component-test specs"
   implementation: "code + tests (the executable specification)"
-  increment:      "docs/increments/<INC>-report.md (shipped, gate results, smell->technique refactors, debt)"
+  # The traceability matrix is a PRODUCED artifact (not just gate-checked): one row per REQ ->
+  # module/component/unit -> the five test levels, regenerated and persisted every increment.
+  traceability:   "docs/hephaestus/traceability/<INC>.md (REQ -> unit/component/module/system/acceptance), grows each loop"
+  # The assumption-debt ledger persists every stub/driver/mock/provisional interface with an OWNER
+  # and a RETIREMENT CONDITION; it is read back at Intake and burned down by the Adaptation gate.
+  assumption_debt: "docs/hephaestus/debt/assumptions.md (open stubs/provisional contracts: owner + retirement condition + slice)"
+  increment:      "docs/increments/<INC>-report.md (shipped, gate results, smell->technique refactors, debt, provisional->stable promotions)"
   # Per-phase trail written REGARDLESS of toggles.documentation (even 'off'): a small
   # markdown file per phase so progress is trackable at the file level and every
   # commit-per-phase is non-empty. This is process telemetry, not product docs.
   phase_trace:    "docs/hephaestus/trace/<INC>/<level>/<NN-phase>.md (one per phase per loop)"
 
 carry_forward:
-  - "Each increment is given the prior ADRs, the current traceability matrix, and the debt log as input context."
-  - "Decisions and debt logged in one cycle become requirements/constraints for later cycles."
+  - "Each increment is given the prior ADRs (with provisional|stable state), the current traceability matrix, the debt log, AND the assumption-debt ledger as input context."
+  - "Decisions and debt logged in one cycle become requirements/constraints for later cycles; open assumption debt is preferentially retired before adding breadth."
+  - "Provisional contracts validated by a prior slice are carried as stable; disproven ones are flagged for the Adaptation gate to revise."
   - "The agent uses these artifacts to stay consistent across iterations; the human uses them to review and steer."
 
 # ---------------------------------------------------------------------------

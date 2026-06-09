@@ -9,9 +9,10 @@ _Last run: not yet run._
 
 ## Loop & maturity
 
-<!-- Which loop this is and the maturity rung it ran. Hephaestus advances ONE rung per run. -->
+<!-- Which loop this is and the maturity rung it ran. Maturity is tracked PER SLICE — each
+     vertical slice climbs its own mvp → harden → complete ladder; a run advances every ready slice. -->
 
-- loop: — · this run's level: — · next run's level: — · INPUT.md fully resolved: —
+- loop: — · this run's level (default): — · next run's level: — · INPUT.md fully resolved: —
 
 ## Captured from `INPUT.md`
 
@@ -37,11 +38,37 @@ _Last run: not yet run._
 
 ## Increments
 
-<!-- One line per backlog item. Example of the shape Report maintains: -->
+<!-- One line per backlog item (vertical slice). Example of the shape Report maintains: -->
 
 - [ ] **INC-001** — _title_ — `queued` — rung reached: —
   - stage reached: — · gate: — · debt / deferred to next loop: —
-  - hierarchy: — deployable(s) ◄ — module(s) ◄ — component(s) ◄ — unit(s) · topology: —
+  - walking-skeleton slice: — · hierarchy: — deployable(s) ◄ — module(s) ◄ — component(s) ◄ — unit(s) · topology: —
+
+## Per-slice maturity
+
+<!-- Each increment is a vertical slice climbing its OWN ladder. A run advances every ready slice. -->
+
+| Increment | Walking-skeleton slice | Current rung | Next rung |
+|-----------|------------------------|--------------|-----------|
+| —         | —                      | —            | —         |
+
+## Provisional vs stable contracts
+
+<!-- Architecture/interfaces start PROVISIONAL (a hypothesis); the Adaptation step promotes the ones
+     the running code validated to STABLE. Listed per latest increment. -->
+
+| Contract | State | Evidence (test that validated it) |
+|----------|-------|-----------------------------------|
+| —        | provisional / stable | — |
+
+## Assumption / stub debt
+
+<!-- Every provisional contract, stub, or driver mocked at a slice boundary is first-class debt with
+     an owner and a retirement condition; retired as soon as real code replaces it. -->
+
+| Item | Owner | Retire when | Status |
+|------|-------|-------------|--------|
+| —    | —     | —           | open / retired |
 
 ## Composition hierarchy (latest increment)
 
@@ -67,5 +94,6 @@ _Last run: not yet run._
 
 _Legend: `queued` → not started · `in-progress` → mid V-pass · `passed` → gate met for
 the current rung · `failed` → gate not met (re-looping). Checkbox ticked = increment passed
-its gate at this loop's maturity rung. **Re-run the workflow to climb the ladder
+its gate at its current rung. Each increment is built as a **walking skeleton** (thinnest end-to-end
+vertical slice) first, then deepened. **Re-run the workflow to climb the ladder per slice
 (mvp → harden → complete) until `INPUT.md` is fully resolved.**_
