@@ -20,7 +20,7 @@
  3. Architecture (per executable: modules) ─────►  8. Module test        (mocked)     ┐ contracts
  4. Design (per component: interface + units) ──►  7. Component test     (mocked)     ┘ PROVISIONAL
  4b. Slice select (walking skeleton: thinnest end-to-end vertical slice of REAL units)
- 5. Implementation (per component: units, TDD) ─►  6. Unit test
+ 5. Implementation (per unit, own branch, TDD) ─►  6. Unit test
         partial scaffold publishes THIS slice's interfaces + skeleton · each node verified on its branch, merged up only when green
         Adaptation: promote provisional→stable, revise what the code disproved, retire stubs · refactor (any phase) · then quality gate
         commit every phase onto main · re-run to deepen each slice (mvp → harden → complete)
@@ -192,17 +192,19 @@ Claude parses the YAML, hands it in as `args` (merged over built-in defaults), a
 increment end-to-end at **each slice's maturity rung**: requirements → software system → architecture →
 design (all components, interfaces only — **provisional**) → **slice select** (the walking skeleton) →
 **partial scaffold** (publish that slice's interfaces + a glob build skeleton onto the branch) →
-implementation (each component on its own branch, in worktrees) → a **bottom-up tree of gated merges** —
+implementation (each **unit** on its own branch, in worktrees, merged into its component) → a **bottom-up tree of gated merges** —
 each node is verified in isolation on its branch and merged into its parent only once green
-(unit→component→module→software→system) → **adaptation** (promote provisional→stable, revise what the
-code disproved, retire stubs), with the verified system landing on `main` → quality gate — committing
-each phase as it finishes and returning a per-increment report + the produced traceability matrix. The
+(unit→component→module→software→system), the verified system landing on `main` → **adaptation** (promote
+provisional→stable, revise what the code disproved, retire stubs, **produce the traceability matrix**) →
+quality gate — committing each phase as it finishes and returning a per-increment report + the produced
+traceability matrix. The
 carry-forward ledger (decisions, debt, assumption-debt) feeds each increment into the next; **re-run the
 workflow to deepen each slice** until `INPUT.md` is fully resolved.
 
-> ⚠️ **This burns a LOT of tokens.** It spawns a subagent per component, per module, per deployable, per
-> test level, per fix round — across every increment and every maturity loop — so cost scales with the size
-> of your system and can be very large. **Strongly recommended: set a spend/token limit *before* you start**
+> ⚠️ **This burns a LOT of tokens.** It spawns a subagent per unit, per component, per module, per
+> deployable, per test level, per fix round — across every increment and every maturity loop — so cost scales
+> with the size of your system and can be very large. **Strongly recommended: set a spend/token limit *before*
+> you start**
 > (e.g. a token-budget directive like `+500k` on your prompt, or your client's usage cap) so a deep run
 > can't run away. Only invoke it once you've opted into multi-agent orchestration (say "use a workflow").
 
@@ -229,7 +231,7 @@ models:
   slice: sonnet          # pick the walking-skeleton vertical slice
   adaptation: opus       # promote provisional→stable + revise disproven architecture
   gate: opus             # final Definition-of-Done judgment
-  implementation: sonnet # high-volume parallel TDD (per component)
+  implementation: sonnet # high-volume parallel TDD (each unit on its own branch)
   requirements: sonnet
   verification: haiku     # mechanical: run the unit/component/module/system/acceptance tests
 ```
