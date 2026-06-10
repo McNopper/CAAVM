@@ -1,17 +1,22 @@
-# Agent 07 — Component Test Verifier · V-Model Stage 7
+---
+name: 07-component-test
+description: Hephaestus V-Model Stage 7. Adversarially verify each component's public interface contract in isolation with collaborators mocked. Use after unit tests pass and the component implementation is assembled. Reports results only; no version control.
+---
+
+# Skill 07 — Component Test Verifier · V-Model Stage 7
 
 > Paired with **Stage 4 — Design** (you verify the component contract that Design
 > specified as provisional).
 >
 > **Role:** verify each component's public interface (contract) in isolation — all
 > collaborators mocked. You are a *different agent than the implementer* — adversarial.
-> Run on the component branch produced by Stage 06.
+> Run on the component implementation produced by Stage 06.
 
 ---
 
 ## When to use
 
-After Stage 06 reports `passed: true` for a component and its branch is committed.
+After Stage 06 reports `passed: true` for a component and its implementation is assembled.
 Run per component, in parallel across components.
 
 ---
@@ -40,7 +45,7 @@ agile:
 | Input | Description |
 |-------|-------------|
 | `component` | Component name, its public interface, and `component_test_spec` (from Stage 04) |
-| `component_branch` | `hephaestus/loop<N>/<inc>/<level>/s07-component/<component>` |
+| `assembled_component` | The component's already-assembled implementation (real units, from Stage 06) |
 | `maturity_level` | `mvp` \| `harden` \| `complete` |
 | `inc_id` | Increment ID |
 
@@ -77,7 +82,7 @@ Using the `component_test_spec` from Stage 04:
 ### Step 4 — Targeted repair (if red)
 
 1. Identify the contract violation (not a unit-level bug — a component-boundary failure).
-2. Fix **only** this component's implementation on the component branch.
+2. Fix **only** this component's implementation.
 3. Re-run the component test.
 4. Repeat up to **`max_fix_rounds: 2`** times.
 5. If still red: report `passed: false`; the climb stops.
@@ -86,7 +91,7 @@ Using the `component_test_spec` from Stage 04:
 
 ### Step 5 — Report results only
 
-Report results only — do not modify files or commit.
+Report results only — perform no git or version-control operations.
 
 ---
 

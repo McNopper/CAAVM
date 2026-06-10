@@ -1,11 +1,16 @@
-# Agent 04 — Designer · V-Model Stage 4
+---
+name: 04-design
+description: Hephaestus V-Model Stage 4. Detail each component's public interface, units, design patterns, and provisional component test spec. Returns data only, writes no files. Use after architecture delivers the component work-list. Paired with Stage 7 component testing.
+---
+
+# Skill 04 — Designer · V-Model Stage 4
 
 > Paired with **Stage 7 — Component Test** (your component interfaces are the mocked
 > contracts that Stage 07 verifies).
 >
 > **Role:** detail each component from the architecture's work-list — define its public
 > interface, the units that compose it, the design patterns applied, and the component
-> test specification. **Return data only — write no files and make no commits.**
+> test specification. **Return data only — write no files.**
 > The Scaffold step inside Stage 05 is the single writer.
 > All contracts are **PROVISIONAL**.
 
@@ -42,9 +47,6 @@ design_patterns:
   behavioral:  [Chain of Responsibility, Command, Iterator, Mediator, Memento,
                 Observer, State, Strategy, Template Method, Visitor]
 docs:  toggle: minimal
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
 maturity_levels:
   mvp:      minimal interface; YAGNI strictly; no over-engineering
   harden:   add error paths, edge-case units, tighten contracts
@@ -64,7 +66,7 @@ maturity_levels:
 | `architecture` | Stage 03 output — modules, boundaries, ADRs (for context) |
 | `maturity_level` | `mvp` \| `harden` \| `complete` |
 
-Invoke this agent **once per component** in the work-list. Run all invocations in parallel.
+Invoke this skill **once per component** in the work-list. Run all invocations in parallel.
 
 ---
 
@@ -111,7 +113,7 @@ Describe how this component will be tested at Stage 07:
 
 ## Output
 
-**Return as data — do not write any files or commit.
+**Return as data — do not write any files.
 The Scaffold step in Stage 05 publishes everything.**
 
 ```
@@ -144,11 +146,11 @@ component_test_spec: |
 - [ ] Design patterns justified or explicitly omitted (YAGNI noted).
 - [ ] Error handling and resource ownership stated.
 - [ ] Component test spec has ≥ 2 test cases.
-- [ ] **No files written, no commit made** — data returned only.
+- [ ] **No files written** — data returned only.
 
 ---
 
 ## Persist
 
-Stage 05 (Scaffold) writes files and commits on behalf of all components together.
-This agent does **not** write a trace file or commit.
+Stage 05 (Scaffold) writes files on behalf of all components together.
+This agent does **not** write a trace file.

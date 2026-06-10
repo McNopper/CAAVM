@@ -1,4 +1,9 @@
-# Agent 09 — System Test Verifier · V-Model Stage 9
+---
+name: 09-system-test
+description: Hephaestus V-Model Stage 9. Verify all deployables of a system run together in the topology. Use after module tests pass for all modules in a deployable. Reports results only; no version control.
+---
+
+# Skill 09 — System Test Verifier · V-Model Stage 9
 
 > Paired with **Stage 2 — Software System** (you verify the topology and deployables that
 > the Systems Architect defined).
@@ -92,7 +97,7 @@ Using the `system_test_plan`:
 
 ### Step 5 — Report results
 
-Report results only — do not commit or modify branches.
+Report results only — perform no git or version-control operations.
 
 ---
 

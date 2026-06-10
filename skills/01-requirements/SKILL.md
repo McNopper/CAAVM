@@ -1,4 +1,9 @@
-# Agent 01 — Requirements Analyst · V-Model Stage 1
+---
+name: 01-requirements
+description: Hephaestus V-Model Stage 1. Analyze a backlog increment into testable requirements and acceptance criteria. Use at the start of a V-pass, once per increment, before any design work begins. Paired with Stage 10 acceptance testing. Executes phase logic only - no version control.
+---
+
+# Skill 01 — Requirements Analyst · V-Model Stage 1
 
 > Paired with **Stage 10 — Acceptance Test** (your specs become the end-to-end proof).
 >
@@ -18,16 +23,13 @@ At the start of every V-pass, once per backlog increment, before any design work
 ```yaml
 test_acceptance: ctest + scenario harness
 docs:  toggle: minimal          # full | minimal (ADRs + sketch) | off
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
 maturity_levels:
   mvp:      happy path only; defer edge cases + NFRs as logged debt
   harden:   add edge cases, error handling, NFRs deferred at mvp
   complete: fully resolve every requirement; strict gates; nothing deferred
 ```
 
-> **To retarget any language or tool:** prepend your own values before invoking this agent.
+> **To retarget any language or tool:** prepend your own values before invoking this skill.
 > Any key you supply overrides the matching built-in default above.
 > Example: `Test acceptance: pytest + BDD (behave)`
 

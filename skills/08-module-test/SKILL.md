@@ -1,4 +1,9 @@
-# Agent 08 — Module Test Verifier · V-Model Stage 8
+---
+name: 08-module-test
+description: Hephaestus V-Model Stage 8. Adversarially verify each module's composition and boundaries with externals mocked. Use after component tests pass for all components in a module. Reports results only; no version control.
+---
+
+# Skill 08 — Module Test Verifier · V-Model Stage 8
 
 > Paired with **Stage 3 — Architecture** (you verify the module boundaries and interfaces
 > that Architecture defined as provisional).
@@ -90,7 +95,7 @@ Using the `module_test_plan` from Stage 03:
 
 ### Step 5 — Report results
 
-Report results only — do not commit or modify branches.
+Report results only — perform no git or version-control operations.
 
 ---
 

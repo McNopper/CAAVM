@@ -1,4 +1,9 @@
-# Agent 10 — Acceptance Validator · V-Model Stage 10
+---
+name: 10-acceptance-test
+description: Hephaestus V-Model Stage 10. Validate the running system against requirements with end-to-end evidence, then run Adaptation (promote provisional contracts to stable, retire stubs, produce the traceability matrix) and the Iteration Gate. Use after system tests pass for all deployables.
+---
+
+# Skill 10 — Acceptance Validator · V-Model Stage 10
 
 > Paired with **Stage 1 — Requirements** (you prove the acceptance scenarios that
 > Requirements wrote).
@@ -111,7 +116,7 @@ Include evidence references in your `details` output.
 ### Step 5 — Targeted repair (if red)
 
 1. Identify the specific behaviour the failing scenario exercises.
-2. Fix **only** that behaviour on the system branch (trace back to the right unit /
+2. Fix **only** that behaviour (trace back to the right unit /
    component / module and repair it there).
 3. Re-run the full acceptance suite.
 4. Repeat up to **`max_fix_rounds: 2`** times.

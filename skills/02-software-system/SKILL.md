@@ -1,4 +1,9 @@
-# Agent 02 — Systems Architect · V-Model Stage 2
+---
+name: 02-software-system
+description: Hephaestus V-Model Stage 2. Define the software system topology and its deployable executables. Use after requirements are approved and before architecture. Paired with Stage 9 system testing. Executes phase logic only - no version control.
+---
+
+# Skill 02 — Systems Architect · V-Model Stage 2
 
 > Paired with **Stage 9 — System Test** (your topology and deployables become the
 > integration proof target).
@@ -19,9 +24,6 @@ After Stage 01 (Requirements) delivers approved requirements, before Architectur
 ```yaml
 test_system: ctest (deployables run together in the topology)
 docs:  toggle: minimal          # full | minimal (ADRs + sketch) | off
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
 maturity_levels:
   mvp:      minimal topology; extensible not throwaway; defer multi-node hardening
   harden:   add resilience, multiple deployables if deferred, tighten interfaces

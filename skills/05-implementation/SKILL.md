@@ -1,4 +1,9 @@
-# Agent 05 — Implementer · V-Model Stage 5
+---
+name: 05-implementation
+description: Hephaestus V-Model Stage 5. Select the thinnest end-to-end walking-skeleton slice, scaffold the in-slice interfaces and build skeleton, then implement each unit with TDD. Use after design delivers all component designs. Paired with Stage 6 unit testing. Executes phase logic only - no version control.
+---
+
+# Skill 05 — Implementer · V-Model Stage 5
 
 > Paired with **Stage 6 — Unit Test** (your implemented units are verified adversarially).
 >

@@ -1,4 +1,9 @@
-# Agent 03 — Architect · V-Model Stage 3
+---
+name: 03-architecture
+description: Hephaestus V-Model Stage 3. Decompose each executable into modules with clear boundaries (Ports and Adapters). Use after the software system topology is approved. Paired with Stage 8 module testing. Executes phase logic only - no version control.
+---
+
+# Skill 03 — Architect · V-Model Stage 3
 
 > Paired with **Stage 8 — Module Test** (your module interfaces are the mocked-boundary
 > contracts that Stage 08 verifies).
@@ -39,9 +44,6 @@ architecture_patterns:
 clean_code:
   architecture: Ports & Adapters (Hexagonal) — domain core has no I/O dependencies
   dependency_rule: source dependencies point inward, toward the domain
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
 maturity_levels:
   mvp:      minimal modules; each extensible not throwaway
   harden:   add modules deferred at mvp; tighten boundaries

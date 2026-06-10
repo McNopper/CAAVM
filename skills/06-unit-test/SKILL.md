@@ -1,4 +1,9 @@
-# Agent 06 — Unit Test Verifier · V-Model Stage 6
+---
+name: 06-unit-test
+description: Hephaestus V-Model Stage 6. Adversarially verify each unit against its tests with bounded targeted repair. Use after implementation delivers the assembled component source. Reports results only; no version control.
+---
+
+# Skill 06 — Unit Test Verifier · V-Model Stage 6
 
 > Paired with **Stage 5 — Implementation** (you verify what it built).
 >
@@ -89,7 +94,7 @@ Build **only** this component target — never the whole project.
 
 ### Step 4 — Report results only
 
-Report results only — do not commit or modify the branch.
+Report results only — perform no git or version-control operations.
 
 ---
 
