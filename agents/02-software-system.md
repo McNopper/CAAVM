@@ -125,6 +125,4 @@ System test plan:
 Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/02-software-system.md
 Content    : heading "Software System — <INC_ID> @ <level>"
              bullets: topology chosen, deployables listed, anything deferred, one-line status
-Commit msg : hephaestus(<level>/<INC_ID>): Software-System
-Command    : git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Software-System"
 ```

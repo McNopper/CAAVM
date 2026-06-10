@@ -6,8 +6,7 @@
 > **Role:** run the whole system end-to-end — no mocking anywhere — and validate every
 > acceptance scenario from Stage 01. You are a *different agent than the implementer*
 > — adversarial. On green: run **Adaptation** (promote provisional contracts to stable,
-> retire stubs), produce the **traceability matrix**, run the **Iteration Gate**, then
-> merge the verified system to `main` and prune all increment branches.
+> retire stubs), produce the **traceability matrix**, and run the **Iteration Gate**.
 
 ---
 
@@ -46,11 +45,7 @@ agile:
     - Assumption-debt ledger current — every open stub has owner + retire condition.
     - No new lint / format / sanitizer findings.
     - Public API documented (coverage scaled by maturity level).
-    - Each phase committed; increment report written; living artifacts updated.
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
-  worktree_dir: .hephaestus/wt/
+    - Increment report written; living artifacts updated.
 maturity_levels:
   mvp:      happy path; deferred behaviour is debt, not failure
   harden:   edge cases + NFRs from debt log; tighten robustness
@@ -65,7 +60,7 @@ maturity_levels:
 
 | Input | Description |
 |-------|-------------|
-| `software_branches` | All deployable branches — `hephaestus/loop<N>/<inc>/<level>/s09-software/<deployable>` |
+| `assembled_system` | All deployables already wired together for end-to-end validation |
 | `acceptance_tests` | Stage 01 acceptance scenarios (Given/When/Then) |
 | `requirements` | Stage 01 REQ list |
 | `assumption_debt` | Current ledger — `docs/hephaestus/debt/assumptions.md` |
@@ -78,18 +73,10 @@ maturity_levels:
 
 ## Process
 
-### Step 1 — System Tier integration (merge software branches)
+### Step 1 — Receive assembled system
 
-```
-System branch : hephaestus/loop<N>/<inc_id>/<level>/s10-system
-Worktree dir  : .hephaestus/wt/loop<N>/<inc_id>/<level>/system
-
-git worktree add -b <system_branch> <worktree_dir>
-cd <worktree_dir>
-git merge --no-ff <software_branch_1> <software_branch_2> ...
-```
-
-Wire the topology (deploy/run config, ports/IPC) so all executables start together.
+The agent receives the assembled system — all deployables already wired together
+(deploy/run config, ports/IPC) — and validates it end-to-end.
 
 ```
 cmake --build build        # the ONE place the full system is built
@@ -166,10 +153,6 @@ Write `docs/hephaestus/traceability/<inc_id>.md`:
 Every in-scope `REQ-` ID must appear.
 Status = `stable` when its contract is promoted; `provisional` if still unproven.
 
-```
-git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Adaptation"
-```
-
 ---
 
 ## Iteration Gate (Definition of Done)
@@ -208,23 +191,6 @@ Debt        : <open items + follow-up increment>
 Assumptions : <open stubs + retirement conditions>
 ```
 
-```
-git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Iteration-Gate"
-```
-
----
-
-## Merge to main and prune (gate pass only)
-
-```
-git merge --no-ff <system_branch>          # onto the working branch (main)
-cmake --build build                         # confirm still builds
-git worktree prune
-git branch --list "hephaestus/loop<N>/<inc_id>/*" | xargs git branch -D
-```
-
-On gate **fail**: report `passed: false`; the increment re-loops.
-
 ---
 
 ## Output
@@ -252,7 +218,7 @@ gate:
 - [ ] Adaptation complete (promotions, revisions, retirements, traceability matrix written).
 - [ ] Iteration Gate checklist evaluated against effective gates for the maturity level.
 - [ ] Increment report written.
-- [ ] Gate **pass** → system merged to `main`; increment branches and worktrees pruned.
+- [ ] Gate **pass** → report `passed: true` with full details.
 - [ ] Gate **fail** → `passed: false` reported with full details.
 
 ---
@@ -265,5 +231,4 @@ Traceability      : docs/hephaestus/traceability/<INC_ID>.md
 Assumption ledger : docs/hephaestus/debt/assumptions.md
 Content           : heading "Acceptance Test — <INC_ID> @ <level>"
                     bullets: scenarios run, evidence, promotions, gate result, status
-Commit msg        : hephaestus(<level>/<INC_ID>): Iteration-Gate
 ```

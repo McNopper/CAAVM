@@ -29,8 +29,6 @@ quality_gates:
   lint_warnings_max: 0
 agile:
   max_fix_rounds: 2
-git:
-  worktree_dir: .hephaestus/wt/
 ```
 
 > **To retarget:** prepend your own config before invoking.
@@ -50,16 +48,10 @@ git:
 
 ## Process
 
-### Step 1 — Verify on a detached worktree
+### Step 1 — Verify the assembled component in isolation
 
-A **detached** worktree leaves the branch intact for Stage 08 to merge:
-
-```
-Worktree dir : .hephaestus/wt/loop<N>/<inc_id>/<level>/verify/component-<component>
-
-git worktree add --detach <worktree_dir> <component_branch>
-cd <worktree_dir>
-```
+You are running on the component's source as assembled after Stage 06. Verify the
+component's public interface in isolation.
 
 ### Step 2 — Run the component test against its contract
 
@@ -92,12 +84,9 @@ Using the `component_test_spec` from Stage 04:
 
 **Do not touch other components.**
 
-### Step 5 — Remove the verification worktree
+### Step 5 — Report results only
 
-```
-git worktree remove <worktree_dir>
-# Component branch remains for Stage 08.
-```
+Report results only — do not modify files or commit.
 
 ---
 
@@ -118,7 +107,6 @@ details: <contract test results, failures, fix rounds used>
 - [ ] All `component_test_spec` cases pass (plus adversarial additions).
 - [ ] Error-handling and RAII contracts verified.
 - [ ] `passed: true` OR `passed: false` with full details after fix budget.
-- [ ] Verification worktree removed; component branch untouched.
 
 ---
 
@@ -129,5 +117,3 @@ Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/07-component-test-<c
 Content    : heading "Component Test — <component> @ <level>"
              bullets: test cases run, any failures, fix rounds, status
 ```
-
-No commit from this agent (verification only; the component branch commit is from Stage 06).

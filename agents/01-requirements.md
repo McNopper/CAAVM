@@ -106,12 +106,10 @@ One block per scenario. Multiple scenarios may cover the same requirement.
 
 ## Persist
 
-Write a trace file **and** commit before handing off to Stage 02:
+Write a trace file before handing off to Stage 02:
 
 ```
 Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/01-requirements.md
 Content    : heading "Requirements — <INC_ID> @ <level>"
              bullets: key outputs, anything deferred, files touched, one-line status
-Commit msg : hephaestus(<level>/<INC_ID>): Requirements
-Command    : git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Requirements"
 ```

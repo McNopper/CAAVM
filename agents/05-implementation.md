@@ -1,11 +1,11 @@
 # Agent 05 — Implementer · V-Model Stage 5
 
-> Paired with **Stage 6 — Unit Test** (your unit branches are verified adversarially).
+> Paired with **Stage 6 — Unit Test** (your implemented units are verified adversarially).
 >
 > This stage covers three sequential sub-roles:
 > 1. **Slice Planner** — pick the walking skeleton (thinnest end-to-end vertical slice).
 > 2. **Scaffolder** — single writer: publish the slice's interfaces + build skeleton.
-> 3. **Implementer (TDD)** — each unit on its own branch, red → green → refactor.
+> 3. **Implementer (TDD)** — each unit, red → green → refactor.
 
 ---
 
@@ -53,10 +53,6 @@ refactoring:
      Replace Conditional with Polymorphism, Introduce Null Object,
      Extract Superclass, Extract Interface, Form Template Method,
      Replace Inheritance with Delegation]
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
-  worktree_dir: .hephaestus/wt/
 hybrid:
   max_adaptation_rounds: 2
 maturity_levels:
@@ -139,61 +135,39 @@ selection, before implementation fans out.
    - Per **executable** — `add_subdirectory` its modules; produces the binary.
    - **Root** — `add_subdirectory` all executables; wires the system.
    - **Units have no CMakeLists of their own** — they compile inside their component's
-     CMake, which globs `src/*.cpp`. On a unit branch, only that unit's file is present,
-     so the glob compiles just that unit.
+     CMake, which globs `src/*.cpp`.
    - Use generator expressions / presets; honour the vcpkg manifest.
 
-4. **`.hephaestus/` in `.gitignore`** (worktree scratch — must be ignored).
+4. **`.hephaestus/` in `.gitignore`** (agent scratch — must be ignored).
 
 5. **Partial, grows each cycle** — reuse and extend existing code; never clobber it.
 
 Confirm the skeleton at least **configures** (and builds if prior code exists).
 
-```
-Commit msg : hephaestus(<level>/<INC_ID>): Scaffold
-Command    : git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Scaffold"
-```
-
 ---
 
 ## Sub-role C — Implementer (TDD, per unit)
 
-Run **each unit on its own branch in its own worktree** — developer-style, in parallel.
-
-### Branch and worktree naming
-```
-Branch name  : hephaestus/loop<N>/<inc_id>/<level>/s06-unit/<component>-<unit>
-Worktree dir : .hephaestus/wt/loop<N>/<inc_id>/<level>/unit/<component>/<unit>
-```
+Run **each unit independently** — developer-style, in parallel.
 
 ### Per-unit process (red → green → refactor)
-1. **Create the branch + worktree** from the scaffold branch:
-   ```
-   git worktree add -b <branch_name> <worktree_dir>
-   cd <worktree_dir>
-   ```
-2. **Inspect existing code first.** Reuse and extend — never rebuild a passing unit.
-3. **Write the failing test first** (from `unit_test_spec` in Stage 04). Must be red
+1. **Inspect existing code first.** Reuse and extend — never rebuild a passing unit.
+2. **Write the failing test first** (from `unit_test_spec` in Stage 04). Must be red
    before writing any production code.
-4. **Write the minimum code to make it green.** Code only against published interfaces;
+3. **Write the minimum code to make it green.** Code only against published interfaces;
    mock every collaborator with `GoogleMock`. Touch only this unit's files.
-5. **Refactor on demand** (≤ 2 passes):
+4. **Refactor on demand** (≤ 2 passes):
    spot a smell → apply the matching technique → keep tests green → stop (YAGNI).
-6. **Run formatter and linters** on touched files:
+5. **Run formatter and linters** on touched files:
    ```
    clang-format -i <files>
    clang-tidy -p build <files>
    cppcheck --enable=all --error-exitcode=1 src/
    ```
-7. **Build and test in isolation** — only this component's target:
+6. **Build and test in isolation** — only this component's target:
    ```
    cmake --build build --target <component_target>
    ctest -R <unit_name>
-   ```
-8. **Commit on the unit branch** and remove the worktree:
-   ```
-   git add -A && git commit -m "hephaestus(<level>/<INC_ID>): impl unit <component>/<unit>"
-   git worktree remove <worktree_dir>   # branch ref persists for Stage 06
    ```
 
 ---
@@ -204,7 +178,6 @@ For each unit:
 ```
 component        : <component id>
 unit             : <unit id>
-branch           : <branch name>
 files_changed    : [<source + test files>]
 unit_tests_added : [<test names>]
 summary          : <one sentence — what the unit does and that tests are green>
@@ -228,7 +201,6 @@ summary          : <one sentence — what the unit does and that tests are green
 - [ ] Test written before production code (red first).
 - [ ] All unit tests green after implementation.
 - [ ] No linter / formatter findings on touched files.
-- [ ] Each unit committed on its own branch; worktree removed.
 
 ---
 
@@ -240,5 +212,3 @@ Content    : heading "Implementation — <INC_ID> @ <level>"
              bullets: slice selected, units implemented, assumption debt incurred,
                       anything deferred, one-line status
 ```
-
-Scaffold commit and per-unit commits handle git persistence (see above).

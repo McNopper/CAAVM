@@ -168,6 +168,4 @@ REQ-to-module map:
 Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/03-architecture.md
 Content    : heading "Architecture — <INC_ID> @ <level>"
              bullets: patterns chosen, module count, anything deferred, one-line status
-Commit msg : hephaestus(<level>/<INC_ID>): Architecture
-Command    : git add -A && git commit -m "hephaestus(<level>/<INC_ID>): Architecture"
 ```

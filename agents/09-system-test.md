@@ -6,9 +6,6 @@
 > **Role:** verify that each deployable's modules compose correctly into the executable
 > and that it participates correctly in the system topology with the other deployables.
 > You are a *different agent than the implementer* — adversarial.
->
-> This stage also performs the **Software Tier integration**: merge the module branches
-> into the software (deployable) branch before running tests.
 
 ---
 
@@ -29,10 +26,6 @@ quality_gates:
   lint_warnings_max: 0
 agile:
   max_fix_rounds: 2
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
-  worktree_dir: .hephaestus/wt/
 ```
 
 > **To retarget:** prepend your own config before invoking.
@@ -44,7 +37,7 @@ git:
 | Input | Description |
 |-------|-------------|
 | `deployable` | Deployable name, kind, and interface (from Stage 02) |
-| `module_branches` | `hephaestus/loop<N>/<inc>/<level>/s08-module/<module>` — one per module |
+| `assembled_deployable` | The already-assembled deployable with its module composition and wiring |
 | `system_test_plan` | From Stages 02/03 — how deployables run together in the topology |
 | `software_system` | Stage 02 output — topology, all deployable names and interfaces |
 | `maturity_level` | `mvp` \| `harden` \| `complete` |
@@ -54,18 +47,12 @@ git:
 
 ## Process
 
-### Step 1 — Software Tier integration (merge module branches)
+### Step 1 — Verify the assembled deployable
 
-```
-Software branch : hephaestus/loop<N>/<inc_id>/<level>/s09-software/<deployable>
-Worktree dir    : .hephaestus/wt/loop<N>/<inc_id>/<level>/software/<deployable>
+The agent receives the assembled deployable and verifies that its module composition,
+entry-point wiring, and topology participation behave as expected.
 
-git worktree add -b <software_branch> <worktree_dir>
-cd <worktree_dir>
-git merge --no-ff <module_branch_1> <module_branch_2> ...
-```
-
-Write the executable-level CMake glue:
+Write or adjust the executable-level CMake glue as needed:
 - Link all modules into the deployable (static libs linked in, shared libs / DLLs
   resolved at load time, per the architecture's packaging choices).
 - Wire the entry point.
@@ -96,21 +83,16 @@ Using the `system_test_plan`:
 
 1. Identify the failure: module assembly, entry-point wiring, or inter-deployable
    communication.
-2. Fix **only** the failing deployable's integration on the software branch.
+2. Fix **only** the failing deployable's integration within the assembled deployable under test.
 3. Re-run the system test.
 4. Repeat up to **`max_fix_rounds: 2`** times.
 5. If still red: report `passed: false`; the climb stops.
 
 **Do not touch other deployables.**
 
-### Step 5 — Commit and remove the worktree
+### Step 5 — Report results
 
-```
-git add -A
-git commit -m "hephaestus(<level>/<INC_ID>): Integrate-software-<deployable>"
-git worktree remove <worktree_dir>
-# Software branch persists for Stage 10.
-```
+Report results only — do not commit or modify branches.
 
 ---
 
@@ -127,12 +109,10 @@ details: <system test results, topology participation, fix rounds used>
 
 ## Exit criteria
 
-- [ ] All module branches merged into the software branch.
 - [ ] Deployable executable builds in isolation.
 - [ ] All system test plan items for this deployable verified.
 - [ ] Deployable interacts correctly in the topology with the other deployables.
 - [ ] `passed: true` OR `passed: false` with full details after fix budget.
-- [ ] Software branch committed; worktree removed.
 
 ---
 
@@ -141,7 +121,5 @@ details: <system test results, topology participation, fix rounds used>
 ```
 Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/09-system-test-<deployable>.md
 Content    : heading "System Test — <deployable> @ <level>"
-             bullets: modules merged, test results, topology participation, fix rounds, status
-Commit msg : hephaestus(<level>/<INC_ID>): Integrate-software-<deployable>
-             (committed in Step 5 above)
+             bullets: assembled deployable verified, test results, topology participation, fix rounds, status
 ```

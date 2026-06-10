@@ -6,14 +6,11 @@
 > *different agent than the implementer* — adversarial. You try to find failing or
 > missing cases; you do not accept "it looks fine" as evidence.
 >
-> This stage also performs the **Component Tier integration**: merge the per-unit branches
-> into their component branch before running tests.
-
 ---
 
 ## When to use
 
-After Stage 05 delivers unit branches for all in-scope components.
+After Stage 05 delivers the assembled component source for each in-scope component.
 Run per component, in parallel across components.
 
 ---
@@ -33,10 +30,6 @@ quality_gates:
   function_length_max_lines: 60
 agile:
   max_fix_rounds: 2
-git:
-  commit_prefix: hephaestus
-  commit_per_phase: true
-  worktree_dir: .hephaestus/wt/
 ```
 
 > **To retarget:** prepend your own config before invoking.
@@ -48,7 +41,7 @@ git:
 | Input | Description |
 |-------|-------------|
 | `component` | Component name and its unit list (from Stage 04 designs) |
-| `unit_branches` | Per-unit branch names — `hephaestus/loop<N>/<inc>/<level>/s06-unit/<component>-<unit>` |
+| `component_source` | The assembled component source code to verify |
 | `maturity_level` | `mvp` \| `harden` \| `complete` |
 | `inc_id` | Increment ID |
 
@@ -56,21 +49,7 @@ git:
 
 ## Process
 
-### Step 1 — Component Tier integration (merge unit branches)
-
-```
-Component branch : hephaestus/loop<N>/<inc_id>/<level>/s07-component/<component>
-Worktree dir     : .hephaestus/wt/loop<N>/<inc_id>/<level>/component/<component>
-
-git worktree add -b <component_branch> <worktree_dir>
-cd <worktree_dir>
-git merge --no-ff <unit_branch_1> <unit_branch_2> ...
-```
-
-Resolve conflicts so all unit sources survive. Refresh the component's `CMakeLists.txt`
-so it globs the merged unit sources and builds the component target.
-
-### Step 2 — Build once, run all unit tests as a batch
+### Step 1 — Build once, run all unit tests as a batch
 
 ```
 cmake --build build --target <component_target>
@@ -89,7 +68,7 @@ llvm-cov report <component_binary> --instr-profile=default.profdata
 
 Build **only** this component target — never the whole project.
 
-### Step 3 — Verify adversarially
+### Step 2 — Verify adversarially
 
 - Run every unit test in the component.
 - Check coverage meets the effective gate for the maturity level.
@@ -98,23 +77,19 @@ Build **only** this component target — never the whole project.
 - Intentionally-deferred behaviour (in the assumption-debt ledger) is **not** a
   failure at `mvp`/`harden`.
 
-### Step 4 — Targeted repair (if red)
+### Step 3 — Targeted repair (if red)
 
 1. Identify the failing unit(s).
-2. Repeat the failing unit's `red → green → refactor` loop on the component branch.
+2. Repeat the failing unit's `red → green → refactor` loop on the assembled component source.
 3. Re-run the full test batch.
 4. Repeat up to **`max_fix_rounds: 2`** times.
 5. If still red: report `passed: false`; the climb stops.
 
 **Already-passing units are never touched.**
 
-### Step 5 — Commit and keep the worktree
+### Step 4 — Report results only
 
-```
-git add -A
-git commit -m "hephaestus(<level>/<INC_ID>): Integrate-component-<component>"
-# Keep the worktree — Stage 07 verifies on this branch.
-```
+Report results only — do not commit or modify the branch.
 
 ---
 
@@ -132,12 +107,10 @@ coverage_pct : <line coverage %>
 
 ## Exit criteria
 
-- [ ] All unit branches merged into the component branch.
 - [ ] Component target builds in isolation.
 - [ ] All unit tests green (or `passed: false` after fix budget).
 - [ ] Coverage ≥ effective gate for this maturity level.
 - [ ] Sanitizers clean.
-- [ ] Component branch committed; worktree kept for Stage 07.
 
 ---
 
@@ -147,6 +120,4 @@ coverage_pct : <line coverage %>
 Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/06-unit-test-<component>.md
 Content    : heading "Unit Test — <component> @ <level>"
              bullets: test count, coverage %, fix rounds, anything deferred, status
-Commit msg : hephaestus(<level>/<INC_ID>): Integrate-component-<component>
-             (committed in Step 5 above)
 ```
