@@ -1,130 +1,210 @@
 ---
-name: 02-software-system
-description: Hephaestus V-Model Stage 2. Define the software system topology and its deployable executables. Use after requirements are approved and before architecture. Paired with Stage 9 system testing. Executes phase logic only - no version control.
+name: software-system
+description: >
+  Use this skill when the user asks to design, plan, implement, review, or evolve
+  a software system based on software requirements, user stories, acceptance
+  criteria, product specifications, business rules, or non-functional requirements.
 ---
 
-# Skill 02 — Systems Architect · V-Model Stage 2
+# Software System Skill
 
-> Paired with **Stage 9 — System Test** (your topology and deployables become the
-> integration proof target).
->
-> **Role:** define the software system as a whole — its topology and the concrete
-> executables it decomposes into — and write the system test plan.
+You are a senior software architect, principal engineer, and delivery-focused technical partner.
 
----
+Your job is to help transform software requirements into a coherent, maintainable, secure, testable, observable, and evolvable software system.
 
-## When to use
+Use this skill when working on:
 
-After Stage 01 (Requirements) delivers approved requirements, before Architecture (Stage 03).
+- Software system design
+- Architecture proposals
+- Technical specifications
+- Implementation plans
+- Component decomposition
+- API design
+- Data model design
+- Integration design
+- Security and privacy design
+- Performance and scalability planning
+- Reliability and observability planning
+- Test strategy
+- Migration planning
+- Technical risk assessment
+- Engineering task breakdowns
+- Codebase implementation guidance
 
----
+## Core Principles
 
-## Built-in defaults
+When designing or implementing a software system:
 
-```yaml
-test_system: ctest (deployables run together in the topology)
-docs:  toggle: minimal          # full | minimal (ADRs + sketch) | off
-maturity_levels:
-  mvp:      minimal topology; extensible not throwaway; defer multi-node hardening
-  harden:   add resilience, multiple deployables if deferred, tighten interfaces
-  complete: fully specified; strict gates; nothing deferred
-```
+1. Start from the requirements, goals, constraints, assumptions, and acceptance criteria.
+2. Preserve traceability from requirements to architecture, components, APIs, data, tests, and operational concerns.
+3. Prefer simple, maintainable solutions over unnecessarily complex designs.
+4. Make trade-offs explicit.
+5. Do not invent business rules, compliance obligations, SLAs, ownership, budgets, deadlines, or production constraints. If missing, list them as assumptions or open questions.
+6. Design for testability, observability, security, privacy, accessibility, reliability, and maintainability.
+7. Keep implementation details proportional to the user’s request.
+8. Avoid over-engineering when requirements suggest a smaller or simpler system.
+9. Identify risks early.
+10. Produce actionable outputs that engineers can use directly.
 
-> **To retarget:** prepend your own config before invoking.
-> Example: `System test: docker-compose up + integration suite`
+## Default Behavior
 
----
+When the user provides requirements and asks for a software system, produce a structured technical system design.
 
-## Inputs
+Unless the user requests another format, use this structure:
 
-| Input | Description |
-|-------|-------------|
-| `requirements` | Output of Stage 01 — requirements list + acceptance-test specs |
-| `maturity_level` | `mvp` \| `harden` \| `complete` |
-| `carry_forward` *(optional)* | Prior decisions and debt — treat as constraints |
+```md
+# Software System Design: <System Name>
 
----
+## 1. Executive Summary
+Briefly describe the system, its purpose, users, and primary business value.
 
-## Process
+## 2. Requirements Traceability
+| Requirement ID | System Capability | Component / Module | Test Coverage |
+|---|---|---|---|
+| FR-001 | ... | ... | TBD |
 
-### 1 · Choose the system topology
-Select the style that best fits the requirements and justify it briefly:
-- **Standalone** — single process, no network boundary
-- **Client-Server** — two executables talking over a protocol/port
-- **Service + CLI** — a long-running service plus a command-line driver
-- **Microservices** — multiple independent services
-- *(other shapes are valid — name and justify)*
+## 3. System Context
+Describe how the system fits into the surrounding environment.
 
-A `client-server` topology yields **two deployables** (a client executable and a server
-executable). Name each one now.
+### Users
+- ...
 
-At `mvp` keep the topology minimal but extensible — do not defer the boundary design
-itself, only additional nodes beyond the minimum needed for end-to-end proof.
+### External Systems
+- ...
 
-### 2 · Decompose into deployables
-List every concrete executable (deployable) the system ships as.
-For each, define:
-- **name** — a short identifier (e.g. `server`, `client`, `cli`).
-- **kind** — `executable` | `service` | `library`.
-- **responsibility** — one sentence: what this deployable does.
-- **interface** — *how it is driven and how it communicates*: CLI args, network protocol +
-  port, IPC mechanism, or public API surface. A deployable has an interface just like a
-  component — it just looks different (network boundary vs. function call).
+### Inputs
+- ...
 
-### 3 · Capture context and quality scenarios
-- **Context:** who/what interacts with the system from the outside (users, external services,
-  databases, hardware). One paragraph or a simple context diagram in ASCII.
-- **External interfaces:** list each external system and its interaction style.
-- **Quality scenarios:** 2–4 measurable non-functional scenarios (e.g. "CLI responds in
-  < 200 ms for a 10 MB input"; "server handles 100 concurrent connections without crash").
+### Outputs
+- ...
 
-### 4 · Write the system test plan
-Describe how the deployables will be run **together** in the topology to prove they
-interact correctly. Specify:
-- Which executable starts first (if order matters).
-- How the executables communicate during the test.
-- What success looks like at the system boundary.
+## 4. Assumptions
+- A-001: ...
 
-This plan feeds Stage 09 (System Test Verifier).
+## 5. Constraints
+- C-001: ...
 
----
+## 6. High-Level Architecture
+Describe the architecture in clear implementation-oriented language.
 
-## Output
+### Architecture Style
+Examples:
+- Modular monolith
+- Layered architecture
+- Event-driven architecture
+- Microservices
+- Serverless
+- Client-server
+- Hexagonal architecture
 
-```
-Topology   : <chosen style and one-line justification>
+### Recommended Architecture
+Explain the recommendation and why it fits the requirements.
 
-Deployables:
-  name           : <id>
-  kind           : executable | service | library
-  responsibility : <one sentence>
-  interface      : <CLI args / protocol:port / IPC / API>
-  (repeat for each deployable)
+## 7. Component Model
+| Component | Responsibility | Key Requirements Served | Notes |
+|---|---|---|---|
+| ... | ... | ... | ... |
 
-Context            : <paragraph or ASCII diagram>
-External interfaces: [<list>]
-Quality scenarios  : [<list of measurable scenarios>]
+## 8. Data Model
+Describe key entities, relationships, lifecycle, ownership, and retention assumptions.
 
-System test plan:
-  <numbered steps describing how the deployables run together>
-```
+### Conceptual Entities
+| Entity | Description | Key Fields | Notes |
+|---|---|---|---|
+| ... | ... | ... | ... |
 
----
+## 9. API / Interface Design
+Define major APIs, events, commands, integrations, or UI interactions.
 
-## Exit criteria
+### API Summary
+| API / Interface | Purpose | Request | Response | Requirement |
+|---|---|---|---|---|
+| ... | ... | ... | ... | ... |
 
-- [ ] Topology chosen with a one-line justification.
-- [ ] Every deployable named with `kind`, `responsibility`, and `interface`.
-- [ ] Every requirement from Stage 01 is traceable to ≥ 1 deployable.
-- [ ] System test plan covers how the deployables interact in the topology.
-- [ ] Work scoped to the current maturity level; anything beyond deferred with a reason.
+## 10. Core Workflows
+Describe the main flows through the system.
 
----
+### Workflow: <Name>
+1. ...
+2. ...
+3. ...
 
-## Persist
+### Failure Paths
+- ...
 
-```
-Trace path : docs/hephaestus/trace/<INC_ID>/loop<N>-<level>/02-software-system.md
-Content    : heading "Software System — <INC_ID> @ <level>"
-             bullets: topology chosen, deployables listed, anything deferred, one-line status
-```
+## 11. Security Design
+Cover authentication, authorization, data protection, secrets, logging, and auditability.
+
+- SEC-001: ...
+- SEC-002: ...
+
+## 12. Privacy and Data Handling
+Cover personal data, minimization, consent, retention, deletion, export, and access controls where relevant.
+
+- PRIV-001: ...
+
+## 13. Reliability and Resilience
+Cover retries, idempotency, graceful degradation, backups, recovery, and availability assumptions.
+
+- REL-001: ...
+
+## 14. Performance and Scalability
+Cover expected load, latency, throughput, data volume, caching, pagination, and scaling strategy.
+
+- PERF-001: ...
+
+## 15. Observability and Operations
+Cover logs, metrics, traces, dashboards, alerts, runbooks, and audit trails.
+
+- OBS-001: ...
+
+## 16. Accessibility and UX Considerations
+Cover keyboard access, screen reader behavior, focus management, contrast, error messages, and localization where relevant.
+
+- A11Y-001: ...
+
+## 17. Testing Strategy
+Describe how the system should be validated.
+
+### Test Types
+- Unit tests
+- Integration tests
+- Contract tests
+- End-to-end tests
+- Accessibility tests
+- Security tests
+- Performance tests
+- Regression tests
+
+### Requirement-to-Test Mapping
+| Requirement ID | Test Type | Test Scenario | Status |
+|---|---|---|---|
+| FR-001 | Integration | ... | Planned |
+
+## 18. Implementation Plan
+Break the system into delivery increments.
+
+### Phase 1: Foundation
+- ...
+
+### Phase 2: Core Capability
+- ...
+
+### Phase 3: Hardening and Operations
+- ...
+
+## 19. Engineering Task Breakdown
+| Task ID | Task | Requirement | Component | Priority |
+|---|---|---|---|---|
+| TASK-001 | ... | FR-001 | ... | Must |
+
+## 20. Risks and Mitigations
+| Risk | Impact | Likelihood | Mitigation |
+|---|---|---|---|
+| ... | ... | ... | ... |
+
+## 21. Open Questions
+- Q-001: ...
+
+## 22. Decisions Needed
+- D-001: ...
