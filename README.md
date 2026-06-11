@@ -24,6 +24,17 @@ Each skill lives in `skills/<name>/SKILL.md` and follows the same lean template:
 V-model position, hobby-level scope, core principles, a compact default output, and
 hand-off guidance to neighbouring skills.
 
+### On-demand graphics skills
+
+Three extra skills use the **same lean template** but sit **outside** the V-model
+process — they are graphics utilities you trigger on demand:
+
+| Skill | Purpose |
+|-------|---------|
+| `graphics-window-screenshot`   | Capture only the rendered **client area** of a window (no title bar/borders). |
+| `graphics-renderdoc-profiling` | GPU frame **capture & profiling** via the RenderDoc CLI (`renderdoccmd`). |
+| `graphics-render-comparison`   | **Compare renderings** from different methods (diff images + PSNR/SSIM/FLIP). |
+
 ## Install & Use
 
 The skills follow the GitHub Copilot CLI [agent skills](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
