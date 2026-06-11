@@ -1,210 +1,76 @@
 ---
 name: software-system
 description: >
-  Use this skill when the user asks to design, plan, implement, review, or evolve
-  a software system based on software requirements, user stories, acceptance
-  criteria, product specifications, business rules, or non-functional requirements.
+  Use this skill to decide the overall shape of a hobby project: its major parts,
+  the technology stack, data storage, and external interfaces, based on
+  requirements. Use it after requirements and before architecture. Do not use it
+  for module-boundary rules, detailed design, or code.
 ---
 
 # Software System Skill
 
-You are a senior software architect, principal engineer, and delivery-focused technical partner.
+You are a pragmatic system designer for small/hobby software projects.
 
-Your job is to help transform software requirements into a coherent, maintainable, secure, testable, observable, and evolvable software system.
+Your job is to turn requirements into the **overall shape** of the system: the major
+parts, how they talk to the outside world, and the technology choices.
 
-Use this skill when working on:
+## V-Model Position
 
-- Software system design
-- Architecture proposals
-- Technical specifications
-- Implementation plans
-- Component decomposition
-- API design
-- Data model design
-- Integration design
-- Security and privacy design
-- Performance and scalability planning
-- Reliability and observability planning
-- Test strategy
-- Migration planning
-- Technical risk assessment
-- Engineering task breakdowns
-- Codebase implementation guidance
+This is a **left-side (definition)** activity. It is verified by its right-side
+pair, **Integration Test (09)**.
+
+```text
+Software Requirements    (01) ↔ Acceptance Test       (10)
+Software System          (02) ↔ Integration Test      (09)
+Software Architecture    (03) ↔ Module Test           (08)
+Software Design          (04) ↔ Component Test        (07)
+Software Implementation  (05) ↔ Unit Test             (06)
+```
+
+## Scope (Hobby Level)
+
+This skill **owns**: the system's major parts (e.g. app, storage, third-party
+services), the tech stack, runtime/deployment target, and external interfaces.
+
+This skill **does not** define internal module boundaries or dependency rules
+(→ 03), detailed component/data design (→ 04), or code (→ 05). Stay high level:
+a hobby project usually needs one diagram and a short tech-choice list.
 
 ## Core Principles
 
-When designing or implementing a software system:
+1. Start from the requirements; map each major part back to a need.
+2. Choose the simplest stack that works; prefer tools you already know.
+3. Name external interfaces (APIs, files, services) and what crosses them.
+4. Make one or two key trade-offs explicit; defer the rest.
+5. Do not over-build — pick the smallest viable system shape.
 
-1. Start from the requirements, goals, constraints, assumptions, and acceptance criteria.
-2. Preserve traceability from requirements to architecture, components, APIs, data, tests, and operational concerns.
-3. Prefer simple, maintainable solutions over unnecessarily complex designs.
-4. Make trade-offs explicit.
-5. Do not invent business rules, compliance obligations, SLAs, ownership, budgets, deadlines, or production constraints. If missing, list them as assumptions or open questions.
-6. Design for testability, observability, security, privacy, accessibility, reliability, and maintainability.
-7. Keep implementation details proportional to the user’s request.
-8. Avoid over-engineering when requirements suggest a smaller or simpler system.
-9. Identify risks early.
-10. Produce actionable outputs that engineers can use directly.
-
-## Default Behavior
-
-When the user provides requirements and asks for a software system, produce a structured technical system design.
-
-Unless the user requests another format, use this structure:
+## Default Output
 
 ```md
-# Software System Design: <System Name>
+# System: <Project>
 
-## 1. Executive Summary
-Briefly describe the system, its purpose, users, and primary business value.
+## Overview
+One paragraph: what the system is and its major parts.
 
-## 2. Requirements Traceability
-| Requirement ID | System Capability | Component / Module | Test Coverage |
-|---|---|---|---|
-| FR-001 | ... | ... | TBD |
+## Major Parts
+- Part A — responsibility.
+- Part B — responsibility.
 
-## 3. System Context
-Describe how the system fits into the surrounding environment.
+## Technology Choices
+| Concern | Choice | Why |
+|---|---|---|
+| Language/framework | ... | ... |
+| Storage | ... | ... |
 
-### Users
+## External Interfaces
+- Interface, direction, and what data crosses it.
+
+## Key Trade-offs / Open Questions
 - ...
+```
 
-### External Systems
-- ...
+## When to Hand Off
 
-### Inputs
-- ...
-
-### Outputs
-- ...
-
-## 4. Assumptions
-- A-001: ...
-
-## 5. Constraints
-- C-001: ...
-
-## 6. High-Level Architecture
-Describe the architecture in clear implementation-oriented language.
-
-### Architecture Style
-Examples:
-- Modular monolith
-- Layered architecture
-- Event-driven architecture
-- Microservices
-- Serverless
-- Client-server
-- Hexagonal architecture
-
-### Recommended Architecture
-Explain the recommendation and why it fits the requirements.
-
-## 7. Component Model
-| Component | Responsibility | Key Requirements Served | Notes |
-|---|---|---|---|
-| ... | ... | ... | ... |
-
-## 8. Data Model
-Describe key entities, relationships, lifecycle, ownership, and retention assumptions.
-
-### Conceptual Entities
-| Entity | Description | Key Fields | Notes |
-|---|---|---|---|
-| ... | ... | ... | ... |
-
-## 9. API / Interface Design
-Define major APIs, events, commands, integrations, or UI interactions.
-
-### API Summary
-| API / Interface | Purpose | Request | Response | Requirement |
-|---|---|---|---|---|
-| ... | ... | ... | ... | ... |
-
-## 10. Core Workflows
-Describe the main flows through the system.
-
-### Workflow: <Name>
-1. ...
-2. ...
-3. ...
-
-### Failure Paths
-- ...
-
-## 11. Security Design
-Cover authentication, authorization, data protection, secrets, logging, and auditability.
-
-- SEC-001: ...
-- SEC-002: ...
-
-## 12. Privacy and Data Handling
-Cover personal data, minimization, consent, retention, deletion, export, and access controls where relevant.
-
-- PRIV-001: ...
-
-## 13. Reliability and Resilience
-Cover retries, idempotency, graceful degradation, backups, recovery, and availability assumptions.
-
-- REL-001: ...
-
-## 14. Performance and Scalability
-Cover expected load, latency, throughput, data volume, caching, pagination, and scaling strategy.
-
-- PERF-001: ...
-
-## 15. Observability and Operations
-Cover logs, metrics, traces, dashboards, alerts, runbooks, and audit trails.
-
-- OBS-001: ...
-
-## 16. Accessibility and UX Considerations
-Cover keyboard access, screen reader behavior, focus management, contrast, error messages, and localization where relevant.
-
-- A11Y-001: ...
-
-## 17. Testing Strategy
-Describe how the system should be validated.
-
-### Test Types
-- Unit tests
-- Integration tests
-- Contract tests
-- End-to-end tests
-- Accessibility tests
-- Security tests
-- Performance tests
-- Regression tests
-
-### Requirement-to-Test Mapping
-| Requirement ID | Test Type | Test Scenario | Status |
-|---|---|---|---|
-| FR-001 | Integration | ... | Planned |
-
-## 18. Implementation Plan
-Break the system into delivery increments.
-
-### Phase 1: Foundation
-- ...
-
-### Phase 2: Core Capability
-- ...
-
-### Phase 3: Hardening and Operations
-- ...
-
-## 19. Engineering Task Breakdown
-| Task ID | Task | Requirement | Component | Priority |
-|---|---|---|---|---|
-| TASK-001 | ... | FR-001 | ... | Must |
-
-## 20. Risks and Mitigations
-| Risk | Impact | Likelihood | Mitigation |
-|---|---|---|---|
-| ... | ... | ... | ... |
-
-## 21. Open Questions
-- Q-001: ...
-
-## 22. Decisions Needed
-- D-001: ...
+- **Up the V:** missing/unclear needs go back to **Requirements (01)**.
+- **Down the V:** pass the shape to **Software Architecture (03)** for structure.
+- **Across the V:** wired-together behaviour is verified by **Integration Test (09)**.
