@@ -2,8 +2,9 @@
 name: software-requirements
 description: >
   Use this skill to capture WHAT a hobby project must do and WHY: goals, users,
-  user stories, functional requirements, a few key constraints, and testable
-  acceptance criteria. Use it before any design. Do not use it for system shape,
+  user stories, functional requirements, non-functional requirements (performance,
+  security, usability, reliability), key constraints, and testable acceptance
+  criteria. Use it before any design. Do not use it for system shape,
   architecture, detailed design, or code.
 ---
 
@@ -41,7 +42,7 @@ for a hobby project.
 
 1. Write requirements that are testable and unambiguous.
 2. State the *what* and *why*; leave the *how* to design skills.
-3. Capture only requirements that matter for this project — skip ceremony.
+3. Capture both functional requirements and the non-functional requirements that matter.
 4. Make important edge cases and failure expectations explicit.
 5. Do not invent business or compliance rules; list unknowns as open questions.
 
@@ -61,6 +62,14 @@ One or two sentences: the problem and the desired outcome.
 
 ## Functional Requirements
 - FR-001: The system shall ...
+
+## Non-Functional Requirements
+Only the qualities that matter for this project (these feed the architecture's
+quality attributes and the acceptance tests):
+- NFR-PERF-001: Performance — e.g. responds within X.
+- NFR-SEC-001: Security — e.g. data is protected / auth required.
+- NFR-UX-001: Usability — e.g. usable on mobile.
+- NFR-REL-001: Reliability — e.g. no data loss on crash.
 
 ## Constraints & Assumptions
 - C-001: ...   (platform, budget, time, tech you already know you'll use)

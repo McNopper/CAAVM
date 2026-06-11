@@ -1,10 +1,11 @@
 ---
 name: software-architecture
 description: >
-  Use this skill to define the internal structure of a hobby project: module
-  boundaries, responsibilities, dependency rules, and the few quality attributes
-  that matter, based on the system shape. Use it after system and before detailed
-  design. Do not use it for inside-a-module design or code.
+  Use this skill to define the internal structure of a hobby project: evaluate
+  architecture patterns (layered, MVC, repository, microservices, event-driven,
+  CQRS, DDD, etc.) and choose one, then set module boundaries, responsibilities,
+  dependency rules, and the few quality attributes that matter. Use it after
+  system and before detailed design. Do not use it for inside-a-module design or code.
 ---
 
 # Software Architecture Skill
@@ -41,15 +42,40 @@ design the internals of a single module (→ 04), or write code (→ 05).
 ## Core Principles
 
 1. Group responsibilities into a few cohesive modules; avoid a big ball of mud.
-2. Define dependency direction so modules don't cycle.
-3. Pick only the quality attributes that genuinely matter; justify each briefly.
-4. Record key structural decisions and their trade-offs in one line each.
-5. Keep it small — a hobby project rarely needs more than a handful of modules.
+2. Evaluate the established architecture patterns and choose one (or a small mix) that fits.
+3. Define dependency direction so modules don't cycle.
+4. Pick only the quality attributes that genuinely matter; justify each briefly.
+5. Record key structural decisions and their trade-offs in one line each.
+6. Keep it small — a hobby project rarely needs more than a handful of modules.
+
+## Architecture Patterns to Evaluate
+
+Before settling on a structure, evaluate the established patterns and pick the
+simplest that fits — see
+[Top 10 Software Architecture Patterns](https://tecnovy.com/en/top-10-software-architecture-patterns):
+
+1. Layered (N-Tier)
+2. Client-Server
+3. Microservices
+4. Event-Driven
+5. Model-View-Controller (MVC)
+6. Service-Oriented (SOA)
+7. Repository
+8. CQRS (Command Query Responsibility Segregation)
+9. Domain-Driven Design (DDD)
+10. Peer-to-Peer (P2P)
+
+For a hobby/MVP project, usually pick **one** simple pattern (often Layered, MVC,
+or Repository) and justify it; avoid distributed patterns (Microservices, SOA,
+Event-Driven, CQRS, P2P) unless a requirement truly demands them.
 
 ## Default Output
 
 ```md
 # Architecture: <Project>
+
+## Chosen Pattern(s)
+- Pattern — why it fits, what it costs.
 
 ## Modules
 | Module | Responsibility | Depends on |

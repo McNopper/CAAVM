@@ -2,9 +2,10 @@
 name: software-design
 description: >
   Use this skill to design the inside of a module for a hobby project: its
-  components, interfaces/contracts, data structures, and key workflows, based on
-  the architecture. Use it after architecture and before implementation. Do not
-  use it for module boundaries, stack choices, or actual code.
+  components, interfaces/contracts, data structures, key workflows, and any
+  applicable design patterns (Gang-of-Four creational/structural/behavioral),
+  based on the architecture. Use it after architecture and before implementation.
+  Do not use it for module boundaries, stack choices, or actual code.
 ---
 
 # Software Design Skill
@@ -40,10 +41,25 @@ the project actually needs.
 ## Core Principles
 
 1. Design to the interfaces other components depend on; keep them small.
-2. Define data structures and their invariants explicitly.
-3. Specify error/edge behaviour at the contract level.
-4. Show only the workflows that aren't obvious from the interfaces.
-5. Stay minimal — design what's needed now, not speculative flexibility.
+2. Apply established design patterns where they genuinely fit — never force one.
+3. Define data structures and their invariants explicitly.
+4. Specify error/edge behaviour at the contract level.
+5. Show only the workflows that aren't obvious from the interfaces.
+6. Stay minimal — design what's needed now, not speculative flexibility.
+
+## Design Patterns
+
+Use the classic Gang-of-Four patterns where they solve a real problem — see
+[refactoring.guru/design-patterns](https://refactoring.guru/design-patterns).
+The 22 patterns group into three intents:
+
+- **Creational:** Factory Method, Abstract Factory, Builder, Prototype, Singleton.
+- **Structural:** Adapter, Bridge, Composite, Decorator, Facade, Flyweight, Proxy.
+- **Behavioral:** Chain of Responsibility, Command, Iterator, Mediator, Memento,
+  Observer, State, Strategy, Template Method, Visitor.
+
+For a hobby/MVP project, reach for a pattern only when it removes real duplication
+or coupling; otherwise prefer plain, simple code. Name any pattern you apply.
 
 ## Default Output
 
@@ -52,6 +68,9 @@ the project actually needs.
 
 ## Components
 - Component — responsibility.
+
+## Design Patterns Used
+- Pattern — where and why (or "none needed").
 
 ## Interfaces / Contracts
 - name(inputs) -> output | errors
