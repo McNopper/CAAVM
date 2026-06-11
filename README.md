@@ -24,6 +24,38 @@ Each skill lives in `skills/<name>/SKILL.md` and follows the same lean template:
 V-model position, hobby-level scope, core principles, a compact default output, and
 hand-off guidance to neighbouring skills.
 
+## Install & Use
+
+The skills follow the GitHub Copilot CLI [agent skills](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
+format. To install them permanently, place each skill folder under your personal
+skills directory so it loads in every session:
+
+- macOS/Linux: `~/.copilot/skills/`
+- Windows: `%USERPROFILE%\.copilot\skills\`
+
+Copy (or symlink) the folders, e.g.:
+
+```bash
+# macOS/Linux — symlink so the skills stay in sync with this repo
+ln -s "$(pwd)"/skills/* ~/.copilot/skills/
+```
+
+```powershell
+# Windows PowerShell — copy the skill folders
+Copy-Item -Recurse .\skills\* "$env:USERPROFILE\.copilot\skills\"
+```
+
+Then in the Copilot CLI:
+
+- Run `/skills` to manage and confirm the installed skills.
+- Run `/env` to verify they are loaded for the current session.
+
+**Triggering:** skills are invoked automatically — Copilot matches your request
+against each skill's `description`. Just describe the task (e.g. *"write the
+requirements for ..."*, *"design the architecture for ..."*, *"add unit tests
+for ..."*) and the matching skill activates. You can also name it explicitly,
+e.g. *"use the software-architecture skill"*.
+
 ## License
 
 [MIT](LICENSE) © 2026 Norbert Nopper.
