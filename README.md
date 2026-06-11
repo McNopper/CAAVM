@@ -37,9 +37,13 @@ process — they are graphics utilities you trigger on demand:
 
 ## Install & Use
 
-The skills follow the GitHub Copilot CLI [agent skills](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
-format. To install them permanently, place each skill folder under your personal
-skills directory so it loads in every session:
+The skills follow the portable [agent skills](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
+format (a `SKILL.md` with YAML front matter), so the same folders work in both the
+**GitHub Copilot CLI** and **Claude Code**. To install them permanently, place each
+skill folder under the personal skills directory of your agent so it loads in every
+session.
+
+### GitHub Copilot CLI
 
 - macOS/Linux: `~/.copilot/skills/`
 - Windows: `%USERPROFILE%\.copilot\skills\`
@@ -61,11 +65,32 @@ Then in the Copilot CLI:
 - Run `/skills` to manage and confirm the installed skills.
 - Run `/env` to verify they are loaded for the current session.
 
-**Triggering:** skills are invoked automatically — Copilot matches your request
-against each skill's `description`. Just describe the task (e.g. *"write the
-requirements for ..."*, *"design the architecture for ..."*, *"add unit tests
-for ..."*) and the matching skill activates. You can also name it explicitly,
-e.g. *"use the software-architecture skill"*.
+### Claude Code
+
+- macOS/Linux: `~/.claude/skills/`
+- Windows: `%USERPROFILE%\.claude\skills\`
+
+Copy (or symlink) the folders, e.g.:
+
+```bash
+# macOS/Linux — symlink so the skills stay in sync with this repo
+ln -s "$(pwd)"/skills/* ~/.claude/skills/
+```
+
+```powershell
+# Windows PowerShell — copy the skill folders
+Copy-Item -Recurse .\skills\* "$env:USERPROFILE\.claude\skills\"
+```
+
+Then in Claude Code:
+
+- Run `/skills` to confirm the installed skills are recognised.
+
+**Triggering:** in both agents the skills are invoked automatically — the agent
+matches your request against each skill's `description`. Just describe the task
+(e.g. *"write the requirements for ..."*, *"design the architecture for ..."*,
+*"add unit tests for ..."*) and the matching skill activates. You can also name it
+explicitly, e.g. *"use the software-architecture skill"*.
 
 ## License
 
