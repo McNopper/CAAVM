@@ -77,6 +77,11 @@
       "targets": ["verify"]
     },
     {
+      "name": "verify-full",
+      "configurePreset": "default",
+      "targets": ["verify-full"]
+    },
+    {
       "name": "tidy",
       "configurePreset": "analysis",
       "targets": ["tidy"]

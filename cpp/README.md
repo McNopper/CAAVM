@@ -36,7 +36,8 @@ cpp/
 
 ```bash
 cmake --preset default                       # configure (Debug + analysis)
-cmake --build build --target verify          # build, test, format-check, cppcheck
+cmake --build build --target verify          # fast: build + test + analysis status
+cmake --build build --target verify-full     # full: verify + format + static analysis + docs
 ```
 
 See **[AGENTS.md](AGENTS.md)** for the full command manifest and the locations
@@ -60,14 +61,16 @@ of every machine-readable report.
 - **clang-tidy fix export** (`build/reports/clang-tidy/fixes.yaml`) — findings
   *and* suggested edits an agent can apply.
 - **cppcheck XML** (`build/reports/cppcheck/cppcheck.xml`).
-- Stable, predictable report paths under `build/reports/`.
-- A single **`verify`** target as the canonical "is it good?" check.
+- **analysis status contract** (`build/reports/analysis-status.txt`) with
+  `analysis=enabled|skipped` and toolchain reason.
+- Stable, predictable report paths under `${binaryDir}/reports/`.
+- Two verification levels: fast **`verify`** and strict **`verify-full`**.
 
 ## Analysis philosophy
 
 `.clang-tidy` errors only on correctness-oriented checks
-(`clang-diagnostic`, `clang-analyzer`, `bugprone`, `performance`,
-`portability`). Modernization checks stay warnings. Friction-causing checks are
+(`clang-diagnostic`, `clang-analyzer`, `bugprone`). `performance`,
+`portability`, and modernization checks stay warnings. Friction-causing checks are
 deliberately disabled: magic numbers, identifier length, brace/function-size
 mandates, swappable parameters, `bugprone-exception-escape` (a known platform
 false positive), and `portability-avoid-pragma-once`.

@@ -36,18 +36,29 @@ file(MAKE_DIRECTORY ${PROJECT_REPORTS_DIR})
 #     cleanly; MSVC and other frontends are simply not on the list).
 # Otherwise the project still configures and builds; analysis is just skipped.
 set(PROJECT_ANALYSIS_AVAILABLE FALSE)
+set(PROJECT_ANALYSIS_STATUS "skipped")
+set(PROJECT_ANALYSIS_REASON "toolchain does not match analysis allowlist")
 
 if(CMAKE_EXPORT_COMPILE_COMMANDS
    AND (CMAKE_GENERATOR MATCHES "Ninja" OR CMAKE_GENERATOR MATCHES "Makefiles")
    AND (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU"))
     set(PROJECT_ANALYSIS_AVAILABLE TRUE)
+    set(PROJECT_ANALYSIS_STATUS "enabled")
+    set(PROJECT_ANALYSIS_REASON "generator+compiler matched analysis allowlist")
     message(STATUS "AI-first static analysis enabled (${CMAKE_GENERATOR}, ${CMAKE_CXX_COMPILER_ID})")
 else()
+    set(PROJECT_ANALYSIS_STATUS "skipped")
+    set(PROJECT_ANALYSIS_REASON "requires Ninja/Makefiles plus Clang/GNU-compatible compiler")
     message(STATUS
         "AI-first static analysis skipped for this toolchain "
         "(${CMAKE_GENERATOR}, ${CMAKE_CXX_COMPILER_ID}); "
         "use Ninja/Makefiles with a Clang- or GNU-compatible compiler to enable it")
 endif()
+
+file(GENERATE
+    OUTPUT ${PROJECT_REPORTS_DIR}/analysis-status.txt
+    CONTENT "analysis=${PROJECT_ANALYSIS_STATUS}\ngenerator=${CMAKE_GENERATOR}\ncompiler=${CMAKE_CXX_COMPILER_ID}\nreason=${PROJECT_ANALYSIS_REASON}\n"
+)
 
 # ============================================================
 # Options
@@ -313,27 +324,50 @@ endif()
 # ============================================================
 # Aggregate verification target
 #
-# One canonical command for agents: build everything, run the test suite,
-# check formatting, and run the default cppcheck profile.
+# verify: fast default verification (build + test). Reports whether analysis is
+# enabled or skipped for this toolchain.
+# verify-full: full strict verification (verify + format + static analysis + docs).
 # ============================================================
+
+add_custom_target(verify-analysis-status
+    COMMAND ${CMAKE_COMMAND} -E echo "AI analysis status: ${PROJECT_ANALYSIS_STATUS} (${PROJECT_ANALYSIS_REASON})"
+    COMMAND ${CMAKE_COMMAND} -E echo "Status artifact: ${PROJECT_REPORTS_DIR}/analysis-status.txt"
+    COMMENT "Reporting AI analysis status"
+    VERBATIM
+)
 
 add_custom_target(verify
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --build-config $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Verifying project: running test suite"
+    COMMENT "Fast verification: build + test"
     VERBATIM
 )
 
 add_dependencies(verify my_project_app)
+add_dependencies(verify verify-analysis-status)
 
 if(ENABLE_TESTING)
     add_dependencies(verify my_project_tests)
 endif()
 
+add_custom_target(verify-full
+    COMMENT "Full verification: verify + format + static analysis + docs"
+)
+
+add_dependencies(verify-full verify)
+
 if(TARGET format-check)
-    add_dependencies(verify format-check)
+    add_dependencies(verify-full format-check)
 endif()
 
 if(TARGET cppcheck)
-    add_dependencies(verify cppcheck)
+    add_dependencies(verify-full cppcheck)
+endif()
+
+if(TARGET tidy)
+    add_dependencies(verify-full tidy)
+endif()
+
+if(TARGET docs)
+    add_dependencies(verify-full docs)
 endif()

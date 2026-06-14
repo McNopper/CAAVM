@@ -104,7 +104,8 @@ Highlights:
 
 - **Ninja + Clang/GNU** unlocks the full clang-tidy + cppcheck analysis stack;
   any other toolchain (e.g. MSVC) still builds, with analysis cleanly skipped.
-- A single **`verify`** target builds, tests, format-checks, and runs cppcheck.
+- Two verification levels: **`verify`** (fast default, build+test+analysis status)
+  and **`verify-full`** (strict checks including format/static-analysis/docs).
 - Machine-readable reports land in stable paths under `build/reports/`.
 
 See [`cpp/README.md`](cpp/README.md) for the overview and

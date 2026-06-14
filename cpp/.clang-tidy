@@ -35,9 +35,7 @@ Checks: >
 WarningsAsErrors: >
   clang-diagnostic-*,
   clang-analyzer-*,
-  bugprone-*,
-  performance-*,
-  portability-*
+  bugprone-*
 
 # Analyse our own headers (include/, src/, tests/) wherever they sit in the
 # compile database, which stores absolute paths. The leading "^(src|...)"

@@ -21,7 +21,8 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 | Configure (Release)          | `cmake --preset release` |
 | Build                        | `cmake --build build` |
 | Run tests                    | `ctest --preset default` |
-| **Verify everything**        | `cmake --build build --target verify` |
+| **Verify (fast default)**    | `cmake --build build --target verify` |
+| **Verify (full strict)**     | `cmake --build build --target verify-full` |
 | Format code (in place)       | `cmake --build build --target format` |
 | Check formatting             | `cmake --build build --target format-check` |
 | clang-tidy + fixes report    | `cmake --build build --target tidy` |
@@ -30,22 +31,28 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 | cppcheck XML report          | `cmake --build build --target cppcheck-xml` |
 | Generate docs (HTML+XML)     | `cmake --build build --target docs` |
 
-`verify` is the single command an agent should run before declaring work done:
-it builds the app and tests, runs the test suite, checks formatting, and runs
-the default cppcheck profile.
+`verify` is intentionally fast (build + tests). It always prints whether static
+analysis is enabled or skipped for the current toolchain and writes a status
+artifact. A green `verify` with analysis skipped is still useful, but it is a
+degraded signal compared to full analysis.
+
+Use `verify-full` for strict validation (verify + format-check + static
+analysis + docs).
 
 ## Machine-readable outputs
 
-All under the build directory (default `build/`):
+All under `${binaryDir}` for the selected configure preset (default
+`${sourceDir}/build`):
 
 | Artifact | Path | Consumer |
 |----------|------|----------|
-| Compile database     | `build/compile_commands.json`        | clang-tidy, cppcheck, editors |
-| clang-tidy fixes      | `build/reports/clang-tidy/fixes.yaml` | parse/apply suggested edits |
-| cppcheck XML          | `build/reports/cppcheck/cppcheck.xml` | parse findings |
-| Doxygen XML           | `build/docs/xml/`                     | symbol/structure indexing |
-| Doxygen tagfile       | `build/docs/MyProject.tag`            | compact symbol cross-reference |
-| Doxygen warnings      | `build/docs/doxygen_warnings.log`     | undocumented/broken-link signal |
+| Analysis status       | `${binaryDir}/reports/analysis-status.txt` | enabled/skipped contract |
+| Compile database      | `${binaryDir}/compile_commands.json`        | clang-tidy, cppcheck, editors |
+| clang-tidy fixes      | `${binaryDir}/reports/clang-tidy/fixes.yaml` | parse/apply suggested edits |
+| cppcheck XML          | `${binaryDir}/reports/cppcheck/cppcheck.xml` | parse findings |
+| Doxygen XML           | `${binaryDir}/docs/xml/`                     | symbol/structure indexing |
+| Doxygen tagfile       | `${binaryDir}/docs/MyProject.tag`            | compact symbol cross-reference |
+| Doxygen warnings      | `${binaryDir}/docs/doxygen_warnings.log`     | undocumented/broken-link signal |
 
 ## Conventions
 
@@ -61,6 +68,16 @@ All under the build directory (default `build/`):
   they are still covered by clang-tidy.
 - Formatting is defined by `.clang-format`; run the `format` target rather than
   hand-aligning code.
+
+## Guardrails
+
+- `verify` must always expose whether analysis is `enabled` or `skipped`.
+- Treat green `verify` with skipped analysis as degraded, not equivalent to full signal.
+- Keep blocking checks focused on correctness/security classes.
+- Do not add subjective style checks as hard gates.
+- Keep machine-readable artifacts in stable `${binaryDir}` paths.
+- Keep third-party diagnostics from drowning first-party findings.
+- Add strictness with opt-in targets (for example `*-strict`, `verify-full`), not by increasing default friction.
 
 ## Feature toggles (CMake options)
 
