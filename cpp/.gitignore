@@ -1,0 +1,5 @@
+# CMake build trees (default, release, analysis, ad-hoc, etc.)
+build*/
+
+# CMake user presets
+CMakeUserPresets.json

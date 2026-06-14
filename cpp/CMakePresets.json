@@ -1,0 +1,111 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 26,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Debug (Ninja)",
+      "description": "Debug build with all AI-first analysis enabled.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ENABLE_CLANG_TIDY": "ON",
+        "ENABLE_CLANG_TIDY_IN_BUILD": "ON",
+        "ENABLE_CPPCHECK": "ON",
+        "ENABLE_CPPCHECK_IN_BUILD": "OFF",
+        "ENABLE_TESTING": "ON",
+        "ENABLE_DOXYGEN": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Ninja)",
+      "description": "Optimized build; in-build analysis off for fast compiles.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ENABLE_CLANG_TIDY_IN_BUILD": "OFF",
+        "ENABLE_CPPCHECK_IN_BUILD": "OFF",
+        "ENABLE_TESTING": "ON",
+        "ENABLE_DOXYGEN": "OFF"
+      }
+    },
+    {
+      "name": "analysis",
+      "displayName": "Analysis (Ninja)",
+      "description": "Fast configure for the on-demand tidy/cppcheck/docs report targets; no in-build analysis.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-analysis",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ENABLE_CLANG_TIDY": "ON",
+        "ENABLE_CLANG_TIDY_IN_BUILD": "OFF",
+        "ENABLE_CPPCHECK": "ON",
+        "ENABLE_CPPCHECK_IN_BUILD": "OFF",
+        "ENABLE_TESTING": "ON",
+        "ENABLE_DOXYGEN": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "verify",
+      "configurePreset": "default",
+      "targets": ["verify"]
+    },
+    {
+      "name": "tidy",
+      "configurePreset": "analysis",
+      "targets": ["tidy"]
+    },
+    {
+      "name": "cppcheck-xml",
+      "configurePreset": "analysis",
+      "targets": ["cppcheck-xml"]
+    },
+    {
+      "name": "docs",
+      "configurePreset": "analysis",
+      "targets": ["docs"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

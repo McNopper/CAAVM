@@ -92,6 +92,24 @@ matches your request against each skill's `description`. Just describe the task
 *"add unit tests for ..."*) and the matching skill activates. You can also name it
 explicitly, e.g. *"use the software-architecture skill"*.
 
+## C++ build template
+
+The [`cpp/`](cpp/) directory holds a standalone **AI-first C++23 build
+template** — a project skeleton whose tooling emits structured, machine-readable
+information optimised for AI agents (compile database, Doxygen XML + tagfile,
+clang-tidy fix exports, cppcheck XML), while keeping the check set high-signal
+and low-friction so it never blocks code generation.
+
+Highlights:
+
+- **Ninja + Clang/GNU** unlocks the full clang-tidy + cppcheck analysis stack;
+  any other toolchain (e.g. MSVC) still builds, with analysis cleanly skipped.
+- A single **`verify`** target builds, tests, format-checks, and runs cppcheck.
+- Machine-readable reports land in stable paths under `build/reports/`.
+
+See [`cpp/README.md`](cpp/README.md) for the overview and
+[`cpp/AGENTS.md`](cpp/AGENTS.md) for the canonical command manifest.
+
 ## License
 
 [MIT](LICENSE) © 2026 Norbert Nopper.
