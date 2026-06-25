@@ -4,7 +4,7 @@ description: >
   Use this skill to write or review acceptance tests for a hobby project: tests
   that verify the delivered software satisfies the requirements and user stories
   from the user's point of view. This is the V-model pair of software requirements.
-  Do not use it for unit, component, module, or integration testing.
+  Do not use it for unit, component, library, or integration testing.
 ---
 
 # Software Acceptance Test Skill
@@ -22,7 +22,7 @@ This is the **top-right (verification)** activity. It verifies its left-side pai
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
@@ -32,9 +32,12 @@ Software Implementation  (05) ↔ Unit Test             (06)
 This skill **owns**: tests that check each user story / acceptance criterion is
 met by the running software, exercised the way a user would.
 
-This skill **does not** test internal units (→ 06), components (→ 07), module
+This skill **does not** test internal units (→ 06), components (→ 07), library
 rules (→ 08), or part-to-part wiring (→ 09). Stay at the externally observable,
 requirement level. Cover the stories that define "done" for this project.
+
+Acceptance is evaluated at the software-system level (integrated libraries and
+externally visible interfaces), never at package/folder level.
 
 ## Core Principles
 

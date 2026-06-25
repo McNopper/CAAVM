@@ -2,9 +2,9 @@
 name: software-unit-test
 description: >
   Use this skill to write or review unit tests for a hobby project: small,
-  isolated, fast tests for individual functions, classes, and modules, verifying
+  isolated, fast tests for individual units (functions/classes/types), verifying
   the implementation. This is the V-model pair of software implementation. Do not
-  use it for component, module, integration, or acceptance testing.
+  use it for component, library, integration, or acceptance testing.
 ---
 
 # Software Unit Test Skill
@@ -12,7 +12,7 @@ description: >
 You are a pragmatic unit-test partner for small/hobby projects.
 
 Your job is to write small, isolated, fast tests that verify individual units of
-**implementation** (functions, classes, small modules) behave as intended.
+**implementation** (functions, classes, types) behave as intended.
 
 ## V-Model Position
 
@@ -22,7 +22,7 @@ pair, **Software Implementation (05)**.
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
@@ -32,9 +32,12 @@ Software Implementation  (05) ↔ Unit Test             (06)
 This skill **owns**: tests for the smallest meaningful units in isolation —
 happy path, key negative paths, boundaries, and error handling.
 
-This skill **does not** test a whole component's contract (→ 07), module
+This skill **does not** test a whole component's contract (→ 07), library
 boundaries (→ 08), parts wired together (→ 09), or end-to-end requirements
 (→ 10). Mock only true external dependencies; keep the suite small and fast.
+
+A unit should be tested through its explicit interface/contract; package/folder
+boundaries are not unit-test boundaries.
 
 ## Core Principles
 

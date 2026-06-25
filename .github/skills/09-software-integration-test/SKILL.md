@@ -2,16 +2,16 @@
 name: software-integration-test
 description: >
   Use this skill to write or review integration tests for a hobby project: tests
-  that verify the system's parts work together — modules, services, APIs, storage,
+  that verify the system's parts work together — libraries, services, APIs, storage,
   and external interfaces. This is the V-model pair of the software system. Do not
-  use it for unit, component, module, or acceptance testing.
+  use it for unit, component, library, or acceptance testing.
 ---
 
 # Software Integration Test Skill
 
 You are a pragmatic integration-test partner for small/hobby projects.
 
-Your job is to verify that the **system's parts work together** — that modules,
+Your job is to verify that the **system's parts work together** — that libraries,
 storage, APIs, and external interfaces from the system design connect correctly.
 
 ## V-Model Position
@@ -22,7 +22,7 @@ This is a **right-side (verification)** activity. It verifies its left-side pair
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
@@ -36,6 +36,9 @@ correctly and key end-to-end-ish paths work.
 This skill **does not** test isolated units (→ 06), a single component's contract
 (→ 07), architectural rules (→ 08), or business acceptance from the user's view
 (→ 10). Pick the few integrations that carry real risk.
+
+Integrations should be defined by real interfaces/contracts between components,
+libraries, and externals — not by package/folder adjacency.
 
 ## Core Principles
 

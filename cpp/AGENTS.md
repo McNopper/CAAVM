@@ -19,7 +19,8 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 |------|---------|
 | Configure (Debug + analysis) | `cmake --preset default` |
 | Configure (Release)          | `cmake --preset release` |
-| Build                        | `cmake --build build` |
+| Build (Debug)                | `cmake --build build` |
+| Build (Release)              | `cmake --build build-release` |
 | Run tests                    | `ctest --preset default` |
 | **Verify (fast default)**    | `cmake --build build --target verify` |
 | **Verify (full strict)**     | `cmake --build build --target verify-full` |
@@ -59,11 +60,11 @@ All under `${binaryDir}` for the selected configure preset (default
 - C++23, no compiler extensions.
 - Layout: public headers in `include/`, implementation in `src/`, tests in
   `tests/` (GoogleTest, fetched automatically).
-- `.clang-tidy` only **errors** on correctness checks (clang-diagnostic,
-  clang-analyzer, bugprone, performance, portability). Modernize checks are
-  warnings — guidance, not gates. Subjective/style checks (magic numbers,
-  identifier length, brace and function-size mandates) are intentionally off
-  so they do not block code generation.
+- `.clang-tidy` only **errors** (`WarningsAsErrors`) on the core correctness
+  checks: clang-diagnostic, clang-analyzer, and bugprone. Other enabled checks
+  (performance, portability, modernize) run as **warnings** — guidance, not gates.
+  Subjective/style checks (magic numbers, identifier length, brace and
+  function-size mandates) are intentionally off so they do not block code generation.
 - `tests/` are excluded from cppcheck (GoogleTest macros confuse its parser);
   they are still covered by clang-tidy.
 - Formatting is defined by `.clang-format`; run the `format` target rather than

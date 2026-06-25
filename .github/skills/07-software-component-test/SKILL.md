@@ -4,7 +4,7 @@ description: >
   Use this skill to write or review component tests for a hobby project: tests
   that verify one component's behaviour and contract (interfaces, workflows,
   error handling) against its design. This is the V-model pair of software design.
-  Do not use it for unit, module, integration, or acceptance testing.
+  Do not use it for unit, library, integration, or acceptance testing.
 ---
 
 # Software Component Test Skill
@@ -22,7 +22,7 @@ This is a **right-side (verification)** activity. It verifies its left-side pair
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
@@ -34,8 +34,13 @@ verifying designed behaviour, workflows, and error responses, with its
 collaborators stubbed/faked.
 
 This skill **does not** test internal units in isolation (→ 06), architectural
-module boundaries (→ 08), components wired together (→ 09), or end-to-end
+library boundaries (→ 08), components wired together (→ 09), or end-to-end
 requirements (→ 10).
+
+In this lifecycle, a component is composed of multiple units and must expose a
+stable component interface that these tests exercise. A component is **internal**
+to this software (linked in), not reusable outside it — that is a library's role
+(→ 08).
 
 ## Core Principles
 

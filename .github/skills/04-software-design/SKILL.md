@@ -1,19 +1,20 @@
 ---
 name: software-design
 description: >
-  Use this skill to design the inside of a module for a hobby project: its
-  components, interfaces/contracts, data structures, key workflows, and any
-  applicable design patterns (Gang-of-Four creational/structural/behavioral),
+  Use this skill to design the inside of a library for a hobby project: its
+  components (composed from units), interfaces/contracts, data structures, key
+  workflows, and any applicable design patterns (Gang-of-Four creational/structural/behavioral),
   based on the architecture. Use it after architecture and before implementation.
-  Do not use it for module boundaries, stack choices, or actual code.
+  Do not use it for library boundaries, stack choices, or actual code.
 ---
 
 # Software Design Skill
 
 You are a pragmatic software designer for small/hobby projects.
 
-Your job is to design the **inside of a module**: its components, the interfaces
-and data they use, and the main workflows — ready for someone to code.
+Your job is to design the **inside of a library**: its components (built from
+units), the interfaces and data they use, and the main workflows — ready for
+someone to code.
 
 ## V-Model Position
 
@@ -23,20 +24,26 @@ pair, **Component Test (07)**.
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
 
 ## Scope (Hobby Level)
 
-This skill **owns**: components within a module, their interfaces/contracts,
-data structures, key algorithms, error-handling behaviour, and main workflows.
+This skill **owns**: components within a library, each component's
+interface/contract, mapping of units into those components, data structures,
+key algorithms, error-handling behaviour, and main workflows.
 
-This skill **does not** define module boundaries or dependency rules (→ 03),
+This skill **does not** define library boundaries or dependency rules (→ 03),
 choose the system shape/stack (→ 02), or write the real implementation (→ 05).
 Describe behaviour and signatures, not finished code. Keep it to the components
 the project actually needs.
+
+A **component** here is an **internal** building block of this software (composed
+of units, linked in); it is not intended for reuse outside this software — that
+is a library's job (→ 03). Package/folder layout is only organization; component
+boundaries are defined by responsibilities and interfaces.
 
 ## Core Principles
 
@@ -64,7 +71,7 @@ or coupling; otherwise prefer plain, simple code. Name any pattern you apply.
 ## Default Output
 
 ```md
-# Design: <Module / Component>
+# Design: <Library / Component>
 
 ## Components
 - Component — responsibility.

@@ -23,7 +23,7 @@ pair, **Acceptance Test (10)**.
 ```text
 Software Requirements    (01) ↔ Acceptance Test       (10)
 Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Module Test           (08)
+Software Architecture    (03) ↔ Library Test          (08)
 Software Design          (04) ↔ Component Test        (07)
 Software Implementation  (05) ↔ Unit Test             (06)
 ```
@@ -37,6 +37,8 @@ This skill **does not** decide solution shape (→ 02), structure or quality
 attributes (→ 03), detailed design (→ 04), or code (→ 05). Push anything about
 *how* to those skills. Keep it minimal: only requirements that genuinely matter
 for a hobby project.
+
+When naming the full product, prefer **software system** for precision.
 
 ## Core Principles
 
