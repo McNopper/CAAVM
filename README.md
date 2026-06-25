@@ -142,6 +142,9 @@ Copy-Item -Recurse .\.github\skills\* "$env:USERPROFILE\.copilot\skills\"
 
 - macOS/Linux personal dir: `~/.copilot/skills/`
 - Windows personal dir: `%USERPROFILE%\.copilot\skills\`
+- Recommended for global installs: include only the generic lifecycle/utility skills.
+  Keep `cpp-template-workflow` project-scoped unless the target repo also contains
+  this same `cpp/` template layout.
 
 ### Managing skills in a session
 
