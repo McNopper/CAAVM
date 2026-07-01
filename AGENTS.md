@@ -41,6 +41,22 @@ For C++ tasks in this repository, default to the `cpp/` template workflow:
 - Keep explicit links between each left-side skill artifact and its right-side verification artifact.
 - Use `software-traceability-audit` when trace links are missing or unclear.
 
+## Plan review, ordering & auto-execution
+
+For reviewing an existing plan, ordering its tasks, and driving them to completion:
+
+1. Use `software-plan-orchestration`.
+2. It rubberducks the plan with a **different-vendor** model at a comparable tier.
+3. It orders tasks by dependency (topological sort) and groups independent tasks for parallel execution.
+4. It tags each task with a model tier that selects the agent model automatically:
+   - `low` → Claude Haiku 4.5
+   - `mid` → Claude Sonnet
+   - `high` → Claude Opus (1M context)
+   - `very-high` → Claude Fable (1M context) — **run twice and reconcile**
+5. It drives execution via `/autopilot` (dependent chains), `/fleet` / subagents
+   (parallel groups), and monitors with `/tasks`.
+
+
 ## Copilot CLI feature usage (recommended)
 
 - Use `/plan` for multi-file or multi-phase changes before implementation.

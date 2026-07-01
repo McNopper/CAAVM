@@ -108,7 +108,22 @@ skills than to the lifecycle template) but are triggered when needed:
 | `graphics-render-comparison` | **Compare renderings** from different methods (diff images + PSNR/SSIM/FLIP). |
 | `software-vmodel-navigation` | Route ambiguous requests to the correct V-model skill and produce a hand-off prompt. |
 | `software-traceability-audit` | Build/audit traceability from requirements to tests across the V-model. |
+| `software-plan-orchestration` | Review/rubberduck a plan, order tasks by dependency, tag them with a model tier, and drive automatic execution via Copilot. |
 | `cpp-template-workflow` | Automatically route C++ implementation/verification work through the `cpp/` template and canonical command targets. |
+
+#### Model-tier tags (used by `software-plan-orchestration`)
+
+Each ordered task is tagged with one tier, which selects the agent model automatically:
+
+| Tier tag | Agent model | Use for |
+|---|---|---|
+| `low` | Claude Haiku 4.5 | trivial/mechanical edits, renames, doc tweaks |
+| `mid` | Claude Sonnet | standard implementation and tests |
+| `high` | Claude Opus (1M context) | complex, cross-cutting, high-context work |
+| `very-high` | Claude Fable (1M context) | hardest reasoning / highest-risk tasks (**run twice**, reconcile) |
+
+The rubberduck review pass uses a **different-vendor** model at a comparable tier (e.g. a
+GPT-5.x or Gemini 3.x Pro model) so the critic is not the same family as the author.
 
 ## Install & Use (GitHub Copilot CLI)
 
