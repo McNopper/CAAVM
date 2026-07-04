@@ -4,6 +4,22 @@
 > built automatons (Talos, the golden mechanical attendants). A fitting patron for a disciplined,
 > agent-driven build process.*
 
+## Overview
+
+Hephaestus is a GitHub Copilot CLI template with three layers that work together:
+
+- **V-model skills (10)** — a paired definition/verification software lifecycle.
+- **On-demand utility skills (8)** — routing, traceability, plan orchestration, cost
+  estimation, C++ template, and graphics helpers, triggered only when relevant.
+- **Custom agents (23)** in `.github/agents/` — 5 role + 10 lifecycle + 8 utility agents
+  that operationalize an **autonomous, agile, budget-aware** workflow: a high-tier model
+  plans, an open model executes subdivided tasks, a high-tier model reviews, and an
+  `orchestrator` drives the fleet — revisiting V-model steps iteratively until convergence.
+
+Model choice is **rule-based, not hard-coded**: tasks reference a *tier*, and the concrete
+model is resolved from a single authoritative mapping (see
+[Model-tier tags](#model-tier-tags-used-by-software-plan-orchestration)).
+
 ## Skills
 
 Hephaestus provides ten **V-model lifecycle** skills arranged as a software lifecycle. The
@@ -108,22 +124,62 @@ skills than to the lifecycle template) but are triggered when needed:
 | `graphics-render-comparison` | **Compare renderings** from different methods (diff images + PSNR/SSIM/FLIP). |
 | `software-vmodel-navigation` | Route ambiguous requests to the correct V-model skill and produce a hand-off prompt. |
 | `software-traceability-audit` | Build/audit traceability from requirements to tests across the V-model. |
-| `software-plan-orchestration` | Review/rubberduck a plan, order tasks by dependency, tag them with a model tier, and drive automatic execution via Copilot. |
+| `software-plan-orchestration` | Review/rubberduck a plan, subdivide tasks for open-model execution, order by dependency, tag rule-based tiers, and drive autonomous execution via Copilot. |
+| `software-cost-estimation` | Price an execution plan/manifest before a run (per-task tokens × per-tier rate card, double-runs, retries) with de-escalation suggestions. |
 | `cpp-template-workflow` | Automatically route C++ implementation/verification work through the `cpp/` template and canonical command targets. |
 
 #### Model-tier tags (used by `software-plan-orchestration`)
 
-Each ordered task is tagged with one tier, which selects the agent model automatically:
+Each ordered task is tagged with one tier. **Model selection is rule-based, not
+hard-coded:** the tier is defined by a *selection rule*. Concrete model IDs are only an
+example mapping **as of today** and live in a **single authoritative table** in
+`software-plan-orchestration` — this doc lists only the durable rules and points there.
 
-| Tier tag | Agent model | Use for |
-|---|---|---|
-| `low` | Claude Haiku 4.5 | trivial/mechanical edits, renames, doc tweaks |
-| `mid` | Claude Sonnet | standard implementation and tests |
-| `high` | Claude Opus (1M context) | complex, cross-cutting, high-context work |
-| `very-high` | Claude Fable (1M context) | hardest reasoning / highest-risk tasks (**run twice**, reconcile) |
+| Tier tag | Selection rule (durable) |
+|---|---|
+| `very-low` | cheapest/fastest model adequate for trivial, mechanical edits |
+| `low` | best available **open-weight** model for bounded execution — **default executor** |
+| `mid` | balanced general model for standard implementation and tests |
+| `high` | top-capability reasoning + large context — **planning + final review** |
+| `very-high` | frontier/highest-capability for hardest/highest-risk work (**run twice**, reconcile) |
+
+**Tier-selection rule:** pick the **lowest tier whose criteria still satisfy the task**;
+escalate (never de-escalate) when uncertain. **Plan → execute → review:** a `high`-tier
+model plans; the `low`/open executor runs each subdivided task; a `high`-tier model
+reviews. Tasks are always **subdivided so an open model can execute each one**. The
+example model IDs to swap in over time live only in the authoritative mapping in
+`.github/skills/software-plan-orchestration/SKILL.md`.
 
 The rubberduck review pass uses a **different-vendor** model at a comparable tier (e.g. a
 GPT-5.x or Gemini 3.x Pro model) so the critic is not the same family as the author.
+
+**Agile, budget-driven & reviewable.** The V-model runs **agile/iteratively**: objectives
+can change and the plan/**execution manifest** is a *living* artifact that is amended (not
+restarted). You can set a spend cap (e.g. "~$X today"); `software-cost-estimation` prices
+the manifest and the orchestrator de-escalates/defers tasks to fit and halts at the cap.
+All automation artifacts are **AI-first yet human-reviewable** — structured, stable YAML/
+Markdown that both agents and people can read, diff, and revise.
+
+### Custom agents (`.github/agents/`)
+
+The workflow is operationalized by **23 custom agents** (Copilot CLI
+[custom agents](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli),
+markdown files with YAML front matter in `.github/agents/*.agent.md`). Invoke one with
+`/agent`. Agents are **model-neutral** — they reference a **tier**, and the concrete model
+is resolved from the authoritative mapping in `software-plan-orchestration` at dispatch, so
+model choice stays dynamic and central.
+
+| Group | Agents | Purpose |
+|---|---|---|
+| **Role (5)** | `orchestrator`, `planner`, `executor`, `reviewer`, `rubberduck` | Coordinate the fleet, plan, execute (open model), review (high), critique (cross-vendor). |
+| **V-model (10)** | `software-requirements` … `software-acceptance-test` | Thin wrappers delegating to the matching lifecycle `SKILL.md`. |
+| **Utilities (8)** | `software-vmodel-navigation`, `software-traceability-audit`, `software-plan-orchestration`, `software-cost-estimation`, `cpp-template-workflow`, `graphics-window-screenshot`, `graphics-renderdoc-profiling`, `graphics-render-comparison` | Wrappers for the on-demand utility skills. |
+
+The `orchestrator` runs the system **autonomously and harmonized**: it invokes a
+skill/agent **only when its trigger applies** (`graphics-*` and `cpp-template-workflow`
+stay dormant unless needed), verifies every task, merges parallel results, and treats the
+V-model as **iterative** — a failed test/review re-opens the paired left-side step and
+re-runs downstream until convergence.
 
 ## Install & Use (GitHub Copilot CLI)
 
@@ -134,6 +190,10 @@ loads skills from these locations:
 - **Project (this repo):** `.github/skills/`, `.agents/skills/`, or `.claude/skills/`
 - **Personal (global):** `~/.copilot/skills/` or `~/.agents/skills/`
 - **Custom:** any directory added with `/skills add <dir>`
+
+**Custom agents** live alongside the skills in **`.github/agents/*.agent.md`** (YAML
+front matter with `name` + `description`, optional `tools`/`model`). Select one in a
+session with **`/agent`**; the `orchestrator` can also invoke others programmatically.
 
 ### Option A — use them in this repo (zero install)
 
@@ -168,6 +228,7 @@ Copy-Item -Recurse .\.github\skills\* "$env:USERPROFILE\.copilot\skills\"
 - `/skills add [--project] <file|url|directory>` — add a skill (use `--project`
   to write it into the repo's `.github/skills`).
 - `/skills reload` — reload after editing a `SKILL.md`.
+- `/agent` — select a custom agent from `.github/agents/` for the session.
 - `/env` — verify which skills/instructions are loaded for the current session.
 
 **Triggering:** skills are invoked automatically by matching your request against each
@@ -180,34 +241,39 @@ Hephaestus is a **template repo** — you can adopt the whole thing or cherry-pi
 
 **A. Start a new repo from it** — if this repo is marked as a GitHub template, click
 **"Use this template"** (otherwise fork or clone).
-Your new repo already has `.github/skills/` and `AGENTS.md`, so Copilot CLI auto-loads
-them the moment you run `copilot` in it.
+Your new repo already has `.github/skills/`, `.github/agents/` and `AGENTS.md`, so Copilot
+CLI auto-loads the skills and exposes the agents (`/agent`) the moment you run `copilot`
+in it.
 
 **B. Add it to an existing project** — copy the pieces you want into your repo:
 
 | Copy this | Into your repo at | Gives you |
 |---|---|---|
 | `.github/skills/*` | `.github/skills/` | the V-model + on-demand skills (auto-loaded as project skills) |
+| `.github/agents/*` | `.github/agents/` | the role/lifecycle/utility custom agents (invoked with `/agent`) |
 | `AGENTS.md` | repo root | repo-level Copilot workflow/routing conventions (auto-loaded from git root & cwd) |
 | `cpp/` contents | your C++ project's root **or** a subdir | the AI-first C++23 build skeleton + its `AGENTS.md` (see below) |
 
 ```bash
 # from your project root, pulling from a local clone of Hephaestus
-mkdir -p .github/skills
+mkdir -p .github/skills .github/agents
 cp -R /path/to/Hephaestus/.github/skills/* .github/skills/
+cp -R /path/to/Hephaestus/.github/agents/* .github/agents/   # custom agents
 cp    /path/to/Hephaestus/AGENTS.md .          # optional but recommended
 ```
 
 ```powershell
 # Windows PowerShell
-New-Item -ItemType Directory -Force .\.github\skills | Out-Null
+New-Item -ItemType Directory -Force .\.github\skills, .\.github\agents | Out-Null
 Copy-Item -Recurse \path\to\Hephaestus\.github\skills\* .\.github\skills\
+Copy-Item -Recurse \path\to\Hephaestus\.github\agents\* .\.github\agents\
 Copy-Item \path\to\Hephaestus\AGENTS.md .            # optional but recommended
 ```
 
-Then run `copilot` in your project and `/skills list` to confirm they loaded. Trim the
-set to what you need (e.g. drop the `graphics-*` or `cpp-template-workflow` skills if
-your project doesn't use them), and tailor `AGENTS.md` to your repo's conventions.
+Then run `copilot` in your project, `/skills list` to confirm skills loaded and `/agent`
+to confirm agents are available. Trim the set to what you need (e.g. drop the `graphics-*`
+or `cpp-template-workflow` skills/agents if your project doesn't use them), and tailor
+`AGENTS.md` to your repo's conventions.
 
 ### Where the C++ template goes
 
@@ -229,6 +295,8 @@ expects to run from **the directory that contains `CMakeLists.txt`**. Two ways t
   `.agents/skills/`, `.claude/skills/` (project) and `~/.copilot/skills/` (personal) are loaded.
 - ❌ Don't rename `SKILL.md` or rely on the folder name to invoke a skill — identity is the
   front-matter `name:` (the numeric prefixes are just ordering labels).
+- ❌ Don't put custom agents anywhere but `.github/agents/*.agent.md`, and don't hard-code a
+  model in an agent — reference a **tier** and let the single authoritative mapping resolve it.
 - ❌ Don't nest the C++ template as `cpp/` and then run build commands from the repo root —
   run them from the directory holding `CMakeLists.txt`, or its presets won't resolve.
 - ❌ Don't keep two `AGENTS.md` files in the **same** folder — Copilot loads one per
@@ -245,6 +313,7 @@ expects to run from **the directory that contains `CMakeLists.txt`**. Two ways t
 
 - `AGENTS.md` (repo root): Copilot-first workflow conventions and lifecycle routing guidance.
 - `.github/skills/*/SKILL.md`: executable skill library (auto-loaded as project skills in this repo).
+- `.github/agents/*.agent.md`: custom agents (5 role + 10 V-model + 8 utility) invoked with `/agent`.
 - `cpp/AGENTS.md`: canonical command manifest for the C++ template subtree.
 
 ## C++ build template
