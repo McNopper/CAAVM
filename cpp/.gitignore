@@ -3,3 +3,8 @@ build*/
 
 # CMake user presets
 CMakeUserPresets.json
+
+# Python (cpp/mcp server)
+__pycache__/
+*.pyc
+.venv/

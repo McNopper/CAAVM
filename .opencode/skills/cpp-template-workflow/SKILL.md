@@ -50,6 +50,21 @@ Run from `cpp/` (prefer the configured presets so the correct binary dir is used
 - `cmake --build build --target cppcheck-xml`
 - `cmake --build build --target docs`
 
+### MCP interface (preferred when enabled)
+
+If the `mcp.cpp` server is enabled in `opencode.json`, prefer its **structured tools**
+over raw bash — they return parsed JSON (findings, status, report contents) instead of
+log text:
+
+- `cpp_configure`, `cpp_build`, `cpp_verify` (full-lifecycle, drives the targets above)
+- `cpp_analysis_status`, `cpp_read_report` (enabled/skipped + parsed reports)
+- `cpp_docs` (Doxygen XML/tagfile + warnings)
+- **Standalone on any C++ project:** `cpp_cppcheck`, `cpp_format`, `cpp_clang_tidy` with
+  caller-supplied settings (no Hephaestus layout required).
+
+Fall back to the raw CMake targets above when the server is disabled. See
+`cpp/mcp/README.md` for install and the full tool reference.
+
 ## Core Principles
 
 1. Prefer canonical targets over ad-hoc command variants.

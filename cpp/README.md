@@ -23,6 +23,10 @@ cpp/
 ├── Doxyfile.in             # AI-oriented Doxygen config (XML + tagfile)
 ├── cmake/
 │   └── cppcheck.cmake      # single source of truth for cppcheck targets
+├── mcp/
+│   ├── server.py           # optional MCP server exposing this tooling to opencode
+│   ├── requirements.txt    # mcp, PyYAML
+│   └── README.md           # install + tool reference
 ├── include/
 │   └── example.hpp
 ├── src/
@@ -42,6 +46,20 @@ cmake --build build --target verify-full     # full: verify + format + static an
 
 See **[AGENTS.md](AGENTS.md)** for the full command manifest and the locations
 of every machine-readable report.
+
+## MCP server (opencode)
+
+The optional [`mcp/`](mcp/) server exposes this tooling to opencode agents as
+**structured MCP tools** (`cpp_configure`, `cpp_build`, `cpp_verify`, `cpp_docs`,
+`cpp_analysis_status`, `cpp_read_report`) returning JSON. It also runs
+**standalone** on *any* C++ project — `cpp_cppcheck`, `cpp_format`,
+`cpp_clang_tidy` with caller-supplied settings, no CMake layout required.
+
+```bash
+pip install -r mcp/requirements.txt    # then set mcp.cpp.enabled=true in opencode.json
+```
+
+See **[mcp/README.md](mcp/README.md)** for install, wiring, and the tool reference.
 
 ## Toolchain
 

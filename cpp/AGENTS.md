@@ -40,6 +40,16 @@ degraded signal compared to full analysis.
 Use `verify-full` for strict validation (verify + format-check + static
 analysis + docs).
 
+## MCP server (optional)
+
+The [`mcp/`](mcp/) subtree exposes the same tooling to opencode agents as
+structured MCP tools (`cpp_configure`, `cpp_build`, `cpp_verify`, `cpp_docs`,
+`cpp_analysis_status`, `cpp_read_report`) that return JSON instead of log text.
+It also provides standalone `cpp_cppcheck` / `cpp_format` / `cpp_clang_tidy`
+tools that run on **any** C++ project with caller-supplied settings. Prefer the
+MCP tools when the server is enabled; fall back to the raw CMake targets
+otherwise. See [`mcp/README.md`](mcp/README.md) for install and wiring.
+
 ## Machine-readable outputs
 
 All under `${binaryDir}` for the selected configure preset (default

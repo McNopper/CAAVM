@@ -194,26 +194,30 @@ worktree root for `opencode.json` / `AGENTS.md`).
 1. [Install opencode](https://opencode.ai/docs/) (e.g. `npm install -g opencode-ai`).
 2. Connect the providers this repo expects — run `/connect` and add **Z.AI** (GLM-5.2),
    **GitHub Copilot** (Opus 4.8), and **OpenAI** (GPT-5.6).
-3. Run `opencode` from this repository. Skills auto-load from `.opencode/skills/`, agents
-   from `.opencode/agent/`, and `AGENTS.md` from the repo root. Confirm with `/models`.
+3. Run `opencode` from this repository. Skills auto-load from `.opencode/skills/`,
+   agents from `.opencode/agent/`, and `AGENTS.md` from the repo root. Confirm
+   providers/models with `/models` and pick an agent with `/agents`.
 
 This is the fastest way to use or develop the skills.
 
 ### Option B — install globally for every project
 
-Copy (or symlink) the skill folders into your personal skills directory:
+Copy (or symlink) the skill **and** agent folders into your personal opencode dirs:
 
 ```bash
-# macOS/Linux — symlink so the skills stay in sync with this repo
+# macOS/Linux — symlink so they stay in sync with this repo
 ln -s "$(pwd)"/.opencode/skills/* ~/.config/opencode/skills/
+ln -s "$(pwd)"/.opencode/agent/*  ~/.config/opencode/agent/
 ```
 
 ```powershell
-# Windows PowerShell — copy the skill folders
+# Windows PowerShell — copy the folders
 Copy-Item -Recurse .\.opencode\skills\* "$env:USERPROFILE\.config\opencode\skills\"
+Copy-Item -Recurse .\.opencode\agent\*  "$env:USERPROFILE\.config\opencode\agent\"
 ```
 
 - Personal skills dir: `~/.config/opencode/skills/`
+- Personal agents dir: `~/.config/opencode/agent/`
 - Project config: `./opencode.json` (or `.opencode/opencode.json`)
 - Recommended for global installs: include only the generic lifecycle/utility skills.
   Keep `cpp-template-workflow` project-scoped unless the target repo also contains
@@ -334,6 +338,14 @@ Highlights:
 - Two verification levels: **`verify`** (fast default, build+test+analysis status)
   and **`verify-full`** (strict checks including format/static-analysis/docs).
 - Machine-readable reports land in stable paths under `build/reports/`.
+
+**Optional MCP server** ([`cpp/mcp/`](cpp/mcp)): exposes the C++ tooling to opencode as
+structured tools (`cpp_verify`, `cpp_build`, `cpp_docs`, …) returning JSON. It also runs
+**standalone on any existing C++ project** — `cpp_cppcheck`, `cpp_format`, `cpp_clang_tidy`
+with caller-supplied settings, no CMake layout required. Install with
+`pip install -r cpp/mcp/requirements.txt` and set `mcp.cpp.enabled=true` in `opencode.json`
+(it ships disabled so a fresh clone stays clean). See
+[`cpp/mcp/README.md`](cpp/mcp/README.md).
 
 See [`cpp/README.md`](cpp/README.md) for the overview and
 [`cpp/AGENTS.md`](cpp/AGENTS.md) for the canonical C++ command manifest.

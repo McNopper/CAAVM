@@ -1,0 +1,4 @@
+# Python dependencies for the cpp MCP server.
+# Install with:  pip install -r cpp/mcp/requirements.txt
+mcp>=1.0
+PyYAML>=6.0
