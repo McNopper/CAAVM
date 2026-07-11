@@ -1,4 +1,4 @@
-# AGENTS.md — Hephaestus Copilot workflow
+# AGENTS.md — Hephaestus opencode workflow
 
 Repository-level conventions for agentic work in this repository.
 
@@ -54,8 +54,10 @@ For reviewing an existing plan, ordering its tasks, and driving them to completi
    *selection rule*; concrete model IDs are only an example mapping **as of today**,
    expected to be swapped as models evolve. **Models are never hard-coded** — agents/docs
    reference *tiers*, and the **single authoritative tier→model mapping lives in
-   `software-plan-orchestration`** (`.github/skills/software-plan-orchestration/SKILL.md`).
-   Update models there and nowhere else.
+   `software-plan-orchestration`** (`.opencode/skills/software-plan-orchestration/SKILL.md`).
+   Update models there and nowhere else. Today the whole pipeline runs at 1M context inside
+   opencode: GLM-5.2 (Z.AI) is the workhorse up to `high`, Claude Opus 4.8 (GitHub Copilot
+   provider) is the `very-high` escalation, and GPT-5.6 (OpenAI) is the rubberduck critic.
 
    | Tier | Selection rule (durable) |
    |---|---|
@@ -70,12 +72,12 @@ For reviewing an existing plan, ordering its tasks, and driving them to completi
    example model IDs to use as the per-task model override.
 6. **Plan → Execute → Review:** a **high**-tier model plans; the **open** executor runs
    each subdivided task; a **high**-tier model reviews at the end.
-7. It drives execution **iteratively (agile V-model)**: interactively via `/autopilot`,
-   `/fleet`, `/tasks`, `/review`; autonomously the `orchestrator` dispatches each task via
-   the **subagent tool** with the tier's exact model ID. On a failed test/review it
-   re-opens the paired left-side step and re-runs downstream until convergence. When
-   **requirements/objectives change**, it amends the living manifest and re-estimates
-   rather than restarting.
+7. It drives execution **iteratively (agile V-model)**: interactively via **Plan mode**
+   (`Tab`), `/agents`, and the **Task/subagent tool**; autonomously the `orchestrator`
+   dispatches each task via the Task/subagent tool with the tier's exact model ID. On a
+   failed test/review it re-opens the paired left-side step and re-runs downstream until
+   convergence. When **requirements/objectives change**, it amends the living manifest and
+   re-estimates rather than restarting.
 8. **Budget-driven:** accept a spend cap (e.g. "~$X today"); price the manifest with
    `software-cost-estimation`, fit within the cap (de-escalate / defer / trim), track
    spend, and halt at the cap.
@@ -84,14 +86,14 @@ For reviewing an existing plan, ordering its tasks, and driving them to completi
 and traceability matrix are structured/machine-parseable **and** human-readable
 (plain YAML/Markdown, stable IDs), persisted and versioned as living artifacts.
 
-## Custom agents (`.github/agents/`)
+## Custom agents (`.opencode/agent/`)
 
-The workflow is operationalized by **23 custom agents** in `.github/agents/*.agent.md`,
-invoked with `/agent` (or referenced in a prompt). Agents are **model-neutral** — they
-reference a **tier**, and the concrete model is resolved from the authoritative mapping in
+The workflow is operationalized by **23 custom agents** in `.opencode/agent/*.md`, invoked
+with `/agents` (or referenced in a prompt). Agents are **model-neutral** — they reference a
+**tier**, and the concrete model is resolved from the authoritative mapping in
 `software-plan-orchestration` at dispatch. This keeps model choice dynamic and centralized.
 
-- **Role agents (5):** `orchestrator` (coordination; dispatches via the subagent tool,
+- **Role agents (5):** `orchestrator` (coordination; dispatches via the Task/subagent tool,
   persists the manifest, runs verification, enforces the budget cap), `planner` (high-tier
   planning + living manifest), `executor` (open-tier task execution), `reviewer`
   (high-tier final review), `rubberduck` (cross-vendor critic).
@@ -111,12 +113,14 @@ stay dormant unless a task needs them — so the system runs autonomously with t
 relevant set.
 
 
-## Copilot CLI feature usage (recommended)
+## opencode feature usage (recommended)
 
-- Use `/plan` for multi-file or multi-phase changes before implementation.
-- Use `/agent` to select a role/lifecycle/utility custom agent from `.github/agents/`.
-- Use `/autopilot` and `/fleet` for parallelizable work across many skill/docs files.
-- Use `/tasks` to monitor delegated/background work.
-- Use `/skills` and `/env` to validate that repository skills and instructions are loaded.
-- Use `/review` and `/security-review` before merge when code changes are involved.
-- Use `/research` when terminology or process decisions require external references.
+- Use **Plan mode** (`Tab`) for multi-file or multi-phase changes before implementation.
+- Use `/agents` to select a role/lifecycle/utility custom agent from `.opencode/agent/`.
+- Use `/models` to pick the model for a task (tiers resolve here) and `/connect` to add the
+  providers this repo expects: **Z.AI** (GLM-5.2), **GitHub Copilot** (Opus 4.8), **OpenAI**
+  (GPT-5.6).
+- For parallelizable work, the `orchestrator` dispatches concurrent **subagents** (Task
+  tool); independent lifecycle skills/docs can be edited in a single pass.
+- Skills auto-load from `.opencode/skills/`; reference files with `@`.
+- Run the project's verification gate (e.g. the `cpp/` `verify` target) via bash before merge.

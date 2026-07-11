@@ -6,12 +6,12 @@
 
 ## Overview
 
-Hephaestus is a GitHub Copilot CLI template with three layers that work together:
+Hephaestus is an **opencode** template with three layers that work together:
 
 - **V-model skills (10)** — a paired definition/verification software lifecycle.
 - **On-demand utility skills (8)** — routing, traceability, plan orchestration, cost
   estimation, C++ template, and graphics helpers, triggered only when relevant.
-- **Custom agents (23)** in `.github/agents/` — 5 role + 10 lifecycle + 8 utility agents
+- **Custom agents (23)** in `.opencode/agent/` — 5 role + 10 lifecycle + 8 utility agents
   that operationalize an **autonomous, agile, budget-aware** workflow: a high-tier model
   plans, an open model executes subdivided tasks, a high-tier model reviews, and an
   `orchestrator` drives the fleet — revisiting V-model steps iteratively until convergence.
@@ -36,7 +36,7 @@ level — minimal but useful; a heavier production variant could live as a separ
 | `04-software-design`               | ↔ | `07-software-component-test`           |
 | `05-software-implementation`       | ↔ | `06-software-unit-test`                |
 
-Each skill lives in `.github/skills/<name>/SKILL.md` and follows the same lean template:
+Each skill lives in `.opencode/skills/<name>/SKILL.md` and follows the same lean template:
 V-model position, hobby-level scope, core principles, a compact default output, and
 hand-off guidance to neighbouring skills.
 
@@ -76,29 +76,27 @@ This wording is intentionally practical and standards-informed:
 - **Package/folder** (and a language *module*) are organizational only;
   composition is unit → component → library → software system.
 
-## Copilot workflow (recommended)
+## opencode workflow (recommended)
 
 1. **Start with intent, not implementation:** "Use `software-requirements` to capture goals and acceptance criteria."
 2. **Move down the left side:** requirements → system → architecture → design → implementation.
 3. **Verify across the right side:** unit/component/library/integration/acceptance tests.
-4. **Use explicit hand-offs:** ask Copilot to "handoff to `<next-skill>`" when outputs are ready.
-5. **Use CLI controls:** `/skills` to confirm installed skills, `/env` to confirm they are loaded.
+4. **Use explicit hand-offs:** ask opencode to "handoff to `<next-skill>`" when outputs are ready.
+5. **Switch modes:** **Plan mode** (`Tab`) to plan a change, **Build mode** to execute it.
 6. **For C++ work in this repo:** invoke `cpp-template-workflow` so tasks use `cpp/` and its canonical commands.
 
-### Copilot CLI features worth using here
+### opencode features worth using here
 
 | Feature | Why it matters in this repo |
 |---|---|
-| `/plan` | Build a structured implementation plan before multi-file edits. |
-| `/autopilot` + `/fleet` | Parallelize doc/skill updates and larger refactors. |
-| `/tasks` | Track delegated/background task progress. |
-| `/agent` + `/model` + `/subagents` | Choose appropriate specialist agents and model depth for lifecycle stage. |
-| `/skills` + `/env` | Verify skill installation/loading and active instruction context. |
-| `/review` + `/security-review` | Run focused code/security review passes before merging. |
-| `/diff` + `/pr` + `/delegate` | Inspect changes, manage PR flow, and optionally delegate cloud PR creation. |
-| `/research` | Gather external references when terminology/process guidance must be defensible. |
-| `/memory` | Keep durable conventions/preferences available across sessions. |
-| `/instructions` + `/init` | Manage repo instruction sources (`AGENTS.md`, copilot instructions files). |
+| **Plan mode** (`Tab`) | Plan multi-file/multi-phase changes before implementation; switch to Build to execute. |
+| `/agents` | Select a role/lifecycle/utility custom agent from `.opencode/agent/`. |
+| **Task/subagent tool** | The `orchestrator` dispatches parallel groups as concurrent subagents; independent skills/docs can be edited in one pass. |
+| `/models` + `/connect` | Pick the model per task (tiers resolve here); add the providers this repo expects — Z.AI, GitHub Copilot, OpenAI. |
+| `@` references | Fuzzy-search files to add precise context (`@opencode/skills/...`). |
+| `/init` | (Re)generate the repo `AGENTS.md` from the project structure. |
+| `/undo` + `/redo` | Revert and re-apply a change when a result isn't what you wanted. |
+| `/share` | Share the current conversation link with the team. |
 
 ### Prompting pattern
 
@@ -124,34 +122,38 @@ skills than to the lifecycle template) but are triggered when needed:
 | `graphics-render-comparison` | **Compare renderings** from different methods (diff images + PSNR/SSIM/FLIP). |
 | `software-vmodel-navigation` | Route ambiguous requests to the correct V-model skill and produce a hand-off prompt. |
 | `software-traceability-audit` | Build/audit traceability from requirements to tests across the V-model. |
-| `software-plan-orchestration` | Review/rubberduck a plan, subdivide tasks for open-model execution, order by dependency, tag rule-based tiers, and drive autonomous execution via Copilot. |
+| `software-plan-orchestration` | Review/rubberduck a plan, subdivide tasks for open-model execution, order by dependency, tag rule-based tiers, and drive autonomous execution via opencode. |
 | `software-cost-estimation` | Price an execution plan/manifest before a run (per-task tokens × per-tier rate card, double-runs, retries) with de-escalation suggestions. |
 | `cpp-template-workflow` | Automatically route C++ implementation/verification work through the `cpp/` template and canonical command targets. |
 
 #### Model-tier tags (used by `software-plan-orchestration`)
 
 Each ordered task is tagged with one tier. **Model selection is rule-based, not
-hard-coded:** the tier is defined by a *selection rule*. Concrete model IDs are only an
-example mapping **as of today** and live in a **single authoritative table** in
+hard-coded:** the tier is defined by a *selection rule*. Concrete model IDs are only the
+current mapping **as of today** and live in a **single authoritative table** in
 `software-plan-orchestration` — this doc lists only the durable rules and points there.
+
+**GLM-5.2 is the main agent for everything** (all normal work — planning, execution,
+review). **Opus 4.8** is used *only* when a task is too complex for GLM (`very-high`).
+**GPT-5.6** rubberducks / cross-checks Opus when an independent review is required. All
+three are ordinary opencode providers (connected via `/connect`), and the whole pipeline
+runs at **1M-token context**.
 
 | Tier tag | Selection rule (durable) |
 |---|---|
 | `very-low` | cheapest/fastest model adequate for trivial, mechanical edits |
-| `low` | best available **open-weight** model for bounded execution — **default executor** |
-| `mid` | balanced general model for standard implementation and tests |
-| `high` | top-capability reasoning + large context — **planning + final review** |
-| `very-high` | frontier/highest-capability for hardest/highest-risk work (**run twice**, reconcile) |
+| `low` | best available **open-weight** model — **default executor** |
+| `mid` | balanced general model for standard impl/tests |
+| `high` | top-capability reasoning + large context — **planning + review** |
+| `very-high` | task too complex for GLM-5.2 — **Opus 4.8, run twice & reconcile** |
+| (rubberduck) | cross-vendor review of Opus — **GPT-5.6** |
 
-**Tier-selection rule:** pick the **lowest tier whose criteria still satisfy the task**;
-escalate (never de-escalate) when uncertain. **Plan → execute → review:** a `high`-tier
-model plans; the `low`/open executor runs each subdivided task; a `high`-tier model
-reviews. Tasks are always **subdivided so an open model can execute each one**. The
-example model IDs to swap in over time live only in the authoritative mapping in
-`.github/skills/software-plan-orchestration/SKILL.md`.
-
-The rubberduck review pass uses a **different-vendor** model at a comparable tier (e.g. a
-GPT-5.x or Gemini 3.x Pro model) so the critic is not the same family as the author.
+**Tier-selection rule:** GLM-5.2 is the default for every task; tag `very-high` (Opus)
+only when GLM-5.2 demonstrably cannot do it. **Plan → Execute → Review:** GLM-5.2 plans;
+GLM-5.2 runs each subdivided task; GLM-5.2 reviews at the end; GPT-5.6 rubberducks Opus.
+Tasks are always **subdivided so an open model can execute each one**. The model IDs to
+swap in over time live only in the authoritative mapping in
+`.opencode/skills/software-plan-orchestration/SKILL.md`.
 
 **Agile, budget-driven & reviewable.** The V-model runs **agile/iteratively**: objectives
 can change and the plan/**execution manifest** is a *living* artifact that is amended (not
@@ -160,18 +162,17 @@ the manifest and the orchestrator de-escalates/defers tasks to fit and halts at 
 All automation artifacts are **AI-first yet human-reviewable** — structured, stable YAML/
 Markdown that both agents and people can read, diff, and revise.
 
-### Custom agents (`.github/agents/`)
+### Custom agents (`.opencode/agent/`)
 
-The workflow is operationalized by **23 custom agents** (Copilot CLI
-[custom agents](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli),
-markdown files with YAML front matter in `.github/agents/*.agent.md`). Invoke one with
-`/agent`. Agents are **model-neutral** — they reference a **tier**, and the concrete model
-is resolved from the authoritative mapping in `software-plan-orchestration` at dispatch, so
-model choice stays dynamic and central.
+The workflow is operationalized by **23 custom agents** (opencode
+[custom agents](https://opencode.ai/docs/agents/) — markdown files with YAML front matter in
+`.opencode/agent/*.md`). Select one with **`/agents`**. Agents are **model-neutral** — they
+reference a **tier**, and the concrete model is resolved from the authoritative mapping in
+`software-plan-orchestration` at dispatch, so model choice stays dynamic and central.
 
 | Group | Agents | Purpose |
 |---|---|---|
-| **Role (5)** | `orchestrator`, `planner`, `executor`, `reviewer`, `rubberduck` | Coordinate the fleet, plan, execute (open model), review (high), critique (cross-vendor). |
+| **Role (5)** | `orchestrator`, `planner`, `executor`, `reviewer`, `rubberduck` | Coordinate the fleet, plan, execute (open model), review (high), critique (cross-vendor, for Opus). |
 | **V-model (10)** | `software-requirements` … `software-acceptance-test` | Thin wrappers delegating to the matching lifecycle `SKILL.md`. |
 | **Utilities (8)** | `software-vmodel-navigation`, `software-traceability-audit`, `software-plan-orchestration`, `software-cost-estimation`, `cpp-template-workflow`, `graphics-window-screenshot`, `graphics-renderdoc-profiling`, `graphics-render-comparison` | Wrappers for the on-demand utility skills. |
 
@@ -181,25 +182,22 @@ stay dormant unless needed), verifies every task, merges parallel results, and t
 V-model as **iterative** — a failed test/review re-opens the paired left-side step and
 re-runs downstream until convergence.
 
-## Install & Use (GitHub Copilot CLI)
+## Install & Use (opencode)
 
-The skills follow the portable [agent skills](https://docs.github.com/copilot/how-tos/use-copilot-agents/use-copilot-cli)
-format (`SKILL.md` with `name` + `description` YAML front matter). The Copilot CLI
-loads skills from these locations:
-
-- **Project (this repo):** `.github/skills/`, `.agents/skills/`, or `.claude/skills/`
-- **Personal (global):** `~/.copilot/skills/` or `~/.agents/skills/`
-- **Custom:** any directory added with `/skills add <dir>`
-
-**Custom agents** live alongside the skills in **`.github/agents/*.agent.md`** (YAML
-front matter with `name` + `description`, optional `tools`/`model`). Select one in a
-session with **`/agent`**; the `orchestrator` can also invoke others programmatically.
+The skills follow the portable [agent skills](https://opencode.ai/docs/skills/) format
+(`SKILL.md` with `name` + `description` YAML front matter). opencode auto-loads skills,
+agents, commands and config from the project's `.opencode/` directory (and walks up to the
+worktree root for `opencode.json` / `AGENTS.md`).
 
 ### Option A — use them in this repo (zero install)
 
-Because the skills live in **`.github/skills/`**, they are **auto-loaded as project
-skills** whenever you run `copilot` from this repository. Just start a session here
-and run `/skills list` to confirm. This is the fastest way to use or develop them.
+1. [Install opencode](https://opencode.ai/docs/) (e.g. `npm install -g opencode-ai`).
+2. Connect the providers this repo expects — run `/connect` and add **Z.AI** (GLM-5.2),
+   **GitHub Copilot** (Opus 4.8), and **OpenAI** (GPT-5.6).
+3. Run `opencode` from this repository. Skills auto-load from `.opencode/skills/`, agents
+   from `.opencode/agent/`, and `AGENTS.md` from the repo root. Confirm with `/models`.
+
+This is the fastest way to use or develop the skills.
 
 ### Option B — install globally for every project
 
@@ -207,29 +205,27 @@ Copy (or symlink) the skill folders into your personal skills directory:
 
 ```bash
 # macOS/Linux — symlink so the skills stay in sync with this repo
-ln -s "$(pwd)"/.github/skills/* ~/.copilot/skills/
+ln -s "$(pwd)"/.opencode/skills/* ~/.config/opencode/skills/
 ```
 
 ```powershell
 # Windows PowerShell — copy the skill folders
-Copy-Item -Recurse .\.github\skills\* "$env:USERPROFILE\.copilot\skills\"
+Copy-Item -Recurse .\.opencode\skills\* "$env:USERPROFILE\.config\opencode\skills\"
 ```
 
-- macOS/Linux personal dir: `~/.copilot/skills/`
-- Windows personal dir: `%USERPROFILE%\.copilot\skills\`
+- Personal skills dir: `~/.config/opencode/skills/`
+- Project config: `./opencode.json` (or `.opencode/opencode.json`)
 - Recommended for global installs: include only the generic lifecycle/utility skills.
   Keep `cpp-template-workflow` project-scoped unless the target repo also contains
   this same `cpp/` template layout.
 
-### Managing skills in a session
+### Managing skills & agents in a session
 
-- `/skills list` — list all loaded skills.
-- `/skills info <name>` — show details of one skill.
-- `/skills add [--project] <file|url|directory>` — add a skill (use `--project`
-  to write it into the repo's `.github/skills`).
-- `/skills reload` — reload after editing a `SKILL.md`.
-- `/agent` — select a custom agent from `.github/agents/` for the session.
-- `/env` — verify which skills/instructions are loaded for the current session.
+- `/models` — list/choose loaded models.
+- `/agents` — select a custom agent from `.opencode/agent/` for the session.
+- `/connect` — add a provider (Z.AI, GitHub Copilot, OpenAI, …).
+- `/init` — (re)generate `AGENTS.md` from the project structure.
+- `@` — fuzzy-reference a file in your prompt.
 
 **Triggering:** skills are invoked automatically by matching your request against each
 skill's `description`. You can also name skills explicitly (recommended for precision),
@@ -241,39 +237,43 @@ Hephaestus is a **template repo** — you can adopt the whole thing or cherry-pi
 
 **A. Start a new repo from it** — if this repo is marked as a GitHub template, click
 **"Use this template"** (otherwise fork or clone).
-Your new repo already has `.github/skills/`, `.github/agents/` and `AGENTS.md`, so Copilot
-CLI auto-loads the skills and exposes the agents (`/agent`) the moment you run `copilot`
-in it.
+Your new repo already has `.opencode/skills/`, `.opencode/agent/` and `AGENTS.md`, so
+opencode auto-loads the skills and exposes the agents (`/agents`) the moment you run
+`opencode` in it.
 
 **B. Add it to an existing project** — copy the pieces you want into your repo:
 
 | Copy this | Into your repo at | Gives you |
 |---|---|---|
-| `.github/skills/*` | `.github/skills/` | the V-model + on-demand skills (auto-loaded as project skills) |
-| `.github/agents/*` | `.github/agents/` | the role/lifecycle/utility custom agents (invoked with `/agent`) |
-| `AGENTS.md` | repo root | repo-level Copilot workflow/routing conventions (auto-loaded from git root & cwd) |
+| `.opencode/skills/*` | `.opencode/skills/` | the V-model + on-demand skills (auto-loaded as project skills) |
+| `.opencode/agent/*` | `.opencode/agent/` | the role/lifecycle/utility custom agents (invoked with `/agents`) |
+| `opencode.json` | repo root | project config (default model, instructions) |
+| `AGENTS.md` | repo root | repo-level workflow/routing conventions (auto-loaded from git root & cwd) |
 | `cpp/` contents | your C++ project's root **or** a subdir | the AI-first C++23 build skeleton + its `AGENTS.md` (see below) |
 
 ```bash
 # from your project root, pulling from a local clone of Hephaestus
-mkdir -p .github/skills .github/agents
-cp -R /path/to/Hephaestus/.github/skills/* .github/skills/
-cp -R /path/to/Hephaestus/.github/agents/* .github/agents/   # custom agents
-cp    /path/to/Hephaestus/AGENTS.md .          # optional but recommended
+mkdir -p .opencode/skills .opencode/agent
+cp -R /path/to/Hephaestus/.opencode/skills/* .opencode/skills/
+cp -R /path/to/Hephaestus/.opencode/agent/*  .opencode/agent/   # custom agents
+cp    /path/to/Hephaestus/opencode.json .                       # default model + instructions
+cp    /path/to/Hephaestus/AGENTS.md .                           # optional but recommended
 ```
 
 ```powershell
 # Windows PowerShell
-New-Item -ItemType Directory -Force .\.github\skills, .\.github\agents | Out-Null
-Copy-Item -Recurse \path\to\Hephaestus\.github\skills\* .\.github\skills\
-Copy-Item -Recurse \path\to\Hephaestus\.github\agents\* .\.github\agents\
+New-Item -ItemType Directory -Force .\.opencode\skills, .\.opencode\agent | Out-Null
+Copy-Item -Recurse \path\to\Hephaestus\.opencode\skills\* .\.opencode\skills\
+Copy-Item -Recurse \path\to\Hephaestus\.opencode\agent\*  .\.opencode\agent\
+Copy-Item \path\to\Hephaestus\opencode.json .
 Copy-Item \path\to\Hephaestus\AGENTS.md .            # optional but recommended
 ```
 
-Then run `copilot` in your project, `/skills list` to confirm skills loaded and `/agent`
-to confirm agents are available. Trim the set to what you need (e.g. drop the `graphics-*`
+Then run `opencode` in your project, `/models` to confirm the model, and `/agents` to
+confirm agents are available. Trim the set to what you need (e.g. drop the `graphics-*`
 or `cpp-template-workflow` skills/agents if your project doesn't use them), and tailor
-`AGENTS.md` to your repo's conventions.
+`AGENTS.md` to your repo's conventions. Update the default `model` in `opencode.json` (and
+the authoritative tier mapping) to match the providers you have connected.
 
 ### Where the C++ template goes
 
@@ -282,38 +282,41 @@ or `cpp-template-workflow` skills/agents if your project doesn't use them), and 
 expects to run from **the directory that contains `CMakeLists.txt`**. Two ways to reuse it:
 
 - **As the whole project** — copy the **contents** of `cpp/` into your project root, so
-  `CMakeLists.txt` and `AGENTS.md` sit at the root. Run `copilot` from the root and the
-  C++ command manifest in `AGENTS.md` loads automatically. If you also want the Hephaestus
-  workflow `AGENTS.md`, **merge the two** into one root `AGENTS.md` (a folder has only one).
+  `CMakeLists.txt` and `AGENTS.md` sit at the root. Run `opencode` from the root and the
+  C++ command manifest in `AGENTS.md` loads automatically when you work under `cpp/`. If
+  you also want the Hephaestus workflow `AGENTS.md`, **merge the two** into one root
+  `AGENTS.md` (a folder has only one).
 - **As a subproject/library** — keep it in a subfolder (e.g. `cpp/` or `libs/<name>/`).
-  Its `AGENTS.md` then only auto-applies when that folder is the git root **or** your
-  current working directory, so run `copilot` from inside that folder for the C++ commands.
+  Its `AGENTS.md` applies when that folder is your current working directory, so run
+  `opencode` from inside that folder for the C++ commands.
 
 ### What *not* to do
 
-- ❌ Don't put skills in a top-level `skills/` (or any other) folder — only `.github/skills/`,
-  `.agents/skills/`, `.claude/skills/` (project) and `~/.copilot/skills/` (personal) are loaded.
+- ❌ Don't hard-code a model in an agent or `opencode.json` beyond the default — reference
+  a **tier** and let the single authoritative mapping in `software-plan-orchestration`
+  resolve it.
 - ❌ Don't rename `SKILL.md` or rely on the folder name to invoke a skill — identity is the
   front-matter `name:` (the numeric prefixes are just ordering labels).
-- ❌ Don't put custom agents anywhere but `.github/agents/*.agent.md`, and don't hard-code a
-  model in an agent — reference a **tier** and let the single authoritative mapping resolve it.
 - ❌ Don't nest the C++ template as `cpp/` and then run build commands from the repo root —
   run them from the directory holding `CMakeLists.txt`, or its presets won't resolve.
-- ❌ Don't keep two `AGENTS.md` files in the **same** folder — Copilot loads one per
+- ❌ Don't keep two `AGENTS.md` files in the **same** folder — opencode loads one per
   git-root/cwd; merge instead.
-- ⚠️ Skills in `.github/skills/` load for **everyone** who runs `copilot` in that repo —
+- ⚠️ Skills in `.opencode/skills/` load for **everyone** who runs `opencode` in that repo —
   only commit the ones the project actually needs.
-- ⚠️ Installing into `~/.copilot/skills/` is **global** (every project). Use the in-repo
-  `.github/skills/` path if you want them scoped to one project only.
+- ⚠️ Installing into `~/.config/opencode/skills/` is **global** (every project). Use the
+  in-repo `.opencode/skills/` path if you want them scoped to one project only.
 
 **C. Make them global instead** — see *Option B* under Install & Use to symlink/copy
-`.github/skills/*` into `~/.copilot/skills/` so they apply to every project.
+`.opencode/skills/*` into `~/.config/opencode/skills/` so they apply to every project.
 
 ## Agentic assets in this repo
 
-- `AGENTS.md` (repo root): Copilot-first workflow conventions and lifecycle routing guidance.
-- `.github/skills/*/SKILL.md`: executable skill library (auto-loaded as project skills in this repo).
-- `.github/agents/*.agent.md`: custom agents (5 role + 10 V-model + 8 utility) invoked with `/agent`.
+- `opencode.json` (repo root): project config — default model (`zai-coding-plan/glm-5.2`)
+  and `AGENTS.md` instruction wiring.
+- `AGENTS.md` (repo root): opencode-first workflow conventions and lifecycle routing.
+- `.opencode/skills/*/SKILL.md`: executable skill library (auto-loaded as project skills).
+- `.opencode/agent/*.md`: custom agents (5 role + 10 V-model + 8 utility), invoked with
+  `/agents`.
 - `cpp/AGENTS.md`: canonical command manifest for the C++ template subtree.
 
 ## C++ build template
