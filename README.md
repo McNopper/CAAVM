@@ -28,13 +28,13 @@ paired with exactly one verification skill, and every skill is scoped so it does
 overlap its neighbours. The skills are deliberately kept at a lean **hobby-project**
 level — minimal but useful; a heavier production variant could live as a separate set.
 
-| Definition (left)                  | ↔ | Verification (right)                   |
-|------------------------------------|---|----------------------------------------|
-| `01-software-requirements`         | ↔ | `10-software-acceptance-test`          |
-| `02-software-system`               | ↔ | `09-software-integration-test`         |
-| `03-software-architecture`         | ↔ | `08-software-library-test`              |
-| `04-software-design`               | ↔ | `07-software-component-test`           |
-| `05-software-implementation`       | ↔ | `06-software-unit-test`                |
+| Slot | Definition (left)              | ↔ | Verification (right)              | Slot |
+|------|--------------------------------|---|----------------------------------|------|
+| 01   | `software-requirements`        | ↔ | `software-acceptance-test`        | 10   |
+| 02   | `software-system`              | ↔ | `software-integration-test`       | 09   |
+| 03   | `software-architecture`        | ↔ | `software-library-test`           | 08   |
+| 04   | `software-design`              | ↔ | `software-component-test`         | 07   |
+| 05   | `software-implementation`      | ↔ | `software-unit-test`              | 06   |
 
 Each skill lives in `.opencode/skills/<name>/SKILL.md` and follows the same lean template:
 V-model position, hobby-level scope, core principles, a compact default output, and
@@ -106,9 +106,9 @@ Use concrete phrasing so skill matching is deterministic:
 - "Use the `software-library-test` skill to verify architecture boundaries and dependency rules."
 - "Use the `software-vmodel-navigation` skill to route this request to the correct lifecycle step."
 
-> Invoke skills by their front-matter `name` (e.g. `software-system`), not the
-> numbered folder label (`02-software-system`). The numeric prefixes above are
-> only ordering labels for the directories.
+> Invoke skills by their front-matter `name` (e.g. `software-system`), which is also the
+> folder name (opencode requires `name` to match the directory). The **Slot** numbers above
+> are just the V-model lifecycle ordering, not part of any folder or skill name.
 
 ### On-demand skills outside the V-model
 

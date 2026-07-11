@@ -58,8 +58,8 @@ For each task in the execution manifest:
    - `output_tokens ≈ expected_outputs size × verbosity factor`
 2. **Base cost** `= input_tokens × rate_in(tier) + output_tokens × rate_out(tier)`.
 3. **Tier multipliers.**
-   - `very-high`: **× 2** (two independent passes) **+ reconciler** pass.
-   - `high`/`very-high`: **+ rubberduck overhead** (cross-vendor critic pass).
+   - `very-high`: **× 2** (two independent Opus passes) **+ reconciler** pass.
+   - `very-high`: **+ rubberduck overhead** (GPT-5.6 cross-check of Opus).
    - **Retry budget:** add expected retries per the task's `retry_policy`
      (e.g. `+1 same-tier retry` for transient-failure allowance).
 4. **Aggregate:** sum per tier and overall; derive a range:
@@ -81,7 +81,7 @@ This skill keys costs **by tier**; the concrete model for each tier comes from t
 | `mid` | $ (fill) | $ (fill) | — |
 | `high` | $ (fill) | $ (fill) | planning + review |
 | `very-high` | $ (fill) | $ (fill) | **× 2** (two passes) + reconciler |
-| rubberduck | $ (fill) | $ (fill) | comparable tier, different vendor |
+| rubberduck | $ (fill) | $ (fill) | GPT-5.6 cross-check of Opus (very-high) |
 
 > Fill the rate columns from the provider's current published pricing at estimation
 > time; resolve each tier's model via `software-plan-orchestration`. Do not hard-code

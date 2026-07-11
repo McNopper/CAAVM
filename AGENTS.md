@@ -46,7 +46,8 @@ For C++ tasks in this repository, default to the `cpp/` template workflow:
 For reviewing an existing plan, ordering its tasks, and driving them to completion:
 
 1. Use `software-plan-orchestration`.
-2. It rubberducks the plan with a **different-vendor** model at a comparable tier.
+2. It rubberducks `very-high` (Opus) work with a **different-vendor** model (GPT-5.6);
+   GLM-5.2 handles and reviews all normal work itself.
 3. It **subdivides every task so an open model can execute it** (open-model-first).
 4. It orders tasks by dependency (topological sort), groups independent tasks for
    parallel execution, and emits a machine-readable **execution manifest**.
