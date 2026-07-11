@@ -6,7 +6,7 @@
     "cpp": {
       "type": "local",
       "command": ["python", "cpp/mcp/server.py"],
-      "enabled": false
+      "enabled": true
     }
   }
 }

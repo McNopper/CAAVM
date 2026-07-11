@@ -35,7 +35,16 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:  # pragma: no cover
+    import sys
+    sys.stderr.write(
+        "cpp MCP server: the 'mcp' Python package is not installed.\n"
+        "Run:  pip install -r cpp/mcp/requirements.txt\n"
+        "then restart opencode. (Or set mcp.cpp.enabled=false in opencode.json.)\n"
+    )
+    sys.exit(1)
 
 # ---------------------------------------------------------------------------
 # Configuration / resolution helpers

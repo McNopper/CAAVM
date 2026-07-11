@@ -343,8 +343,9 @@ Highlights:
 structured tools (`cpp_verify`, `cpp_build`, `cpp_docs`, …) returning JSON. It also runs
 **standalone on any existing C++ project** — `cpp_cppcheck`, `cpp_format`, `cpp_clang_tidy`
 with caller-supplied settings, no CMake layout required. Install with
-`pip install -r cpp/mcp/requirements.txt` and set `mcp.cpp.enabled=true` in `opencode.json`
-(it ships disabled so a fresh clone stays clean). See
+`pip install -r cpp/mcp/requirements.txt` — the server is **enabled by default** in
+`opencode.json`; if the deps are missing it prints an install hint and exits (opencode
+keeps working without the `cpp` tools). Set `mcp.cpp.enabled=false` to opt out. See
 [`cpp/mcp/README.md`](cpp/mcp/README.md).
 
 See [`cpp/README.md`](cpp/README.md) for the overview and

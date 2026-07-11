@@ -56,7 +56,7 @@ The optional [`mcp/`](mcp/) server exposes this tooling to opencode agents as
 `cpp_clang_tidy` with caller-supplied settings, no CMake layout required.
 
 ```bash
-pip install -r mcp/requirements.txt    # then set mcp.cpp.enabled=true in opencode.json
+pip install -r mcp/requirements.txt    # server is enabled by default in opencode.json
 ```
 
 See **[mcp/README.md](mcp/README.md)** for install, wiring, and the tool reference.

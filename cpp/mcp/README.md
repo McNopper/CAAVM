@@ -27,8 +27,7 @@ It is **dual-purpose**:
 pip install -r cpp/mcp/requirements.txt   # installs: mcp, PyYAML
 ```
 
-Then enable the server in your `opencode.json` (it ships `enabled: false` so a fresh
-clone without the Python deps does not error):
+The server ships **enabled by default** in this repo's `opencode.json`:
 
 ```jsonc
 {
@@ -42,6 +41,10 @@ clone without the Python deps does not error):
   }
 }
 ```
+
+If the Python deps are not installed, the server prints a one-line "install
+requirements" hint and exits — opencode keeps working, just without the `cpp`
+tools. To disable it entirely, set `enabled: false` (or drop the `mcp.cpp` block).
 
 > After any change to `opencode.json` or the server, **restart opencode** — config and
 > MCP servers load once at startup.
