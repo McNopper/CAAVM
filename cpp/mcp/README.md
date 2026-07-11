@@ -16,10 +16,23 @@ It is **dual-purpose**:
 
 ## Requirements
 
-- **Python 3.10+** on PATH (the MCP Python SDK needs 3.10+).
-- The C++ tools you want to use, on PATH: `cppcheck`, `clang-tidy`, `clang-format`, `cmake`.
-  (Override any binary with the `CPPCHECK_BIN` / `CLANG_TIDY_BIN` / `CLANG_FORMAT_BIN` /
-  `CMAKE_BIN` env vars.) Call `cpp_tool_list` to see what is available.
+The server itself needs **Python 3.10+** on PATH (the MCP Python SDK requires 3.10+).
+The C++ tools are **optional but expected on PATH** — install the ones you want to use:
+
+| Tool | Used by | Where to get it |
+|---|---|---|
+| [**cppcheck**](https://github.com/danmar/cppcheck) | `cpp_cppcheck`, template `cppcheck*` targets | <https://github.com/danmar/cppcheck> — `choco install cppcheck` / `brew install cppcheck` / `sudo apt install cppcheck`, or a release tarball from the GitHub releases page. |
+| **clang-format**, **clang-tidy** | `cpp_format`, `cpp_clang_tidy`, template `tidy`/`format` targets | Ship with an **LLVM/Clang** install — they must be on PATH. Windows: the "C++ Clang tools for Windows" VS component, or the LLVM installer from <https://releases.llvm.org>. macOS: `brew install llvm` (and put `$(brew --prefix llvm)/bin` on PATH). Linux: your distro's `clang` / `clang-tools` package or the LLVM apt repo. |
+| [**CMake**](https://cmake.org/download/) ≥ 3.26 | template tools (`cpp_configure`, `cpp_build`, `cpp_verify`, `cpp_docs`) | <https://cmake.org/download/> — ensure `cmake` is on PATH. |
+| [**Ninja**](https://ninja-build.org/) | recommended generator for the template (unlocks the full analysis stack) | <https://ninja-build.org/> — `choco install ninja` / `brew install ninja` / `sudo apt install ninja-build`. |
+
+Notes:
+
+- On the template, clang-tidy/cppcheck analysis is `enabled` only with Ninja/Makefiles
+  + a Clang/GNU-compatible compiler; otherwise it is cleanly `skipped` (not an error).
+- Override any binary with the `CPPCHECK_BIN` / `CLANG_TIDY_BIN` / `CLANG_FORMAT_BIN` /
+  `CMAKE_BIN` env vars (e.g. to point at a specific LLVM version).
+- Call **`cpp_tool_list`** to see exactly which binaries the server found on PATH.
 
 ## Install
 

@@ -71,6 +71,11 @@ See **[mcp/README.md](mcp/README.md)** for install, wiring, and the tool referen
   design, expressed as a positive allowlist rather than blocking any specific
   compiler.
 
+**External tools must be on PATH:** [CMake](https://cmake.org/download/) (≥ 3.26),
+[Ninja](https://ninja-build.org/), [cppcheck](https://github.com/danmar/cppcheck), and
+the LLVM/Clang tools (`clang-format`, `clang-tidy`). The [mcp/README.md](mcp/README.md)
+requirements table has per-OS install links.
+
 ## What makes it "AI-first"
 
 - **`compile_commands.json`** exported for every analysis tool and editor.
