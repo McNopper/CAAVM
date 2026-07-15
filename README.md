@@ -4,19 +4,63 @@
 
 ## Overview
 
-Hephaestus is an **opencode** template with three layers that work together:
+Hephaestus is an **opencode** template for **agentic project planning and software
+development**. A human sets direction and observes; a permanent **Project-Manager (PM)
+agent** plans and coordinates the work; **worker agents** execute it — running the V-model
+lifecycle when the work is software.
 
-- **V-model skills (10)** — a paired definition/verification software lifecycle.
-- **On-demand utility skills (8)** — routing, traceability, plan orchestration, cost
-  estimation, C++ template, and graphics helpers, triggered only when relevant.
-- **Custom agents (23)** in `.opencode/agent/` — 5 role + 10 lifecycle + 8 utility agents
-  that operationalize an **autonomous, agile, budget-aware** workflow: a high-tier model
-  plans, an open model executes subdivided tasks, a high-tier model reviews, and an
-  `orchestrator` drives the fleet — revisiting V-model steps iteratively until convergence.
+Two planes work together:
+
+- **Project-planning plane — [`ToDo/`](ToDo/)** — a human-directed, agent-executed
+  operating model. A human writes a **brief** and then mostly *observes*; the **PM agent**
+  turns the brief into a roadmap, board and status, decides which roles the work needs, and
+  spawns **worker instances**; problems **bubble up** for the occasional human decision.
+  This plane runs the whole arc — framing, planning, execution, closure — for **any** kind
+  of work.
+- **Software-development plane — [`.opencode/`](.opencode/)** — worker instances build
+  software through the **V-model lifecycle**, in three layers:
+  - **V-model skills (10)** — a paired definition/verification software lifecycle.
+  - **On-demand utility skills (8)** — routing, traceability, plan orchestration, cost
+    estimation, C++ template, and graphics helpers, triggered only when relevant.
+  - **Custom agents (23)** in `.opencode/agent/` — 5 role + 10 lifecycle + 8 utility agents
+    that operationalize an **autonomous, agile, budget-aware** workflow: a high-tier model
+    plans, an open model executes subdivided tasks, a high-tier model reviews, and an
+    `orchestrator` drives the fleet — revisiting V-model steps iteratively until convergence.
 
 Model choice is **rule-based, not hard-coded**: tasks reference a *tier*, and the concrete
 model is resolved from a single authoritative mapping (see
 [Model-tier tags](#model-tier-tags-used-by-software-plan-orchestration)).
+
+## Project planning layer (`ToDo/`)
+
+[`ToDo/`](ToDo/) adds the **planning and human-interface** layer above the V-model, so a
+person can direct a whole initiative and just watch it run. It is a set of reusable
+markdown templates split by audience:
+
+- **`ToDo/Human/`** — the only folder a human opens: `BRIEF.md` (the mandate they write),
+  plus PM-maintained `ROADMAP.md` (Gantt), `BOARD.md` (Kanban), `STATUS.md` (dashboard),
+  and `DECISIONS.md` (only what needs a human).
+- **`ToDo/AI/`** — the agent workspace: the always-present **PM** (`agents/pm/`), worker
+  **instances** (`agents/<role>-<NN>/`, e.g. `developer-01`, `developer-02`) each logging
+  autonomous sessions in second-precise `runs/<YYYY-MM-DD>T<HH-MM-SS>/`, a bubble-up
+  `INBOX.md`, and a pooled `capabilities/`.
+
+It maps cleanly onto the existing agent fleet — it is a *framing* layer, not a second
+execution engine:
+
+| `ToDo/` planning concept | Existing Hephaestus mechanism |
+|---|---|
+| PM agent (plan · coordinate · report to human) | `planner` + `orchestrator` at project scope |
+| Worker instance running its lane | a worker dispatched to a V-model / utility **skill** |
+| `Human/ROADMAP.md` + `Human/BOARD.md` | human-facing view of the execution **manifest** |
+| `AI/agents/pm/INBOX.md` → `Human/DECISIONS.md` | bubble-up → human escalation of blocking findings |
+| Worker runs (`runs/…/RUN.md`) | per-task execution + completion reports |
+
+Use `ToDo/` to **frame and steer the whole project** (goal, scope, roles, roadmap, human
+check-ins); use the **V-model skills/agents** to actually build the software each worker is
+assigned. See [`ToDo/README.md`](ToDo/README.md), [`ToDo/AGENTS.md`](ToDo/AGENTS.md), and
+the worked example in [`ToDo/example/`](ToDo/example/). It is a mental-model/template layer
+(Markdown only) — it does not build or ship with `cpp/`.
 
 ## Skills
 
@@ -313,6 +357,9 @@ expects to run from **the directory that contains `CMakeLists.txt`**. Two ways t
 
 ## Agentic assets in this repo
 
+- `ToDo/` (project-planning layer): the human-directed operating model — `ToDo/Human/`
+  (brief · roadmap · board · status · decisions), `ToDo/AI/` (PM + worker instances +
+  runs + capabilities), `ToDo/AGENTS.md`, and a worked example in `ToDo/example/`.
 - `opencode.json` (repo root): project config — default model (`zai-coding-plan/glm-5.2`)
   and `AGENTS.md` instruction wiring.
 - `AGENTS.md` (repo root): opencode-first workflow conventions and lifecycle routing.

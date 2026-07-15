@@ -2,6 +2,23 @@
 
 Repository-level conventions for agentic work in this repository.
 
+## Two scopes: project planning ↔ software development
+
+Hephaestus spans **project planning and software development**. Pick the scope first:
+
+- **A whole initiative / project** → start in the **project-planning layer**
+  [`ToDo/`](ToDo/). A human writes `ToDo/Human/BRIEF.md`; the **PM agent**
+  (`ToDo/AI/agents/pm/`) turns it into a roadmap/board/status and spawns worker
+  **instances** (`ToDo/AI/agents/<role>-<NN>/`); issues **bubble up** through
+  `ToDo/AI/agents/pm/INBOX.md` and only human-worthy ones reach `ToDo/Human/DECISIONS.md`.
+  This is the human-facing wrapper around the fleet: the PM maps onto `planner` +
+  `orchestrator`, worker runs onto dispatched V-model tasks, and the roadmap/board onto a
+  human-readable view of the execution manifest. See [`ToDo/AGENTS.md`](ToDo/AGENTS.md).
+- **A software change inside a project** → use the **V-model routing** below. Worker
+  instances invoke these skills to define and verify the software.
+
+`ToDo/` is a mental-model/template layer (Markdown only); it does not build with `cpp/`.
+
 ## Lifecycle routing (V-model)
 
 Use these skills as the default path:
