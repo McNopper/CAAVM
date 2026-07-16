@@ -100,6 +100,7 @@ def _new_ticket(
         "labels": labels or [],
         "epic": epic,
         "artifacts": [],
+        "todos": [],
         "created_at": _now(),
         "updated_at": _now(),
         "history": [],
@@ -272,6 +273,48 @@ def add_artifact(
         return t
 
 
+def add_todo(project: str, ticket_id: str, text: str, done: bool = False, by: Optional[str] = None) -> Dict[str, Any]:
+    """Append a todo (checklist item {text, done}) to a ticket."""
+    with store.transaction(project) as doc:
+        t = doc.get("tickets", {}).get(ticket_id)
+        if t is None:
+            raise KeyError(f"ticket {ticket_id} not found in project {project}")
+        t.setdefault("todos", []).append({"text": text, "done": done})
+        t["updated_at"] = _now()
+        _append_history(t, f"todo_added:{text}", by)
+        return t
+
+
+def toggle_todo(project: str, ticket_id: str, index: int, by: Optional[str] = None) -> Dict[str, Any]:
+    """Flip the done flag of a ticket's todo by 0-based index."""
+    with store.transaction(project) as doc:
+        t = doc.get("tickets", {}).get(ticket_id)
+        if t is None:
+            raise KeyError(f"ticket {ticket_id} not found in project {project}")
+        todos = t.setdefault("todos", [])
+        if not 0 <= index < len(todos):
+            raise IndexError(f"todo index {index} out of range (have {len(todos)})")
+        todos[index]["done"] = not todos[index].get("done", False)
+        t["updated_at"] = _now()
+        _append_history(t, f"todo_toggled:{index}", by)
+        return t
+
+
+def remove_todo(project: str, ticket_id: str, index: int, by: Optional[str] = None) -> Dict[str, Any]:
+    """Remove a ticket's todo by 0-based index."""
+    with store.transaction(project) as doc:
+        t = doc.get("tickets", {}).get(ticket_id)
+        if t is None:
+            raise KeyError(f"ticket {ticket_id} not found in project {project}")
+        todos = t.setdefault("todos", [])
+        if not 0 <= index < len(todos):
+            raise IndexError(f"todo index {index} out of range (have {len(todos)})")
+        removed = todos.pop(index)
+        t["updated_at"] = _now()
+        _append_history(t, f"todo_removed:{removed.get('text')}", by)
+        return t
+
+
 def get_backlog(project: str) -> List[Dict[str, Any]]:
     """Prioritized product backlog (product-backlog status only)."""
     out = list_tickets(project, status="product-backlog")
@@ -356,6 +399,9 @@ TOOLS = {
     "pm_release_ticket": release_ticket,
     "pm_add_comment": add_comment,
     "pm_add_artifact": add_artifact,
+    "pm_add_todo": add_todo,
+    "pm_toggle_todo": toggle_todo,
+    "pm_remove_todo": remove_todo,
     "pm_get_backlog": get_backlog,
     "pm_get_board": get_board,
     "pm_plan_sprint": plan_sprint,
@@ -498,6 +544,46 @@ TOOL_SCHEMAS = {
             "required": ["project", "ticket_id", "kind", "ref"],
         },
     },
+    "pm_add_todo": {
+        "description": "Append a todo (checklist item) to a ticket.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "ticket_id": {"type": "string"},
+                "text": {"type": "string"},
+                "done": {"type": "boolean"},
+                "by": {"type": "string"},
+            },
+            "required": ["project", "ticket_id", "text"],
+        },
+    },
+    "pm_toggle_todo": {
+        "description": "Flip the done state of a ticket's todo by 0-based index.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "ticket_id": {"type": "string"},
+                "index": {"type": "integer"},
+                "by": {"type": "string"},
+            },
+            "required": ["project", "ticket_id", "index"],
+        },
+    },
+    "pm_remove_todo": {
+        "description": "Remove a ticket's todo by 0-based index.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "ticket_id": {"type": "string"},
+                "index": {"type": "integer"},
+                "by": {"type": "string"},
+            },
+            "required": ["project", "ticket_id", "index"],
+        },
+    },
     "pm_get_backlog": {
         "description": "Prioritized product backlog for a project.",
         "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}}, "required": ["project"]},
@@ -554,7 +640,7 @@ def _handle(msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if method == "initialize":
         return {
             "jsonrpc": "2.0", "id": mid,
-            "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "pm", "version": "1.0"}},
+            "result": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "pm", "version": "1.0"}},
         }
     if method == "notifications/initialized":
         return None

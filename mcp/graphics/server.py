@@ -237,7 +237,7 @@ def _handle(msg: Dict) -> Optional[Dict]:
     method = msg.get("method")
     mid = msg.get("id")
     if method == "initialize":
-        return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2024-11-05", "capabilities": {}, "serverInfo": {"name": "graphics", "version": "1.0"}}}
+        return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "graphics", "version": "1.0"}}}
     if method == "notifications/initialized":
         return None
     if method == "tools/list":
