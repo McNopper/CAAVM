@@ -1,5 +1,10 @@
 # AI-first C++23 build template
 
+## About this document
+- **Kind:** `doc` / C++ subtree README
+- **Read by:** humans adopting the C++ skeleton; **written by:** maintainers
+- **Related:** pairs with `cpp/AGENTS.md` (command manifest)
+
 A lean, modern C++23 project skeleton whose tooling is configured to emit
 **structured, machine-readable information** that an AI agent can use to
 navigate, refactor, and verify the code — while staying out of the way when
@@ -23,10 +28,6 @@ cpp/
 ├── Doxyfile.in             # AI-oriented Doxygen config (XML + tagfile)
 ├── cmake/
 │   └── cppcheck.cmake      # single source of truth for cppcheck targets
-├── mcp/
-│   ├── server.py           # optional MCP server exposing this tooling to opencode
-│   ├── requirements.txt    # mcp, PyYAML
-│   └── README.md           # install + tool reference
 ├── include/
 │   └── example.hpp
 ├── src/
@@ -47,19 +48,11 @@ cmake --build build --target verify-full     # full: verify + format + static an
 See **[AGENTS.md](AGENTS.md)** for the full command manifest and the locations
 of every machine-readable report.
 
-## MCP server (opencode)
+## C++ execution (cpp-tools agent)
 
-The optional [`mcp/`](mcp/) server exposes this tooling to opencode agents as
-**structured MCP tools** (`cpp_configure`, `cpp_build`, `cpp_verify`, `cpp_docs`,
-`cpp_analysis_status`, `cpp_read_report`) returning JSON. It also runs
-**standalone** on *any* C++ project — `cpp_cppcheck`, `cpp_format`,
-`cpp_clang_tidy` with caller-supplied settings, no CMake layout required.
-
-```bash
-pip install -r mcp/requirements.txt    # server is enabled by default in opencode.json
-```
-
-See **[mcp/README.md](mcp/README.md)** for install, wiring, and the tool reference.
+C++ work in this repo is driven by the `cpp-tools` **agent** (methodology in the
+`cpp-tools` skill). It runs the CMake targets via bash and reads the machine-readable
+reports. There is no separate MCP server — C++ is an agent now.
 
 ## Toolchain
 
@@ -73,8 +66,7 @@ See **[mcp/README.md](mcp/README.md)** for install, wiring, and the tool referen
 
 **External tools must be on PATH:** [CMake](https://cmake.org/download/) (≥ 3.26),
 [Ninja](https://ninja-build.org/), [cppcheck](https://github.com/danmar/cppcheck), and
-the LLVM/Clang tools (`clang-format`, `clang-tidy`). The [mcp/README.md](mcp/README.md)
-requirements table has per-OS install links.
+the LLVM/Clang tools (`clang-format`, `clang-tidy`).
 
 ## What makes it "AI-first"
 

@@ -8,6 +8,12 @@ description: >
   Do not use it for library boundaries, stack choices, or actual code.
 ---
 
+## About this document
+- **Kind:** skill (reusable capability, auto-loaded by opencode)
+- **Read by:** any agent matching its description; **written by:** maintainers
+- **Related:** part of the $(software-design.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+
+
 # Software Design Skill
 
 You are a pragmatic software designer for small/hobby projects.
@@ -16,37 +22,23 @@ Your job is to design the **inside of a library**: its components (built from
 units), the interfaces and data they use, and the main workflows — ready for
 someone to code.
 
-## V-Model Position
-
-This is a **left-side (definition)** activity. It is verified by its right-side
-pair, **Component Test (07)**.
-
-```text
-Software Requirements    (01) ↔ Acceptance Test       (10)
-Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Library Test          (08)
-Software Design          (04) ↔ Component Test        (07)
-Software Implementation  (05) ↔ Unit Test             (06)
-```
-
 ## Scope (Hobby Level)
 
 This skill **owns**: components within a library, each component's
 interface/contract, mapping of units into those components, data structures,
 key algorithms, error-handling behaviour, and main workflows.
 
-This skill **does not** define library boundaries or dependency rules (→ 03),
-choose the system shape/stack (→ 02), or write the real implementation (→ 05).
+This skill **does not** define library boundaries or dependency rules (→ software-architecture),
+choose the system shape/stack (→ software-system), or write the real implementation (→ software-implementation).
 Describe behaviour and signatures, not finished code. Keep it to the components
 the project actually needs.
 
 A **component** here is an **internal** building block of this software (composed
 of units, linked in); it is not intended for reuse outside this software — that
-is a library's job (→ 03). Package/folder layout is only organization; component
+is a library's job (→ software-architecture). Package/folder layout is only organization; component
 boundaries are defined by responsibilities and interfaces.
 
 ## Core Principles
-
 1. Design to the interfaces other components depend on; keep them small.
 2. Apply established design patterns where they genuinely fit — never force one.
 3. Define data structures and their invariants explicitly.
@@ -69,7 +61,6 @@ For a hobby/MVP project, reach for a pattern only when it removes real duplicati
 or coupling; otherwise prefer plain, simple code. Name any pattern you apply.
 
 ## Default Output
-
 ```md
 # Design: <Library / Component>
 
@@ -96,7 +87,6 @@ or coupling; otherwise prefer plain, simple code. Name any pattern you apply.
 ```
 
 ## When to Hand Off
-
-- **Up the V:** boundary/structure questions go back to **Software Architecture (03)**.
-- **Down the V:** pass the design to **Software Implementation (05)**.
-- **Across the V:** components and contracts are verified by **Component Test (07)**.
+- **Up the chain:** boundary/structure questions go back to **software-architecture**.
+- **Down the chain:** pass the design to **software-implementation**.
+- **Across:** components and contracts are verified by **test-software-design** (component test).

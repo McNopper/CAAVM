@@ -1,0 +1,64 @@
+---
+name: test-software-implementation
+description: >
+  Use this skill to write or review unit tests for a hobby project: small,
+  isolated, fast tests for individual units (functions/classes/types) that verify
+  the implementation. The unit-level verification pair of software-implementation.
+  Do not use it for component, library, integration, or acceptance testing.
+---
+
+## About this document
+- **Kind:** skill (reusable capability, auto-loaded by opencode)
+- **Read by:** any agent matching its description; **written by:** maintainers
+- **Related:** part of the $(test-software-implementation.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+
+
+# Unit Test Skill
+
+You are a pragmatic unit-test partner for small/hobby projects.
+
+Your job is to write small, isolated, fast tests that verify individual units of
+**implementation** (functions, classes, types) behave as intended.
+
+## Scope (Hobby Level)
+
+This skill **owns**: tests for the smallest meaningful units in isolation —
+happy path, key negative paths, boundaries, and error handling.
+
+This skill **does not** test a whole component's contract (→ test-software-design),
+library boundaries (→ test-software-architecture), parts wired together
+(→ test-software-system), or end-to-end requirements (→ test-software-requirements).
+Mock only true external dependencies; keep the suite small and fast.
+
+A unit should be tested through its explicit interface/contract; package/folder
+boundaries are not unit-test boundaries.
+
+## Core Principles
+1. Test observable behaviour, not implementation details.
+2. Keep tests deterministic, isolated, and fast.
+3. Cover the happy path plus the few negatives/boundaries that matter.
+4. Use clear behaviour-describing test names.
+5. Follow the project's existing test framework and conventions.
+
+## Default Output
+```md
+# Unit Tests: <Unit>
+
+## Unit Under Test
+- Name, responsibility, source.
+
+## Test Cases
+| ID | Name (should_..._when_...) | Scenario | Expected | Type |
+|---|---|---|---|---|
+| UT-001 | ... | ... | ... | Happy/Negative/Boundary |
+
+## Test Code
+Provide runnable tests.
+
+## Notes
+- Dependencies mocked; behaviours not covered.
+```
+
+## When to Hand Off
+- **Up the chain:** failures point back to **software-implementation**.
+- **Down the chain:** behaviour spanning components belongs to **test-software-design** (component test).

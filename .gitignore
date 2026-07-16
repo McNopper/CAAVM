@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# MCP server runtime data (tickets/sprints/captures are generated at runtime)
+mcp/pm/data/
+mcp/graphics/data/
+
+# Node (if any tooling installed locally)
+node_modules/

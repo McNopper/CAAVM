@@ -1,5 +1,10 @@
 # AGENTS.md — C++23 AI-first template
 
+## About this document
+- **Kind:** `doc` / C++ subtree workflow convention (loaded when working under `cpp/`)
+- **Read by:** the `cpp-tools` agent and any agent doing C++ work; **written by:** maintainers
+- **Related:** pairs with `cpp/README.md`; driven by the `cpp-tools` skill and `cpp-tools` agent
+
 Canonical commands and conventions for AI agents working in this template.
 Run everything from this directory (the one containing `CMakeLists.txt`).
 
@@ -40,15 +45,11 @@ degraded signal compared to full analysis.
 Use `verify-full` for strict validation (verify + format-check + static
 analysis + docs).
 
-## MCP server (optional)
+## C++ execution (cpp-tools agent)
 
-The [`mcp/`](mcp/) subtree exposes the same tooling to opencode agents as
-structured MCP tools (`cpp_configure`, `cpp_build`, `cpp_verify`, `cpp_docs`,
-`cpp_analysis_status`, `cpp_read_report`) that return JSON instead of log text.
-It also provides standalone `cpp_cppcheck` / `cpp_format` / `cpp_clang_tidy`
-tools that run on **any** C++ project with caller-supplied settings. Prefer the
-MCP tools when the server is enabled; fall back to the raw CMake targets
-otherwise. See [`mcp/README.md`](mcp/README.md) for install and wiring.
+C++ work in this repo is driven by the `cpp-tools` **agent** (methodology in the
+`cpp-tools` skill). It runs the CMake targets below via bash, then reads the
+machine-readable reports. There is no separate MCP server — C++ is an agent now.
 
 ## Machine-readable outputs
 

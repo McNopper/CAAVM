@@ -1,144 +1,133 @@
 # AGENTS.md — Hephaestus opencode workflow
 
-Repository-level conventions for agentic work in this repository.
+## About this document
+- **Kind:** `doc` / repo-level workflow convention (auto-loaded by opencode from the git root).
+- **Read by:** any agent operating in this repo; **written by:** maintainers.
+- **Related:** pairs with `README.md`; the authoritative tier→model mapping lives in the `pm-orchestrate-execution` skill.
 
-## Two scopes: project planning ↔ software development
+Repository-level conventions for agentic work in this repository. Hephaestus is an
+**opencode-native**, **domain-organized** system: skills and agents are flat under
+`.opencode/` and named by `<domain>-<descriptor>`; project management is a concrete,
+Scrum-like ticket/sprint workflow powered by the `pm` MCP server; C++ and graphics
+tooling are first-class agents / MCP tools.
 
-Hephaestus spans **project planning and software development**. Pick the scope first:
+## Two scopes
 
-- **A whole initiative / project** → start in the **project-planning layer**
-  [`ToDo/`](ToDo/). A human writes `ToDo/Human/BRIEF.md`; the **PM agent**
-  (`ToDo/AI/agents/pm/`) turns it into a roadmap/board/status and spawns worker
-  **instances** (`ToDo/AI/agents/<role>-<NN>/`); issues **bubble up** through
-  `ToDo/AI/agents/pm/INBOX.md` and only human-worthy ones reach `ToDo/Human/DECISIONS.md`.
-  This is the human-facing wrapper around the fleet: the PM maps onto `planner` +
-  `orchestrator`, worker runs onto dispatched V-model tasks, and the roadmap/board onto a
-  human-readable view of the execution manifest. See [`ToDo/AGENTS.md`](ToDo/AGENTS.md).
-- **A software change inside a project** → use the **V-model routing** below. Worker
-  instances invoke these skills to define and verify the software.
+- **A whole initiative / project** → the **PM agent** (`pm`) runs the Scrum workflow
+  over tickets in the `pm` MCP server (one project per initiative; multiple projects
+  coexist). The human is Product Owner: writes the brief/goal, prioritizes the backlog,
+  accepts at Sprint Review. Issues bubble up to the PM and only human-worthy ones are
+  escalated.
+- **A software change inside a project** → a ticket of the right `role` is claimed by a
+  worker, which uses the matching `software-*` / `test-software-*` skill, and records
+  its artifact back on the ticket.
 
-`ToDo/` is a mental-model/template layer (Markdown only); it does not build with `cpp/`.
+> **The PM/ticket system is optional.** Every skill and agent can be used **directly** by
+> a human (or by another agent) with no ticket, sprint, or `pm` MCP server involved — for
+> ad-hoc work, just invoke the skill or `/agents` you need. Use the PM system only when you
+> want tracked, multi-agent, sprint-based execution. Likewise, `pm-doc-about` (and any
+> skill) works standalone, independent of PM.
 
-## Lifecycle routing (V-model)
+## Skills are discovered flat by domain
 
-Use these skills as the default path:
+opencode loads every `SKILL.md` under `.opencode/skills/*/`. There are no subfolders by
+domain — the **domain is in the name**. Naming convention: `<domain>-<descriptor>`.
 
-```text
-Software Requirements    (01) ↔ Acceptance Test       (10)
-Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Library Test          (08)
-Software Design          (04) ↔ Component Test        (07)
-Software Implementation  (05) ↔ Unit Test             (06)
+| Domain prefix | Meaning | Example skills |
+|---|---|---|
+| `software-` | Definition (what/how) | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
+| `test-software-` | Verification of a definition level | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
+| `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket` |
+| `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
+| `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
+
+Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `planner`,
+`executor`, `reviewer`, `rubberduck`, `pm`, `cpp-tools`, `graphics-expert`).
+
+## The ticket / sprint workflow (the PM)
+
+The `pm` MCP server stores **tickets** and **sprints**, scoped per **project** so
+several independent projects can run at once. States:
+
+```
+product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
+   (incomplete on sprint close ──────────────────────────────────────────────────────┘)
+blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
 ```
 
-If a request is ambiguous, route with `software-vmodel-navigation` first.
+- A worker **self-claims** by role: `pm_claim_ticket(role=…)` atomically finds the next
+  matching ticket, moves it to `in-progress`, sets `assignee`. Two agents never get the
+  same ticket. A returned ticket (`pm_release_ticket`) can be picked up by a *different*
+  agent.
+- When a worker produces an artifact (file, git commit/branch, doc), it records it with
+  `pm_add_artifact(kind=file|git|path|url|doc, ref=…)` **before** moving to `in-review` —
+  the ticket is the hand-off contract.
+- Review/verification failure sends the ticket back to `in-progress` (rework loop).
+- See `pm-operating-model` for Scrum events, the Definition of Done, and the
+  bubble-up → escalation rule; `pm-create-ticket` for how to fill a ticket; `pm-route-request`
+  when the next step is ambiguous; `pm-audit-traceability` for the definition→verification matrix.
 
-## Canonical composition hierarchy
+## Canonical composition hierarchy (no V-model framing)
 
 The dividing line is **reuse scope** (static-vs-shared linkage is a build decision):
 
 - **Unit** → smallest implementation element with a clear interface.
 - **Component** → composed of units; **internal** to this software (linked in).
-- **Library** → composed of components; **independently deployable and reusable
-  outside this software**; exposes a clear interface and dependency rules.
+- **Library** → composed of components; **independently deployable and reusable outside
+  this software**; exposes a clear interface and dependency rules.
 - **Software system** → composed of libraries plus external/system interfaces.
 - **Package/folder** (and language *modules*) → organization only; not a lifecycle level.
 
-## C++ template routing
+Verification maps by level: `test-software-implementation` (unit) ↔ `software-implementation`,
+`test-software-design` (component) ↔ `software-design`, `test-software-architecture` (library)
+↔ `software-architecture`, `test-software-system` (integration) ↔ `software-system`,
+`test-software-requirements` (acceptance) ↔ `software-requirements`.
 
-For C++ tasks in this repository, default to the `cpp/` template workflow:
+## C++ and graphics are tools, not a separate lifecycle
 
-1. Use `cpp-template-workflow`.
-2. Run commands from `cpp/`.
-3. Use canonical targets from `cpp/AGENTS.md` (`verify`, `verify-full`, `format`, `tidy`, `cppcheck*`, `docs`).
-4. Treat "analysis skipped" on unsupported toolchains as degraded signal, not failure.
+- **C++**: the `cpp-tools` **agent** runs CMake configure/build, clang-format, cppcheck,
+  clang-tidy via bash and reads their reports (methodology in the `cpp-tools` skill). The
+  old `cpp/mcp` server is gone.
+- **Graphics**: window capture, RenderDoc capture, and render comparison are **MCP tools**
+  in `mcp.graphics` (`graphics_screenshot`, `graphics_renderdoc_capture`,
+  `graphics_renderdoc_frame`, `graphics_compare_renders`). The `graphics-expert` agent
+  (pinned to Opus) drives them for frontier-level graphics work; `graphics-render-comparison`
+  is the thin methodology skill.
 
-## Traceability expectations
+## Model tiers (model-neutral agents)
 
-- Keep explicit links between each left-side skill artifact and its right-side verification artifact.
-- Use `software-traceability-audit` when trace links are missing or unclear.
+Agents and docs reference **tiers**, never hard-coded model IDs. The authoritative
+tier→model mapping lives in `pm-orchestrate-execution`. All agents are model-neutral
+**except** `graphics-expert`, which is pinned to Opus (`very-high`).
 
-## Plan review, ordering & auto-execution
+| Tier | Selection rule |
+|---|---|
+| `very-low` | cheapest/fastest for trivial, mechanical edits |
+| `low` | best available open-weight model — **default executor** |
+| `mid` | balanced general model for standard impl/tests |
+| `high` | top-capability reasoning + large context — **planning + review** |
+| `very-high` | frontier/highest-risk — **run twice & reconcile** (Opus) |
 
-For reviewing an existing plan, ordering its tasks, and driving them to completion:
-
-1. Use `software-plan-orchestration`.
-2. It rubberducks `very-high` (Opus) work with a **different-vendor** model (GPT-5.6);
-   GLM-5.2 handles and reviews all normal work itself.
-3. It **subdivides every task so an open model can execute it** (open-model-first).
-4. It orders tasks by dependency (topological sort), groups independent tasks for
-   parallel execution, and emits a machine-readable **execution manifest**.
-5. It tags each task with a **rule-based model tier**. The tier is defined by a
-   *selection rule*; concrete model IDs are only an example mapping **as of today**,
-   expected to be swapped as models evolve. **Models are never hard-coded** — agents/docs
-   reference *tiers*, and the **single authoritative tier→model mapping lives in
-   `software-plan-orchestration`** (`.opencode/skills/software-plan-orchestration/SKILL.md`).
-   Update models there and nowhere else. Today the whole pipeline runs at 1M context inside
-   opencode: GLM-5.2 (Z.AI) is the workhorse up to `high`, Claude Opus 4.8 (GitHub Copilot
-   provider) is the `very-high` escalation, and GPT-5.6 (OpenAI) is the rubberduck critic.
-
-   | Tier | Selection rule (durable) |
-   |---|---|
-   | `very-low` | cheapest/fastest for trivial, mechanical edits |
-   | `low` | best available **open-weight** model — **default executor** |
-   | `mid` | balanced general model for standard impl/tests |
-   | `high` | top-capability reasoning + large context — **planning + review** |
-   | `very-high` | frontier/highest-risk — **run twice & reconcile** |
-
-   Tier-selection rule: pick the **lowest tier whose criteria still satisfy the task**;
-   escalate (never de-escalate) when uncertain. See the authoritative mapping for the
-   example model IDs to use as the per-task model override.
-6. **Plan → Execute → Review:** a **high**-tier model plans; the **open** executor runs
-   each subdivided task; a **high**-tier model reviews at the end.
-7. It drives execution **iteratively (agile V-model)**: interactively via **Plan mode**
-   (`Tab`), `/agents`, and the **Task/subagent tool**; autonomously the `orchestrator`
-   dispatches each task via the Task/subagent tool with the tier's exact model ID. On a
-   failed test/review it re-opens the paired left-side step and re-runs downstream until
-   convergence. When **requirements/objectives change**, it amends the living manifest and
-   re-estimates rather than restarting.
-8. **Budget-driven:** accept a spend cap (e.g. "~$X today"); price the manifest with
-   `software-cost-estimation`, fit within the cap (de-escalate / defer / trim), track
-   spend, and halt at the cap.
-
-**AI-first, human-reviewable artifacts:** the manifest, completion reports, cost estimates
-and traceability matrix are structured/machine-parseable **and** human-readable
-(plain YAML/Markdown, stable IDs), persisted and versioned as living artifacts.
+Tier-selection rule: pick the **lowest tier whose criteria still satisfy the task**;
+escalate (never de-escalate) when uncertain.
 
 ## Custom agents (`.opencode/agent/`)
 
-The workflow is operationalized by **23 custom agents** in `.opencode/agent/*.md`, invoked
-with `/agents` (or referenced in a prompt). Agents are **model-neutral** — they reference a
-**tier**, and the concrete model is resolved from the authoritative mapping in
-`software-plan-orchestration` at dispatch. This keeps model choice dynamic and centralized.
+Lean, flat, model-neutral (except `graphics-expert`):
 
-- **Role agents (5):** `orchestrator` (coordination; dispatches via the Task/subagent tool,
-  persists the manifest, runs verification, enforces the budget cap), `planner` (high-tier
-  planning + living manifest), `executor` (open-tier task execution), `reviewer`
-  (high-tier final review), `rubberduck` (cross-vendor critic).
-- **V-model lifecycle agents (10):** one per skill (`software-requirements` …
-  `software-acceptance-test`) — thin wrappers that delegate to their `SKILL.md`. (They are
-  convenience wrappers; the orchestrator may equivalently dispatch a worker with a
-  "use the `<skill>` skill" instruction.)
-- **On-demand utility agents (8):** `software-vmodel-navigation`,
-  `software-traceability-audit`, `software-plan-orchestration`, `software-cost-estimation`,
-  `cpp-template-workflow`, `graphics-window-screenshot`, `graphics-renderdoc-profiling`,
-  `graphics-render-comparison`.
-
-**Harmonized & conditional:** all agents share one vocabulary (tier rules, execution
-manifest, completion-report contract, composition hierarchy). The `orchestrator` invokes a
-skill/agent **only when its trigger applies** — `graphics-*` and `cpp-template-workflow`
-stay dormant unless a task needs them — so the system runs autonomously with the minimal
-relevant set.
-
+- **Coordination (unprefixed):** `orchestrator` (kicks off the sprint; workers self-claim),
+  `planner` (high-tier plan + execution manifest), `executor` (open-tier task execution;
+  records artifacts), `reviewer` (high-tier final review; edit-denied), `rubberduck`
+  (cross-vendor critic; edit-denied), `pm` (Scrum Master + PO proxy; always present).
+- **Domain agents:** `cpp-tools` (C++ execution), `graphics-expert` (Opus; graphics).
 
 ## opencode feature usage (recommended)
 
-- Use **Plan mode** (`Tab`) for multi-file or multi-phase changes before implementation.
-- Use `/agents` to select a role/lifecycle/utility custom agent from `.opencode/agent/`.
-- Use `/models` to pick the model for a task (tiers resolve here) and `/connect` to add the
-  providers this repo expects: **Z.AI** (GLM-5.2), **GitHub Copilot** (Opus 4.8), **OpenAI**
-  (GPT-5.6).
-- For parallelizable work, the `orchestrator` dispatches concurrent **subagents** (Task
-  tool); independent lifecycle skills/docs can be edited in a single pass.
+- Plan mode (`Tab`) for multi-file / multi-phase changes before implementation.
+- `/agents` to select a coordination or domain agent.
+- `/models` to pick a model for a task (tiers resolve here). Providers expected:
+  **Z.AI** (GLM-5.2), **GitHub Copilot** (Opus 4.8), **OpenAI** (GPT-5.6).
+- The `orchestrator` dispatches concurrent subagents (Task tool) for parallel tickets;
+  workers self-claim the rest via `pm_claim_ticket`.
 - Skills auto-load from `.opencode/skills/`; reference files with `@`.
-- Run the project's verification gate (e.g. the `cpp/` `verify` target) via bash before merge.
+- Run the project's verification gate (e.g. `cpp/` `verify` target) via bash before merge.

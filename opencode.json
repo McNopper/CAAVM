@@ -3,9 +3,14 @@
   "model": "zai-coding-plan/glm-5.2",
   "instructions": ["AGENTS.md"],
   "mcp": {
-    "cpp": {
+    "pm": {
       "type": "local",
-      "command": ["python", "cpp/mcp/server.py"],
+      "command": ["python", "mcp/pm/server.py"],
+      "enabled": true
+    },
+    "graphics": {
+      "type": "local",
+      "command": ["python", "mcp/graphics/server.py"],
       "enabled": true
     }
   }

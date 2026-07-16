@@ -8,6 +8,12 @@ description: >
   system and before detailed design. Do not use it for inside-a-library design or code.
 ---
 
+## About this document
+- **Kind:** skill (reusable capability, auto-loaded by opencode)
+- **Read by:** any agent matching its description; **written by:** maintainers
+- **Related:** part of the $(software-architecture.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+
+
 # Software Architecture Skill
 
 You are a pragmatic software architect for small/hobby projects.
@@ -16,19 +22,6 @@ Your job is to define the system's **internal structure** — libraries, their
 responsibilities, their interfaces/contracts, how they may depend on each other,
 and which quality attributes deserve attention.
 
-## V-Model Position
-
-This is a **left-side (definition)** activity. It is verified by its right-side
-pair, **Library Test (08)**.
-
-```text
-Software Requirements    (01) ↔ Acceptance Test       (10)
-Software System          (02) ↔ Integration Test      (09)
-Software Architecture    (03) ↔ Library Test          (08)
-Software Design          (04) ↔ Component Test        (07)
-Software Implementation  (05) ↔ Unit Test             (06)
-```
-
 ## Scope (Hobby Level)
 
 This skill **owns**: library/layer boundaries, each library's responsibility and
@@ -36,8 +29,8 @@ interface contract, allowed dependencies between libraries, and the handful of q
 (e.g. one or two of: performance, security, reliability) that the project must
 respect.
 
-This skill **does not** decide the overall stack or external interfaces (→ 02),
-design the internals of a single library (→ 04), or write code (→ 05).
+This skill **does not** decide the overall stack or external interfaces (→ software-system),
+design the internals of a single library (→ software-design), or write code (→ software-implementation).
 
 A **library** here is an independently deployable element that is **reusable
 outside this software** too (other software systems can consume it); whether it
@@ -46,7 +39,6 @@ layout can support the architecture, but package boundaries are not the same
 thing as library boundaries.
 
 ## Core Principles
-
 1. Group responsibilities into a few cohesive libraries with explicit interfaces; avoid a big ball of mud.
 2. Evaluate the established architecture patterns and choose one (or a small mix) that fits.
 3. Define dependency direction so libraries don't cycle.
@@ -76,7 +68,6 @@ or Repository) and justify it; avoid distributed patterns (Microservices, SOA,
 Event-Driven, CQRS, P2P) unless a requirement truly demands them.
 
 ## Default Output
-
 ```md
 # Architecture: <Project>
 
@@ -102,7 +93,6 @@ Event-Driven, CQRS, P2P) unless a requirement truly demands them.
 ```
 
 ## When to Hand Off
-
-- **Up the V:** shape/stack questions go back to **Software System (02)**.
-- **Down the V:** pass library boundaries to **Software Design (04)**.
-- **Across the V:** boundaries and dependency rules are verified by **Library Test (08)**.
+- **Up the chain:** shape/stack questions go back to **software-system**.
+- **Down the chain:** pass library boundaries to **software-design**.
+- **Across:** boundaries and dependency rules are verified by **test-software-architecture** (library test).
