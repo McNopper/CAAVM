@@ -56,6 +56,7 @@ Three ideas hold it together:
 | `pm-` (project management) | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` (C++ utility) | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` (graphics utility) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
+| `code-` (code analysis) | `code-dependency` (package/namespace dependency map → Mermaid block diagram) |
 
 Verification maps by composition level: `test-software-implementation` ↔ `software-implementation`
 (unit), `test-software-design` ↔ `software-design` (component), `test-software-architecture`

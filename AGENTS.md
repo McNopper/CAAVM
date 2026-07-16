@@ -40,6 +40,7 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 | `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
+| `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `planner`,
 `executor`, `reviewer`, `rubberduck`, `pm`); domain agents keep their prefix

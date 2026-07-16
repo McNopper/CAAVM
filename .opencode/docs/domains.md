@@ -23,6 +23,7 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 | `pm-` | Project management | tickets, sprints, routing, costing, traceability, doc standards | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` | C++ execution utility | methodology for the `cpp-tools` agent | `cpp-tools` |
 | `graphics-` | Graphics utility (thin) | methodology; heavy work is `mcp.graphics` | `graphics-render-comparison` |
+| `code-` | Code analysis | package/namespace dependency map; emits Mermaid block diagram | `code-dependency` |
 
 ## Coordination agents (unprefixed) and domain agents (prefixed)
 
