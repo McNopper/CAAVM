@@ -11,7 +11,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the $(pm-estimate-costs.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
 
 
 # Cost Estimation Skill
@@ -61,15 +61,15 @@ For each task in the execution manifest:
    - `output_tokens ≈ expected_outputs size × verbosity factor`
 2. **Base cost** `= input_tokens × rate_in(tier) + output_tokens × rate_out(tier)`.
 3. **Tier multipliers.**
-   - `very-high`: **× 2** (two independent Opus passes) **+ reconciler** pass.
-   - `very-high`: **+ rubberduck overhead** (GPT-5.6 cross-check of Opus).
+   - `very-high`: **× 2** (two independent passes of the very-high model) **+ reconciler** pass.
+   - `very-high`: **+ rubberduck overhead** (cross-vendor critic cross-check of the very-high model).
    - **Retry budget:** add expected retries per the task's `retry_policy`
      (e.g. `+1 same-tier retry` for transient-failure allowance).
 4. **Aggregate:** sum per tier and overall; derive a range:
    - **cheap** = no retries, no reopened iterations,
    - **expected** = planned retries + 1 rubberduck pass where required,
-   - **worst-case** = max retries + max V-model re-iterations (from the manifest's
-     iteration guard).
+    - **worst-case** = max retries + max agile rework iterations (from the manifest's
+      iteration guard).
 
 ## Rate card (example rates, as of today — swappable)
 
@@ -84,7 +84,7 @@ This skill keys costs **by tier**; the concrete model for each tier comes from t
 | `mid` | $ (fill) | $ (fill) | — |
 | `high` | $ (fill) | $ (fill) | planning + review |
 | `very-high` | $ (fill) | $ (fill) | **× 2** (two passes) + reconciler |
-| rubberduck | $ (fill) | $ (fill) | GPT-5.6 cross-check of Opus (very-high) |
+| rubberduck | $ (fill) | $ (fill) | cross-vendor critic; cross-checks the very-high model |
 
 > Fill the rate columns from the provider's current published pricing at estimation
 > time; resolve each tier's model via `pm-orchestrate-execution`. Do not hard-code
@@ -136,4 +136,4 @@ When a spend cap is given (e.g. "~$X today", `run.budget_cap_usd`):
 ## Notes / Hand Off
 - Task tiering/ordering/execution → hand off to `pm-orchestrate-execution`.
 - Ambiguous lifecycle routing → hand off to `pm-route-request`.
-- Ticket / sprint budgeting in the SCRUM workflow → hand off to the `pm` agent (tickets carry `story_points`; a `cost` field can be added later to feed actuals).
+- Ticket / sprint budgeting in the Scrum workflow → hand off to the `pm` agent (tickets carry `story_points`; a `cost` field can be added later to feed actuals).

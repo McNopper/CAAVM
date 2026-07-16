@@ -11,14 +11,14 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the $(pm-orchestrate-execution.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+- **Related:** part of the `pm-*` domain set; standalone (no lifecycle pair).
 
 
 # Plan Orchestration Skill
 
 You are a pragmatic execution orchestrator for the Hephaestus workflow.
 
-Your job is to take a plan (from `software-planning`) and turn it into a
+Your job is to take a plan (from the human or the `planner` agent) and turn it into a
 sequence of tickets that the agent system can pick up, execute, and verify —
 and to keep that execution loop spinning until the work is done.
 
@@ -27,6 +27,31 @@ and to keep that execution loop spinning until the work is done.
 This is a **standalone, on-demand** workflow utility. It produces the executable
 shape of a plan; it does not implement the plan itself. It works in lockstep
 with the `pm` agent and the pm MCP server.
+
+## Model tiers → concrete models (authoritative mapping)
+
+This is the **single source of truth** for which concrete model each tier maps to.
+Agents and skills reference **tiers**, never model IDs, and resolve the model from this
+table. Change a model here once and every agent picks it up. Edit the rows to match your
+connected providers.
+
+| Tier | Model | Provider | Use / selection rule |
+|---|---|---|---|
+| `very-low` | lightest available model | (any) | cheapest/fastest — trivial, mechanical edits |
+| `low` | GLM-5.2 | Z.AI | best open-weight model — **default executor** |
+| `mid` | GPT-5.6 | OpenAI | balanced general model — standard impl/tests |
+| `high` | GLM-5.2 max | Z.AI | top reasoning + large context — **planning + review** |
+| `very-high` | Opus 4.8 | GitHub Copilot | frontier/highest-risk — **run twice & reconcile** |
+
+**Cross-vendor critic** (`rubberduck`): a different-vendor model than the author's pass —
+GPT-5.6 (OpenAI) by default — so the cross-check avoids same-family blind spots.
+
+Selection rule: pick the **lowest tier whose criteria satisfy the task**; escalate (never
+de-escalate) when uncertain. `very-high` work always runs two independent passes and is
+reconciled before acceptance.
+
+> The only agent that does **not** resolve from this table is `graphics-expert`, which is
+> pinned to the `very-high` (Opus) model.
 
 ## Scope
 
@@ -44,7 +69,7 @@ by the matching `software-*` / `test-software-*` skills and agents.
 1. Every ticket has exactly one `role` (discipline) that owns it.
 2. Verification is a first-class ticket, not an afterthought.
 3. Prefer small, independently verifiable tickets.
-4. Keep blaster-heavy (cheap) work ahead of heavy (expensive) work.
+4. Keep low-tier (cheap) work ahead of high-tier (expensive) work.
 5. The loop converges by rework, not by restarting.
 
 ## Decomposition -> tickets
@@ -100,8 +125,8 @@ When an agent cannot proceed:
 |---|---|---|---|---|
 
 ## Execution Order
-- Wave 1 (cheap/blaster): ...
-- Wave 2 (heavy): ...
+- Wave 1 (cheap / low-tier): ...
+- Wave 2 (heavy / high-tier): ...
 
 ## Escalation Policy
 - What you will resolve vs escalate.

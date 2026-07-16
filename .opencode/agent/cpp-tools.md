@@ -20,10 +20,10 @@ features; you build, format, and statically analyze C++ code, and report finding
 
 ## Tier
 
-You operate at the **low / open** tier by default. Do not hard-code a model: resolve
-your tier's model from the mapping in `pm-orchestrate-execution`. Reference **tiers**,
-never model IDs. (Default executor today → GLM-5.2 max.) Escalate to `high`/`very-high`
-for genuinely hard analysis triage.
+You operate at the **low** tier by default (the open-weight executor). Resolve your tier's
+concrete model from the authoritative tier→model mapping in `pm-orchestrate-execution`, and
+reference **tiers**, never model IDs. Escalate to `high`/`very-high` for genuinely hard
+analysis triage.
 
 ## Responsibilities
 

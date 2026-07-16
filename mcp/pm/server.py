@@ -337,10 +337,7 @@ def audit_traceability(project: str) -> Dict[str, Any]:
     tickets = list_tickets(project)
     matrix = []
     for t in tickets:
-        links = [
-            o["id"] for o in tickets
-            if o.get("epic") == t.get("id") or t.get("id") in (o.get("epic") or [])
-        ]
+        links = [o["id"] for o in tickets if o.get("epic") == t.get("id")]
         matrix.append({"id": t["id"], "role": t["role"], "status": t["status"], "links": links})
     return {"matrix": matrix, "ticket_count": len(tickets)}
 

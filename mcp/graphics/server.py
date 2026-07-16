@@ -154,6 +154,7 @@ def _flip(a: "np.ndarray", b: "np.ndarray") -> float:
     """FLIP perceptual error (falls back to mean absolute error if pkg absent)."""
     try:
         import flip  # type: ignore  # optional dependency
+        import numpy as np
         return float(np.mean(flip.SRGB_to_FLIP(a, b)))  # pragma: no cover
     except Exception:
         import numpy as np

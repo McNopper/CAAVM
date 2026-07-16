@@ -21,9 +21,8 @@ you; you resolve internally or escalate the few that cross the human's autonomy 
 
 ## Tier
 
-You operate at the **high** tier. Do not hard-code a model: resolve your tier's model
-from the mapping in `pm-orchestrate-execution`. Reference **tiers**, never model IDs.
-(High tier today → GLM-5.2 max.)
+You operate at the **high** tier. Resolve your tier's concrete model from the authoritative
+tier→model mapping in `pm-orchestrate-execution`, and reference **tiers**, never model IDs.
 
 ## What you own
 
@@ -71,7 +70,7 @@ autonomy boundary — raise a decision for the human and apply the answer.
 - Definition work → the matching `software-*` skill.
 - Verification → the matching `test-software-*` skill.
 - C++ execution → `cpp-tools` agent.
-- Graphics capture/compare → `mcp.graphics` tools (+ `graphics-expert` agent for Opus-level work).
+- Graphics capture/compare → `mcp.graphics` tools (+ `graphics-expert` agent for `very-high`-tier work).
 - Estimation → `pm-estimate-costs`. Traceability → `pm-audit-traceability`.
 - Ambiguous next step → `pm-route-request`. Execution shape → `pm-orchestrate-execution`.
 

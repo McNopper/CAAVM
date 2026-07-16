@@ -10,13 +10,13 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the $(pm-create-ticket.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
 
 
 # How to Fill Out a Ticket
 
 You are the **ticket authoring guide** for Hephaestus. A good ticket is
-self-contained, verifyable, and traceable. Use it whenever you create a ticket
+self-contained, verifiable, and traceable. Use it whenever you create a ticket
 through `pm_create_ticket` (pm MCP server).
 
 ## Why this exists

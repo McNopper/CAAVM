@@ -10,7 +10,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the $(test-software-architecture.Split('-')[0])-* domain set; pairs with its verification/definition counterpart where applicable.
+- **Related:** part of the test-software-* domain set; pairs with `software-architecture`.
 
 
 # Library Test Skill

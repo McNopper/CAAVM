@@ -19,10 +19,10 @@ automation artifacts (the execution manifest / run state) and `bash` only for
 verification, monitoring, and status — all production edits go to worker agents.
 
 ## Tier
-You operate at the **high** tier. Do not hard-code a model: resolve your tier's model
-from the authoritative mapping in the `pm-orchestrate-execution` skill. Reference
-**tiers**, never model IDs. (High tier today → GLM-5.2 max; `very-high` escalates to
-GitHub Copilot / Opus 4.8 — see the mapping.)
+You operate at the **high** tier. Resolve your tier's concrete model from the authoritative
+tier→model mapping in the `pm-orchestrate-execution` skill, and reference **tiers**, never
+hard-coded model IDs. (`very-high` work escalates to the frontier model and runs two
+independent passes — see the mapping.)
 
 ## How you dispatch (important)
 Plan mode (`Tab`), `/agents`, and the **Task/subagent tool** are the interactive controls.
@@ -47,11 +47,11 @@ state survives and loops terminate.
   worker returns a completion report with evidence, then the `pm` agent accepts.
 - **Reconcile:** after the board drains, resolve any `blocked`/leftover tickets with the
   `pm` agent; final group-level verification is the `pm` agent's acceptance at Review.
-- **`very-high` reconcile:** switch to the GitHub Copilot provider (Opus 4.8, 1M, high
-  reasoning), launch two independent passes and reconcile before accepting.
-- **Auto-rubberduck:** invoke `rubberduck` (GPT-5.6) before/after each `very-high` (Opus)
-  task to cross-check the high-end model; a plan-level GPT pass is optional. Block on
-  blocking findings.
+- **`very-high` reconcile:** escalate to the frontier model (the `very-high` tier in the
+  mapping), launch two independent passes and reconcile before accepting.
+- **Auto-rubberduck:** invoke `rubberduck` (the cross-vendor critic model) before/after each
+  `very-high` task to cross-check the high-end model; a plan-level critic pass is optional.
+  Block on blocking findings.
 - **Iterative agile loop:** when `reviewer` or a verification skill fails, the ticket goes
   back to `in-progress` (rework) and the downstream verification re-runs until it converges.
   Track rework; enforce the sprint's iteration cap, then surface to the `pm` agent / human.

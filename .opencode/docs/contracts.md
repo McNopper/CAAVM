@@ -63,14 +63,15 @@ to `in-review`, so the next agent needs no questions.
 | `tester` | `test-software-*` | (itself) |
 | `pm` | `pm-*` skills | — |
 | `cpp-engineer` | `cpp-tools` agent | `cpp-tools` agent |
-| `graphics-engineer` | `mcp.graphics` (+ `graphics-expert` for Opus) | `graphics-render-comparison` |
+| `graphics-engineer` | `mcp.graphics` (+ `graphics-expert` for `very-high` work) | `graphics-render-comparison` |
 
 ## Model-tier contract
 
-Agents/docs reference **tiers**, never hard-coded model IDs (except `graphics-expert` → Opus).
-The authoritative tier→model mapping lives in `pm-orchestrate-execution`. Tiers:
-`very-low`, `low` (default executor), `mid`, `high` (plan/review), `very-high` (Opus, run
-twice & reconcile). Pick the lowest tier that satisfies the task; escalate, never de-escalate.
+Agents/docs reference **tiers**, never hard-coded model IDs (except `graphics-expert`, which
+is pinned to the `very-high` model). The authoritative tier→model mapping lives in
+`pm-orchestrate-execution`. Tiers: `very-low`, `low` (default executor), `mid`, `high`
+(plan/review), `very-high` (run twice & reconcile). Pick the lowest tier that satisfies the
+task; escalate, never de-escalate.
 
 ## Worker template
 

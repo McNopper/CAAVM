@@ -27,8 +27,8 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 ## Coordination agents (unprefixed)
 
 `orchestrator`, `planner`, `executor`, `reviewer`, `rubberduck`, `pm`, `cpp-tools`,
-`graphics-expert`. The first six are model-neutral (reference a tier). `graphics-expert`
-is the exception: pinned to Opus.
+`graphics-expert`. The first seven are model-neutral (reference a tier). `graphics-expert`
+is the exception: pinned to the `very-high` model.
 
 ## Why names, not folders
 
