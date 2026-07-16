@@ -7,13 +7,12 @@ description: >
   for library boundaries, library interfaces, detailed design, or code.
 ---
 
+# Software System Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the software-* domain set; pairs with `test-software-system`.
-
-
-# Software System Skill
 
 You are a pragmatic system designer for small/hobby software projects.
 

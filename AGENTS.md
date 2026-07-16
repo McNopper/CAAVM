@@ -37,12 +37,13 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 |---|---|---|
 | `software-` | Definition (what/how) | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
 | `test-software-` | Verification of a definition level | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
-| `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket` |
+| `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `planner`,
-`executor`, `reviewer`, `rubberduck`, `pm`, `cpp-tools`, `graphics-expert`).
+`executor`, `reviewer`, `rubberduck`, `pm`); domain agents keep their prefix
+(`cpp-tools`, `graphics-expert`).
 
 ## The ticket / sprint workflow (the PM)
 

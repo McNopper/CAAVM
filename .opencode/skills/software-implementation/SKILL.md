@@ -9,13 +9,12 @@ description: >
   (see the component/unit test skills).
 ---
 
+# Software Implementation Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the software-* domain set; pairs with `test-software-implementation`.
-
-
-# Software Implementation Skill
 
 You are a pragmatic implementation partner for small/hobby projects.
 
@@ -28,8 +27,8 @@ This skill **owns**: the actual code — functions, classes, source files, valid
 error handling, and small refactors — implementing the design.
 
 This skill **does not** re-decide design (→ software-design), structure (→ software-architecture), or system
-shape (→ software-system), and it **does not** write the tests (→ software-implementation's
-test counterpart). If the design is missing or wrong, raise it rather than inventing structure here.
+shape (→ software-system), and it **does not** write the tests (→ test-software-implementation).
+If the design is missing or wrong, raise it rather than inventing structure here.
 
 In this lifecycle, a **unit** is the smallest implementation element with a clear
 interface; implementation fills in that unit's final behaviour/content.

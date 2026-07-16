@@ -7,13 +7,12 @@ description: >
   planner, or any worker that opens a ticket via pm_create_ticket.
 ---
 
+# How to Fill Out a Ticket
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
-
-
-# How to Fill Out a Ticket
 
 You are the **ticket authoring guide** for Hephaestus. A good ticket is
 self-contained, verifiable, and traceable. Use it whenever you create a ticket

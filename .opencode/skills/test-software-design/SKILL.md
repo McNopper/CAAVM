@@ -7,13 +7,12 @@ description: >
   software-design. Do not use it for unit, library, integration, or acceptance testing.
 ---
 
+# Component Test Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the test-software-* domain set; pairs with `software-design`.
-
-
-# Component Test Skill
 
 You are a pragmatic component-test partner for small/hobby projects.
 

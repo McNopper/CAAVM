@@ -8,13 +8,12 @@ description: >
   Do not use it for library boundaries, stack choices, or actual code.
 ---
 
+# Software Design Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the software-* domain set; pairs with `test-software-design`.
-
-
-# Software Design Skill
 
 You are a pragmatic software designer for small/hobby projects.
 

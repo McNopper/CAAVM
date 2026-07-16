@@ -9,13 +9,12 @@ description: >
   keeps the comparison correct. Not part of the software lifecycle.
 ---
 
+# Render Comparison — Methodology
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the graphics-* domain set; standalone (no lifecycle pair).
-
-
-# Render Comparison — Methodology
 
 You are a pragmatic rendering-quality comparison partner.
 

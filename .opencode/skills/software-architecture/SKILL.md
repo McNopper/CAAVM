@@ -8,13 +8,12 @@ description: >
   system and before detailed design. Do not use it for inside-a-library design or code.
 ---
 
+# Software Architecture Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the software-* domain set; pairs with `test-software-architecture`.
-
-
-# Software Architecture Skill
 
 You are a pragmatic software architect for small/hobby projects.
 

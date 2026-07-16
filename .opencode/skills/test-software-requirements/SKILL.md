@@ -7,13 +7,12 @@ description: >
   software-requirements. Do not use it for unit, component, library, or integration testing.
 ---
 
+# Acceptance Test Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the test-software-* domain set; pairs with `software-requirements`.
-
-
-# Acceptance Test Skill
 
 You are a pragmatic acceptance-test partner for small/hobby projects.
 

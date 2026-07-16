@@ -7,13 +7,12 @@ description: >
   Do not use it for component, library, integration, or acceptance testing.
 ---
 
+# Unit Test Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the test-software-* domain set; pairs with `software-implementation`.
-
-
-# Unit Test Skill
 
 You are a pragmatic unit-test partner for small/hobby projects.
 

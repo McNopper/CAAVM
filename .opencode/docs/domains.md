@@ -20,15 +20,16 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 |---|---|---|---|
 | `software-` | Definition (what / how) | the left side of the work | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
 | `test-software-` | Verification | the right side, per level | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
-| `pm-` | Project management | tickets, sprints, routing, costing, traceability | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket` |
+| `pm-` | Project management | tickets, sprints, routing, costing, traceability, doc standards | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` | C++ execution utility | methodology for the `cpp-tools` agent | `cpp-tools` |
 | `graphics-` | Graphics utility (thin) | methodology; heavy work is `mcp.graphics` | `graphics-render-comparison` |
 
-## Coordination agents (unprefixed)
+## Coordination agents (unprefixed) and domain agents (prefixed)
 
-`orchestrator`, `planner`, `executor`, `reviewer`, `rubberduck`, `pm`, `cpp-tools`,
-`graphics-expert`. The first seven are model-neutral (reference a tier). `graphics-expert`
-is the exception: pinned to the `very-high` model.
+Coordination agents are unprefixed: `orchestrator`, `planner`, `executor`, `reviewer`,
+`rubberduck`, `pm`. Domain agents keep their prefix: `cpp-tools`, `graphics-expert`.
+All are model-neutral (reference a tier) **except** `graphics-expert`, which is pinned to
+the `very-high` model.
 
 ## Why names, not folders
 

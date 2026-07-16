@@ -8,13 +8,12 @@ description: >
   rate card; model prices are examples that change over time. opencode workflow utility.
 ---
 
+# Cost Estimation Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
-
-
-# Cost Estimation Skill
 
 You are a pragmatic cost estimator for agentic execution plans.
 

@@ -7,13 +7,12 @@ description: >
   workflow utility; not part of any lifecycle itself.
 ---
 
+# Request Routing Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
-
-
-# Request Routing Skill
 
 You are a pragmatic workflow router for the Hephaestus skill set.
 

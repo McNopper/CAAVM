@@ -43,7 +43,7 @@ Three ideas hold it together:
 | `AGENTS.md` (repo root) | opencode-first workflow conventions and routing. |
 | `.opencode/skills/*/SKILL.md` | the skill library, flat by domain. |
 | `.opencode/agent/*.md` | lean custom agents (coordination + domain). |
-| `.opencode/docs/` | `worker-template.md`, `domains.md`, `contracts.md`. |
+| `.opencode/docs/` | `domains.md`, `contracts.md`. |
 | `mcp/pm/`, `mcp/graphics/`, `mcp/base/` | reusable MCP servers (project-scoped state, locking). |
 | `cpp/` | standalone AI-first C++23 build skeleton (its own `AGENTS.md`). |
 
@@ -53,7 +53,7 @@ Three ideas hold it together:
 |---|---|
 | `software-` (definition) | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
 | `test-software-` (verification) | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
-| `pm-` (project management) | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket` |
+| `pm-` (project management) | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` (C++ utility) | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` (graphics utility) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 

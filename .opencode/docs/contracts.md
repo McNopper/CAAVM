@@ -53,6 +53,8 @@ to `in-review`, so the next agent needs no questions.
 - **Reassign:** a returned ticket (`pm_release_ticket` → `sprint-backlog`, `assignee` cleared)
   can be claimed by a *different* agent.
 - **Store:** `mcp/base/locking_store.py` — one JSON doc per project, atomic transactions.
+- **Worker instances** are opencode agents (`.opencode/agent/*.md`) that self-claim tickets
+  by `role`; there is no file-based worker folder to copy.
 
 ## Role → skill/agent dispatch
 
@@ -72,7 +74,3 @@ is pinned to the `very-high` model). The authoritative tier→model mapping live
 `pm-orchestrate-execution`. Tiers: `very-low`, `low` (default executor), `mid`, `high`
 (plan/review), `very-high` (run twice & reconcile). Pick the lowest tier that satisfies the
 task; escalate, never de-escalate.
-
-## Worker template
-
-A reusable worker-instance template lives at [`worker-template.md`](worker-template.md).

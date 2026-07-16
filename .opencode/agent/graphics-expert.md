@@ -5,6 +5,7 @@ description: >
   capture, render comparison). Use for non-trivial graphics tasks that warrant the
   frontier model; keep dormant otherwise.
 mode: all
+model: github-copilot/claude-opus-4.8
 ---
 
 ## About this document

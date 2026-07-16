@@ -7,13 +7,12 @@ description: >
   opencode workflow utility; not part of any lifecycle itself.
 ---
 
+# Traceability Audit Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
-
-
-# Traceability Audit Skill
 
 You are a pragmatic traceability auditor for Hephaestus lifecycle artifacts.
 

@@ -8,13 +8,12 @@ description: >
   architecture, detailed design, or code.
 ---
 
+# Software Requirements Skill
+
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
 - **Related:** part of the software-* domain set; pairs with `test-software-requirements`.
-
-
-# Software Requirements Skill
 
 You are a pragmatic requirements partner for small/hobby software projects.
 
