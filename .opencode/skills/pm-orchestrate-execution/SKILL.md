@@ -27,30 +27,38 @@ This is a **standalone, on-demand** workflow utility. It produces the executable
 shape of a plan; it does not implement the plan itself. It works in lockstep
 with the `pm` agent and the pm MCP server.
 
-## Model tiers → concrete models (authoritative mapping)
+## Model tiers (selection rules — model-neutral)
 
-This is the **single source of truth** for which concrete model each tier maps to.
-Agents and skills reference **tiers**, never model IDs, and resolve the model from this
-table. Change a model here once and every agent picks it up. Edit the rows to match your
-connected providers.
+Agents and skills reference **tiers**, never hard-coded model IDs. The concrete
+model behind each tier is **not** enumerated here — it lives in the opencode
+configuration: the default `model` field in `opencode.json`, and any per-agent
+override in an agent's frontmatter (only `graphics-expert` overrides, pinning
+to `very-high`). Resolve the model for a tier through `/models`.
 
-| Tier | Model | Provider | Use / selection rule |
-|---|---|---|---|
-| `very-low` | lightest available model | (any) | cheapest/fastest — trivial, mechanical edits |
-| `low` | GLM-5.2 | Z.AI | best open-weight model — **default executor** |
-| `mid` | GPT-5.6 | OpenAI | balanced general model — standard impl/tests |
-| `high` | GLM-5.2 max | Z.AI | top reasoning + large context — **planning + review** |
-| `very-high` | Opus 4.8 | GitHub Copilot | frontier/highest-risk — **run twice & reconcile** |
+This table is the **single source of truth for what each tier *means***. It
+deliberately names no models, so it stays correct as providers and model
+versions change. Edit `opencode.json` / agent frontmatter to change the model a
+tier resolves to; edit this table only to change a tier's *selection rule*.
 
-**Cross-vendor critic** (`rubberduck`): a different-vendor model than the author's pass —
-GPT-5.6 (OpenAI) by default — so the cross-check avoids same-family blind spots.
+| Tier | Selection rule |
+|---|---|
+| `very-low` | cheapest/fastest — trivial, mechanical edits |
+| `low` | best available open-weight model — **default executor** |
+| `mid` | balanced general model — standard impl/tests |
+| `high` | top-capability reasoning + large context — **planning + review** |
+| `very-high` | frontier/highest-risk — **run twice & reconcile** |
+
+**Cross-vendor critic** (`rubberduck`): runs on a model from a **different
+vendor** than the author's pass, so the cross-check avoids same-family blind
+spots. Configure the concrete model in the agent frontmatter or via `/models`;
+keep it cross-vendor relative to whichever model produced the `very-high` pass.
 
 Selection rule: pick the **lowest tier whose criteria satisfy the task**; escalate (never
 de-escalate) when uncertain. `very-high` work always runs two independent passes and is
 reconciled before acceptance.
 
-> The only agent that does **not** resolve from this table is `graphics-expert`, which is
-> pinned to the `very-high` (Opus) model.
+> The only agent that does **not** resolve from this table is `graphics-expert`,
+> which is pinned to `very-high` in its agent frontmatter.
 
 ## Scope
 

@@ -50,8 +50,12 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | `cpp-engineer` | C++ build / format / static analysis | `cpp-tools` agent | `cpp-tools` agent |
 | `graphics-engineer` | render capture / compare | `mcp.graphics` tools (+ `graphics-expert`) | `graphics-render-comparison` |
 
-The `role` is **extensible** — use any new string when a discipline appears; just
-keep the claim routing in `pm-orchestrate-execution` in sync.
+The `role` is **extensible** — it is an open, non-empty string, so you can mint a
+new discipline on the spot (the `pm` server accepts any non-empty value; it does
+not reject unknown roles). The trade-off: keep the claim routing in
+`pm-orchestrate-execution` (the role → skill/agent map) in sync whenever you
+introduce one, or a worker claiming by that role won't find its skill. Prefer a
+role from the known set above when one fits.
 
 ## Traceability by convention
 

@@ -60,7 +60,9 @@ set(CPPCHECK_COMMON_ARGS
 )
 
 # Opt-in exhaustive profile (style + inconclusive). Kept off the default path
-# so speculative findings never block an agent's build/verify loop.
+# so speculative findings never block an agent's build/verify loop. tests/ are
+# excluded here too: GoogleTest macros are not fully expandable by cppcheck's
+# parser and yield spurious syntaxError noise (tests stay covered by clang-tidy).
 set(CPPCHECK_STRICT_ARGS
     --std=c++23
     --enable=all
@@ -73,9 +75,12 @@ set(CPPCHECK_STRICT_ARGS
     --suppressions-list=${CMAKE_SOURCE_DIR}/cppcheck.supp
     -i${CMAKE_BINARY_DIR}
     -i${CMAKE_SOURCE_DIR}/build
+    -i${CMAKE_SOURCE_DIR}/cmake-build-debug
+    -i${CMAKE_SOURCE_DIR}/cmake-build-release
     -i${CMAKE_SOURCE_DIR}/_deps
     -i${CMAKE_SOURCE_DIR}/external
     -i${CMAKE_SOURCE_DIR}/third_party
+    -i${CMAKE_SOURCE_DIR}/tests
 )
 
 add_custom_target(cppcheck

@@ -4,7 +4,7 @@ Supports multiple independent *projects*: every document is scoped by a
 ``project`` key, and all access is guarded by a re-entrant threading lock plus a
 cross-process file lock, with atomic temp-then-rename writes.
 
-This module is shared by the pm and graphics MCP servers.
+This module is used by the pm MCP server.
 """
 from __future__ import annotations
 

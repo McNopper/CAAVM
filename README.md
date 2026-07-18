@@ -25,9 +25,9 @@ Three ideas hold it together:
 - **A concrete PM, not a metaphor.** The `pm` agent runs Scrum over tickets in the `pm`
   MCP server. Tickets carry a `role` (discipline), and workers **self-claim** by role
   (`pm_claim_ticket`). Multiple independent **projects** coexist in one server.
-- **Model-neutral by default.** Agents reference a *tier*; the concrete model resolves
-  from the single authoritative mapping in `pm-orchestrate-execution`. Only `graphics-expert`
-  is pinned (to Opus).
+- **Model-neutral by default.** Agents reference a *tier*; the concrete model
+  resolves from `opencode.json` (default) and any per-agent overrides. Only `graphics-expert`
+  is pinned (to `very-high`).
 
 > **The PM/ticket system is optional.** Any skill or agent can be used **directly** by a
 > human (or another agent) with no ticket or sprint — just invoke the skill or pick an
@@ -39,12 +39,13 @@ Three ideas hold it together:
 
 | Path | What it is |
 |---|---|
-| `opencode.json` (repo root) | project config — default model (`zai-coding-plan/glm-5.2`), `AGENTS.md`, and the `pm` + `graphics` MCP servers. |
+| `opencode.json` (repo root) | project config — default `model`, `AGENTS.md`, and the `pm` + `graphics` MCP servers. |
 | `AGENTS.md` (repo root) | opencode-first workflow conventions and routing. |
 | `.opencode/skills/*/SKILL.md` | the skill library, flat by domain. |
 | `.opencode/agent/*.md` | lean custom agents (coordination + domain). |
 | `.opencode/docs/` | `domains.md`, `contracts.md`. |
-| `mcp/pm/`, `mcp/graphics/`, `mcp/base/` | reusable MCP servers (project-scoped state, locking). |
+| `mcp/pm/`, `mcp/graphics/` | reusable MCP servers (project-scoped state, locking). |
+| `mcp/base/locking_store.py` | shared concurrency-safe JSON store used by the `pm` server (a module, not a server). |
 | `cpp/` | standalone AI-first C++23 build skeleton (its own `AGENTS.md`). |
 
 ## Skills (flat, by domain)
@@ -56,7 +57,7 @@ Three ideas hold it together:
 | `pm-` (project management) | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` (C++ utility) | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` (graphics utility) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
-| `code-` (code analysis) | `code-dependency` (package/namespace dependency map → Mermaid block diagram) |
+| `code-` (code analysis) | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
 
 Verification maps by composition level: `test-software-implementation` ↔ `software-implementation`
 (unit), `test-software-design` ↔ `software-design` (component), `test-software-architecture`
@@ -113,7 +114,7 @@ a ticket), `pm-route-request` (ambiguous next step), `pm-audit-traceability` (ma
 | `rubberduck` | cross-vendor critic (edit-denied) | tier (different vendor) |
 | `pm` | Scrum Master + PO proxy; always present | tier (`high`) |
 | `cpp-tools` | C++ build/format/static-analysis via bash | tier (`low`) |
-| `graphics-expert` | frontier graphics work; drives `mcp.graphics` | **pinned Opus** |
+| `graphics-expert` | frontier graphics work; drives `mcp.graphics` | **pinned `very-high`** |
 
 ## C++ and graphics
 
@@ -121,14 +122,15 @@ a ticket), `pm-route-request` (ambiguous next step), `pm-audit-traceability` (ma
   clang-tidy and reads their reports (methodology in the `cpp-tools` skill). The old
   `cpp/mcp` server is gone — C++ is an agent now.
 - **Graphics**: `mcp.graphics` exposes `graphics_screenshot`, `graphics_renderdoc_capture`,
-  `graphics_renderdoc_frame`, `graphics_compare_renders`. `graphics-expert` (Opus) drives
+  `graphics_renderdoc_frame`, `graphics_compare_renders`. `graphics-expert` (very-high tier) drives
   them; `graphics-render-comparison` is the thin methodology skill.
 
 ## Model tiers
 
-Agents/docs reference **tiers**, never hard-coded model IDs. The authoritative tier→model
-mapping lives in `pm-orchestrate-execution`. All agents are model-neutral **except**
-`graphics-expert` (pinned to Opus / `very-high`).
+Agents/docs reference **tiers**, never hard-coded model IDs. The concrete model
+behind each tier is configured in `opencode.json` (the default `model` field)
+and in any per-agent override (only `graphics-expert` overrides, pinning to
+`very-high`); resolve through `/models`.
 
 | Tier | Selection rule |
 |---|---|
@@ -136,7 +138,7 @@ mapping lives in `pm-orchestrate-execution`. All agents are model-neutral **exce
 | `low` | best open-weight model — **default executor** |
 | `mid` | balanced general model for standard impl/tests |
 | `high` | top-capability reasoning + large context — planning + review |
-| `very-high` | frontier/highest-risk — run twice & reconcile (Opus) |
+| `very-high` | frontier/highest-risk — run twice & reconcile |
 
 ## Recommended opencode workflow
 
@@ -155,11 +157,20 @@ resolve a tier; the `orchestrator` dispatches parallel subagents. Skills auto-lo
 ## Install & Use (opencode)
 
 1. [Install opencode](https://opencode.ai/docs/) (e.g. `npm install -g opencode-ai`).
-2. Connect providers via `/connect`: **Z.AI** (GLM-5.2), **GitHub Copilot** (Opus 4.8),
-   **OpenAI** (GPT-5.6).
+2. Connect providers via `/connect` (e.g. Z.AI, GitHub Copilot, OpenAI —
+   whichever you use).
 3. Install MCP deps: `pip install -r mcp/pm/requirements.txt -r mcp/graphics/requirements.txt`.
 4. Run `opencode` from this repo. Skills, agents, and `AGENTS.md` auto-load; the `pm` and
    `graphics` MCP servers start from `opencode.json`.
+
+> **MCP scope:** the bundled `pm` and `graphics` servers implement a deliberately
+> minimal stdio JSON-RPC loop (`initialize`, `tools/list`, `tools/call`). They expose
+> the tools listed above; they do not implement `resources`, `prompts`, cancellation,
+> or progress. That is sufficient for opencode tool calls.
+
+> **Local plugin deps:** `.opencode/` carries a local `.opencode/package.json`
+> (`@opencode-ai/plugin`) that is **git-ignored** along with its `node_modules` — it is
+> a per-clone convenience, not part of the template. A fresh clone starts without it.
 
 ### Reuse as a template
 
@@ -175,9 +186,9 @@ cp    /path/to/Hephaestus/opencode.json .
 cp    /path/to/Hephaestus/AGENTS.md .
 ```
 
-Trim to what you need (e.g. drop `graphics-*` / `mcp.graphics` if unused). Update the
-default `model` in `opencode.json` and the authoritative tier mapping in
-`pm-orchestrate-execution` to match your providers.
+Trim to what you need (e.g. drop `graphics-*` / `mcp.graphics` if unused). Set the
+default `model` in `opencode.json` (and any per-agent overrides) to match your
+providers.
 
 ### What *not* to do
 
@@ -197,6 +208,21 @@ default `model` in `opencode.json` and the authoritative tier mapping in
 cppcheck exports) and runs `verify` (fast) and `verify-full` (strict). The `cpp-tools`
 agent drives it. See [`cpp/README.md`](cpp/README.md) and [`cpp/AGENTS.md`](cpp/AGENTS.md).
 
+Presets ship for two toolchains: `default`/`release`/`analysis` (Ninja + Clang,
+which enable the full AI analysis stack) and **`windows`** (Visual Studio + MSVC,
+which builds and tests but skips the Clang-based analysis by design). On a Windows
+host without Clang/Ninja, use `cmake --preset windows`.
+
 ## License
 
 [MIT](LICENSE) © 2026 Norbert Nopper.
+
+### Third-party licenses
+
+The bundled MCP servers depend on **filelock** (Unlicense), **Pillow** (HPND)
+and **numpy** (BSD-3-Clause) — all permissive and compatible with MIT. Their
+full license texts and copyright notices are in
+[`THIRD-PARTY.md`](THIRD-PARTY.md). The local opencode Node plugin
+(`.opencode/`, git-ignored) and the `cpp/` template's test-only GoogleTest
+(BSD-3-Clause, fetched on demand) are not redistributed and are documented there
+as well.

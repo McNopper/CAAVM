@@ -3,6 +3,10 @@
 Every ticket and sprint is scoped to a *project* so multiple independent
 projects can coexist. Access is concurrency-safe (see mcp.base.locking_store).
 
+Protocol note: a deliberately minimal stdio JSON-RPC loop (``initialize``,
+``tools/list``, ``tools/call``) — no ``resources``/``prompts``, cancellation,
+or progress. Enough for opencode tool calls; not a fully featured MCP server.
+
 Document shape (per project)::
 
     {
@@ -27,10 +31,17 @@ from locking_store import LockingStore  # noqa: E402
 STORE_ROOT = str(Path(__file__).resolve().parent / "data")
 store = LockingStore(STORE_ROOT)
 
-VALID_ROLES = [
+# The documented default set of disciplines. ``role`` is an OPEN, extensible
+# string — the server accepts any non-empty value so a new discipline can be
+# used without editing this list (just keep the routing in
+# pm-orchestrate-execution in sync). KNOWN_ROLES is only a hint for clients.
+KNOWN_ROLES = [
     "architect", "developer", "tester", "pm",
     "cpp-engineer", "graphics-engineer",
 ]
+# Used by audit_traceability to pair definition-side and verification-side work.
+DEFINITION_ROLES = {"architect", "developer"}
+VERIFICATION_ROLES = {"tester"}
 VALID_TYPES = ["story", "task", "bug", "spike"]
 VALID_STATUSES = [
     "product-backlog", "sprint-backlog", "in-progress", "in-review", "done",
@@ -76,8 +87,10 @@ def _new_ticket(
     epic: Optional[str] = None,
     id_prefix: str = "T",
 ) -> Dict[str, Any]:
-    if role not in VALID_ROLES:
-        raise ValueError(f"role must be one of {VALID_ROLES}, got {role!r}")
+    # role is an open, extensible discipline string: accept any non-empty
+    # value. KNOWN_ROLES is only a client-side hint, not a hard gate.
+    if not isinstance(role, str) or not role.strip():
+        raise ValueError(f"role must be a non-empty string, got {role!r}")
     if type not in VALID_TYPES:
         raise ValueError(f"type must be one of {VALID_TYPES}, got {type!r}")
     if priority not in PRIORITY_ORDER:
@@ -151,8 +164,8 @@ def list_tickets(
 def update_ticket(project: str, ticket_id: str, **changes) -> Dict[str, Any]:
     protected = {"id", "created_at", "history", "comments"}
     changes = {k: v for k, v in changes.items() if k not in protected}
-    if "role" in changes and changes["role"] not in VALID_ROLES:
-        raise ValueError(f"role must be one of {VALID_ROLES}")
+    if "role" in changes and (not isinstance(changes["role"], str) or not changes["role"].strip()):
+        raise ValueError("role must be a non-empty string")
     if "status" in changes and changes["status"] not in VALID_STATUSES:
         raise ValueError(f"status must be one of {VALID_STATUSES}")
     with store.transaction(project) as doc:
@@ -198,6 +211,12 @@ def claim_ticket(
     Returns the claimed ticket, or None if nothing is claimable. Two concurrent
     callers always receive different tickets.
     """
+    claimable = ("sprint-backlog",)
+    if status not in claimable:
+        raise ValueError(
+            f"claim status must be one of {claimable}, got {status!r} "
+            "(only sprint-backlog tickets are claimable)"
+        )
     with store.transaction(project) as doc:
         tickets = list(doc.get("tickets", {}).values())
         # Priority: unblocked, by priority desc, then created_at asc.
@@ -376,13 +395,54 @@ def close_sprint(project: str, sprint_id: str) -> Dict[str, Any]:
 
 
 def audit_traceability(project: str) -> Dict[str, Any]:
-    """Map definition-side role tickets to verification-side role tickets."""
+    """Map definition-side role tickets to verification-side role tickets.
+
+    Beyond the raw ``epic`` -> children links, this surfaces per ticket:
+      * ``verifies``   - for a verification-role ticket, the definition id it
+        covers (its ``epic``), when that definition exists;
+      * ``verified_by`` - for a definition-role ticket, the verification ticket
+        ids that name it as their ``epic``;
+    and at the project level:
+      * ``orphan_definitions``     - definition tickets with no verification child;
+      * ``orphan_verifications``   - verification tickets whose ``epic`` is
+        missing or points at a non-existent ticket.
+    """
     tickets = list_tickets(project)
+    by_id = {t.get("id"): t for t in tickets}
     matrix = []
+    orphan_definitions: List[str] = []
+    orphan_verifications: List[str] = []
     for t in tickets:
-        links = [o["id"] for o in tickets if o.get("epic") == t.get("id")]
-        matrix.append({"id": t["id"], "role": t["role"], "status": t["status"], "links": links})
-    return {"matrix": matrix, "ticket_count": len(tickets)}
+        tid = t.get("id")
+        role = t.get("role")
+        children = [o for o in tickets if o.get("epic") == tid]
+        links = [o["id"] for o in children]
+        verifies: Optional[str] = None
+        verified_by: List[str] = []
+        if role in VERIFICATION_ROLES:
+            epic = t.get("epic")
+            verifies = epic if (epic and epic in by_id) else None
+            if not verifies:
+                orphan_verifications.append(tid)
+        if role in DEFINITION_ROLES:
+            verified_by = [o["id"] for o in children if o.get("role") in VERIFICATION_ROLES]
+            if not verified_by:
+                orphan_definitions.append(tid)
+        matrix.append({
+            "id": tid,
+            "role": role,
+            "status": t.get("status"),
+            "epic": t.get("epic"),
+            "links": links,
+            "verifies": verifies,
+            "verified_by": verified_by,
+        })
+    return {
+        "matrix": matrix,
+        "ticket_count": len(tickets),
+        "orphan_definitions": orphan_definitions,
+        "orphan_verifications": orphan_verifications,
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -419,7 +479,7 @@ TOOL_SCHEMAS = {
                 "title": {"type": "string"},
                 "description": {"type": "string"},
                 "type": {"enum": VALID_TYPES},
-                "role": {"enum": VALID_ROLES},
+                "role": {"type": "string", "description": "Discipline that owns/claims the ticket. Known roles: architect, developer, tester, pm, cpp-engineer, graphics-engineer (extensible - any non-empty string accepted)."},
                 "priority": {"enum": list(PRIORITY_ORDER)},
                 "story_points": {"type": "integer"},
                 "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
@@ -444,7 +504,7 @@ TOOL_SCHEMAS = {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "role": {"enum": VALID_ROLES},
+                "role": {"type": "string", "description": "Discipline that owns/claims the ticket. Known roles: architect, developer, tester, pm, cpp-engineer, graphics-engineer (extensible - any non-empty string accepted)."},
                 "status": {"enum": VALID_STATUSES},
                 "sprint": {"type": "string"},
                 "blocked": {"type": "boolean"},
@@ -465,7 +525,7 @@ TOOL_SCHEMAS = {
                 "status": {"enum": VALID_STATUSES},
                 "story_points": {"type": "integer"},
                 "priority": {"enum": list(PRIORITY_ORDER)},
-                "role": {"enum": VALID_ROLES},
+                "role": {"type": "string", "description": "Discipline that owns/claims the ticket. Known roles: architect, developer, tester, pm, cpp-engineer, graphics-engineer (extensible - any non-empty string accepted)."},
                 "assignee": {"type": "string"},
                 "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
                 "labels": {"type": "array", "items": {"type": "string"}},
@@ -501,8 +561,8 @@ TOOL_SCHEMAS = {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
-                "role": {"enum": VALID_ROLES},
-                "status": {"enum": VALID_STATUSES},
+                "role": {"type": "string", "description": "Discipline that claims the ticket. Known roles: architect, developer, tester, pm, cpp-engineer, graphics-engineer (extensible)."},
+                "status": {"enum": ["sprint-backlog"], "description": "Only sprint-backlog tickets are claimable."},
                 "by": {"type": "string"},
             },
             "required": ["project", "role"],

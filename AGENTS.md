@@ -3,7 +3,7 @@
 ## About this document
 - **Kind:** `doc` / repo-level workflow convention (auto-loaded by opencode from the git root).
 - **Read by:** any agent operating in this repo; **written by:** maintainers.
-- **Related:** pairs with `README.md`; the authoritative tier→model mapping lives in the `pm-orchestrate-execution` skill.
+- **Related:** pairs with `README.md`; tiers and selection rules live in the `pm-orchestrate-execution` skill, concrete models in `opencode.json` and per-agent overrides.
 
 Repository-level conventions for agentic work in this repository. Hephaestus is an
 **opencode-native**, **domain-organized** system: skills and agents are flat under
@@ -40,7 +40,7 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 | `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
-| `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram) |
+| `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `planner`,
 `executor`, `reviewer`, `rubberduck`, `pm`); domain agents keep their prefix
@@ -93,14 +93,16 @@ Verification maps by level: `test-software-implementation` (unit) ↔ `software-
 - **Graphics**: window capture, RenderDoc capture, and render comparison are **MCP tools**
   in `mcp.graphics` (`graphics_screenshot`, `graphics_renderdoc_capture`,
   `graphics_renderdoc_frame`, `graphics_compare_renders`). The `graphics-expert` agent
-  (pinned to Opus) drives them for frontier-level graphics work; `graphics-render-comparison`
+  (pinned to `very-high`) drives them for frontier-level graphics work; `graphics-render-comparison`
   is the thin methodology skill.
 
 ## Model tiers (model-neutral agents)
 
-Agents and docs reference **tiers**, never hard-coded model IDs. The authoritative
-tier→model mapping lives in `pm-orchestrate-execution`. All agents are model-neutral
-**except** `graphics-expert`, which is pinned to Opus (`very-high`).
+Agents and docs reference **tiers**, never hard-coded model IDs. The concrete
+model for each tier is configured in `opencode.json` (the default `model`) and
+in any per-agent override (only `graphics-expert` overrides, pinning to
+`very-high`); resolve through `/models`. Tiers and their selection rules are
+defined in `pm-orchestrate-execution`.
 
 | Tier | Selection rule |
 |---|---|
@@ -108,7 +110,7 @@ tier→model mapping lives in `pm-orchestrate-execution`. All agents are model-n
 | `low` | best available open-weight model — **default executor** |
 | `mid` | balanced general model for standard impl/tests |
 | `high` | top-capability reasoning + large context — **planning + review** |
-| `very-high` | frontier/highest-risk — **run twice & reconcile** (Opus) |
+| `very-high` | frontier/highest-risk — **run twice & reconcile** |
 
 Tier-selection rule: pick the **lowest tier whose criteria still satisfy the task**;
 escalate (never de-escalate) when uncertain.
@@ -121,14 +123,14 @@ Lean, flat, model-neutral (except `graphics-expert`):
   `planner` (high-tier plan + execution manifest), `executor` (open-tier task execution;
   records artifacts), `reviewer` (high-tier final review; edit-denied), `rubberduck`
   (cross-vendor critic; edit-denied), `pm` (Scrum Master + PO proxy; always present).
-- **Domain agents:** `cpp-tools` (C++ execution), `graphics-expert` (Opus; graphics).
+- **Domain agents:** `cpp-tools` (C++ execution), `graphics-expert` (very-high; graphics).
 
 ## opencode feature usage (recommended)
 
 - Plan mode (`Tab`) for multi-file / multi-phase changes before implementation.
 - `/agents` to select a coordination or domain agent.
-- `/models` to pick a model for a task (tiers resolve here). Providers expected:
-  **Z.AI** (GLM-5.2), **GitHub Copilot** (Opus 4.8), **OpenAI** (GPT-5.6).
+- `/models` to pick a model for a task (tiers resolve here). Providers commonly
+  used: e.g. Z.AI, GitHub Copilot, OpenAI — connect whichever you use via `/connect`.
 - The `orchestrator` dispatches concurrent subagents (Task tool) for parallel tickets;
   workers self-claim the rest via `pm_claim_ticket`.
 - Skills auto-load from `.opencode/skills/`; reference files with `@`.

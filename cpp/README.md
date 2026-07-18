@@ -43,6 +43,10 @@ cpp/
 cmake --preset default                       # configure (Debug + analysis)
 cmake --build build --target verify          # fast: build + test + analysis status
 cmake --build build --target verify-full     # full: verify + format + static analysis + docs
+
+# Windows host without Clang/Ninja — MSVC via the Visual Studio generator:
+cmake --preset windows                       # analysis is skipped for this toolchain
+cmake --build build-windows --target verify
 ```
 
 See **[AGENTS.md](AGENTS.md)** for the full command manifest and the locations
@@ -58,11 +62,19 @@ reports. There is no separate MCP server — C++ is an agent now.
 
 - **Recommended:** Ninja + a Clang- or GNU-compatible compiler. This exports
   `compile_commands.json` and enables the full clang-tidy / cppcheck stack.
-- **Other toolchains still build.** With MSVC, or a generator that has no
-  compile database, the project configures and builds normally and the
-  Clang-based analysis is skipped (CMake says so at configure time). This is by
-  design, expressed as a positive allowlist rather than blocking any specific
-  compiler.
+  Presets `default`, `release`, and `analysis` target this path (Ninja + Clang).
+- **Windows / MSVC:** the `windows` preset uses the Visual Studio 18 2026
+  generator + MSVC (the default Visual Studio version for this repo). The
+  project configures and builds normally; the Clang-based analysis is skipped
+  (CMake prints a status line saying so). Use this when Clang/Ninja are not
+  available. To target a different Visual Studio, change the preset's
+  `generator` to its `<major> <year>` string (e.g. `Visual Studio 17 2022`) —
+  CMake requires the year in the generator name, so it cannot be left
+  unversioned.
+- **Other toolchains still build.** With a generator that has no compile
+  database, the project configures and builds normally and the Clang-based
+  analysis is skipped (CMake says so at configure time). This is by design,
+  expressed as a positive allowlist rather than blocking any specific compiler.
 
 **External tools must be on PATH:** [CMake](https://cmake.org/download/) (≥ 3.26),
 [Ninja](https://ninja-build.org/), [cppcheck](https://github.com/danmar/cppcheck), and
@@ -98,3 +110,12 @@ cppcheck runs a high signal-to-noise default profile
 
 Replace `MyProject` / `my_project_*` in `CMakeLists.txt` and the `example`
 sources with your own names; everything else adapts automatically.
+
+## Third-party licenses
+
+Tests use [GoogleTest](https://github.com/google/googletest) (v1.17.0,
+**BSD-3-Clause**), fetched on demand via CMake `FetchContent` when
+`ENABLE_TESTING=ON` (the default). It is not checked into this template;
+consumers fetch it themselves during configure. Doxygen (when
+`ENABLE_DOXYGEN=ON`) is invoked via `find_package` as a system build tool and is
+not redistributed.

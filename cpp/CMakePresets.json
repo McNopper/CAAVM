@@ -43,6 +43,17 @@
       }
     },
     {
+      "name": "windows",
+      "displayName": "Windows (Visual Studio 18 2026, MSVC)",
+      "description": "MSVC build via the Visual Studio generator (default: VS 2026 / 'Visual Studio 18 2026'). Builds and tests work; the Clang-based AI analysis is skipped (toolchain allowlist) because the Visual Studio generator does not emit a compile_commands.json (CMAKE_EXPORT_COMPILE_COMMANDS only does so for Ninja/Makefiles generators) — MSVC itself is fine; pair it with the Ninja generator to get a compile database. To target a different Visual Studio, change the generator to its '<major> <year>' string (e.g. 'Visual Studio 17 2022', 'Visual Studio 16 2019') — CMake requires the year in the generator name, so it cannot be left unversioned.",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build-windows",
+      "cacheVariables": {
+        "ENABLE_TESTING": "ON",
+        "ENABLE_DOXYGEN": "ON"
+      }
+    },
+    {
       "name": "analysis",
       "displayName": "Analysis (Ninja)",
       "description": "Fast configure for the on-demand tidy/cppcheck/docs report targets; no in-build analysis.",
@@ -70,6 +81,11 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "configuration": "Debug"
     },
     {
       "name": "verify",
@@ -108,6 +124,14 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "configuration": "Debug",
       "output": {
         "outputOnFailure": true
       }

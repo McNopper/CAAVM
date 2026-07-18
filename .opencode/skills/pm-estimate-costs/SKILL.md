@@ -70,24 +70,28 @@ For each task in the execution manifest:
     - **worst-case** = max retries + max agile rework iterations (from the manifest's
       iteration guard).
 
-## Rate card (example rates, as of today — swappable)
+## Rate card (illustrative rates — verify before relying on them)
 
-Rates are illustrative per-1M-token prices and **will change**; update this table only.
-This skill keys costs **by tier**; the concrete model for each tier comes from the
-**single authoritative mapping in `pm-orchestrate-execution`** — it is not repeated here.
+The numbers below are **illustrative per-1M-token prices**, not a commitment.
+They exist so a fresh template can produce a non-zero estimate out of the box.
+**When prices or models change, edit only this table.** This skill keys costs
+**by tier**; the concrete model each tier resolves to is configured in
+`opencode.json` and per-agent overrides (it is intentionally not enumerated in
+any skill). Reference *tiers*, never hard-coded prices, elsewhere in the run.
 
 | Tier | Rate in (per 1M) | Rate out (per 1M) | Notes |
 |---|---|---|---|
-| `very-low` | $ (fill from current pricing) | $ (fill) | — |
-| `low` | $ (fill) | $ (fill) | default executor |
-| `mid` | $ (fill) | $ (fill) | — |
-| `high` | $ (fill) | $ (fill) | planning + review |
-| `very-high` | $ (fill) | $ (fill) | **× 2** (two passes) + reconciler |
-| rubberduck | $ (fill) | $ (fill) | cross-vendor critic; cross-checks the very-high model |
+| `very-low` | $0.15 | $0.60 | cheapest/fastest |
+| `low` | $0.50 | $1.50 | default executor |
+| `mid` | $1.50 | $6.00 | standard impl/tests |
+| `high` | $2.00 | $8.00 | planning + review |
+| `very-high` | $5.00 | $25.00 | **× 2** (two passes) + reconciler |
+| rubberduck | $1.50 | $6.00 | cross-vendor critic; cross-checks the very-high pass |
 
-> Fill the rate columns from the provider's current published pricing at estimation
-> time; resolve each tier's model via `pm-orchestrate-execution`. Do not hard-code
-> stale numbers or model IDs into tasks or agents.
+> Treat these as placeholders pending current provider pricing. Before a real
+> budget run, confirm each rate against the provider's published price for
+> whatever concrete model you have mapped to that tier, and overwrite the row.
+> The estimation *method* is what is durable; the numbers are inputs.
 
 ## Budget-cap fitting
 

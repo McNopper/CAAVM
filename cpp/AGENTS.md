@@ -24,8 +24,10 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 |------|---------|
 | Configure (Debug + analysis) | `cmake --preset default` |
 | Configure (Release)          | `cmake --preset release` |
+| Configure (Windows/MSVC)     | `cmake --preset windows` |
 | Build (Debug)                | `cmake --build build` |
 | Build (Release)              | `cmake --build build-release` |
+| Build (Windows/MSVC)         | `cmake --build build-windows` |
 | Run tests                    | `ctest --preset default` |
 | **Verify (fast default)**    | `cmake --build build --target verify` |
 | **Verify (full strict)**     | `cmake --build build --target verify-full` |
@@ -40,7 +42,10 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 `verify` is intentionally fast (build + tests). It always prints whether static
 analysis is enabled or skipped for the current toolchain and writes a status
 artifact. A green `verify` with analysis skipped is still useful, but it is a
-degraded signal compared to full analysis.
+degraded signal compared to full analysis. The `windows` preset always skips the
+Clang-based analysis (the Visual Studio generator does not emit a
+`compile_commands.json`; MSVC itself is fine — pair it with the Ninja generator
+to get a compile database).
 
 Use `verify-full` for strict validation (verify + format-check + static
 analysis + docs).

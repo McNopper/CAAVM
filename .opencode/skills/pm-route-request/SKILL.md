@@ -63,6 +63,7 @@ to the correct skill/agent that owns execution.
 | Window screenshot / RenderDoc capture / render compare | `mcp.graphics` tools |
 | Estimating cost of a plan / manifest | `pm-estimate-costs` |
 | Traceability across definition->verification | `pm-audit-traceability` |
+| Third-party license audit / compatibility with the project license | `code-licenses` |
 | Sprint / ticket / backlog workflow | `pm-operating-model` + `pm` agent |
 
 ## Default Output
