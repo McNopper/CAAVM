@@ -33,11 +33,42 @@ minimal: only requirements that genuinely matter for a hobby project.
 When naming the full product, prefer **software system** for precision.
 
 ## Core Principles
-1. Write requirements that are testable and unambiguous.
+1. Write requirements that are testable and unambiguous, using **EARS** syntax (see below).
 2. State the *what* and *why*; leave the *how* to design skills.
 3. Capture both functional requirements and the non-functional requirements that matter.
 4. Make important edge cases and failure expectations explicit.
 5. Do not invent business or compliance rules; list unknowns as open questions.
+
+## Requirement Syntax (EARS)
+
+Write **functional requirements** using the
+[Easy Approach to Requirements Syntax (EARS)](https://en.wikipedia.org/wiki/Easy_Approach_to_Requirements_Syntax)
+— a small set of keywords and a fixed clause order that constrain free-form English into
+testable, unambiguous sentences.
+
+General form:
+
+> **WHILE** <optional precondition(s)>, **WHEN** <optional trigger>, the <system name> **SHALL** <system response>
+
+Rules: zero or many preconditions; zero or one trigger; exactly one system name; one or many
+system responses; clauses always appear in the same temporal order. Combine the five basic
+patterns (and complex forms) to express richer behaviour:
+
+| Pattern | Keyword | Template | Example |
+|---|---|---|---|
+| Ubiquitous (always active) | — | `THE <system> SHALL <response>` | `The phone SHALL have a mass under 150 g.` |
+| Event-driven | **WHEN** | `WHEN <trigger>, the <system> SHALL <response>` | `WHEN 'mute' is selected, the laptop SHALL suppress all audio output.` |
+| State-driven | **WHILE** | `WHILE <precondition(s)>, the <system> SHALL <response>` | `WHILE no card is inserted, the ATM SHALL display 'insert card to begin'.` |
+| Optional feature | **WHERE** | `WHERE <feature is included>, the <system> SHALL <response>` | `WHERE the car has a sunroof, the car SHALL provide a sunroof control on the driver door.` |
+| Unwanted behaviour | **IF / THEN** | `IF <trigger>, THEN the <system> SHALL <response>` | `IF an invalid card number is entered, THEN the site SHALL show 'please re-enter card details'.` |
+| Complex (combine) | multiple | `WHILE …, WHEN …, the <system> SHALL <response>` | `WHILE the aircraft is on ground, WHEN reverse thrust is commanded, the engine SHALL enable reverse thrust.` |
+
+**Boundary:** EARS governs *functional* requirements (conditional system behaviour). Keep **user
+stories** in the `As a… I want… so that…` form, and keep **acceptance criteria** in
+Given/When/Then (Gherkin) — the executable-scenario form its verification pair
+(`test-software-requirements`) expects. Many **non-functional requirements** (e.g. architectural
+constraints that can't be phrased as conditional behaviour) are a poor fit for EARS; leave those
+in the NFR block in plain, measurable prose.
 
 ## Default Output
 ```md
@@ -53,7 +84,10 @@ One or two sentences: the problem and the desired outcome.
 - US-001: As a <user>, I want <capability>, so that <benefit>.
 
 ## Functional Requirements
-- FR-001: The system shall ...
+Written in EARS (see above). Use the simplest pattern that fits.
+- FR-001 (ubiquitous): THE <system> SHALL <response>.
+- FR-002 (event-driven): WHEN <trigger>, the <system> SHALL <response>.
+- FR-003 (unwanted): IF <trigger>, THEN the <system> SHALL <response>.
 
 ## Non-Functional Requirements
 Only the qualities that matter for this project (these feed the architecture's
