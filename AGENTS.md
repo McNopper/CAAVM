@@ -42,8 +42,8 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 | `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
 
-Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `planner`,
-`executor`, `reviewer`, `rubberduck`, `pm`); domain agents keep their prefix
+Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-author`,
+`executor`, `reviewer`, `rubberduck`, `research`, `pm`); domain agents keep their prefix
 (`cpp-tools`, `graphics-expert`).
 
 ## The ticket / sprint workflow (the PM)
@@ -120,9 +120,10 @@ escalate (never de-escalate) when uncertain.
 Lean, flat, model-neutral (except `graphics-expert`):
 
 - **Coordination (unprefixed):** `orchestrator` (kicks off the sprint; workers self-claim),
-  `planner` (high-tier plan + execution manifest), `executor` (open-tier task execution;
+  `manifest-author` (high-tier plan + execution manifest), `executor` (open-tier task execution;
   records artifacts), `reviewer` (high-tier final review; edit-denied), `rubberduck`
-  (cross-vendor critic; edit-denied), `pm` (Scrum Master + PO proxy; always present).
+  (cross-vendor critic; edit-denied), `research` (authoritative-source investigation;
+  validated synthesis), `pm` (Scrum Master + PO proxy; always present).
 - **Domain agents:** `cpp-tools` (C++ execution), `graphics-expert` (very-high; graphics).
 
 ## opencode feature usage (recommended)

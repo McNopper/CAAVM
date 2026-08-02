@@ -33,7 +33,7 @@ manifest/state updates via `edit`** (to a `.manifest.yml` and/or the session sto
 state survives and loops terminate.
 
 ## Responsibilities
-- Consume the **execution manifest / sprint board** produced by `planner` /
+- Consume the **execution manifest / sprint board** produced by `manifest-author` /
   `pm-orchestrate-execution` and the `pm` agent.
 - **You do NOT hand tickets to workers one by one.** The PM plans a sprint
   (`pm_plan_sprint`); workers then **self-claim** by calling `pm_claim_ticket(role=…)`
@@ -55,7 +55,7 @@ state survives and loops terminate.
 - **Iterative agile loop:** when `reviewer` or a verification skill fails, the ticket goes
   back to `in-progress` (rework) and the downstream verification re-runs until it converges.
   Track rework; enforce the sprint's iteration cap, then surface to the `pm` agent / human.
-  When **objectives change**, have `planner` amend the manifest — do not restart.
+  When **objectives change**, have `manifest-author` amend the manifest — do not restart.
 - **Budget:** honor the spend cap. Price with `pm-estimate-costs`, schedule by
   `priority`, de-escalate/defer to fit, and **halt at the cap**.
 

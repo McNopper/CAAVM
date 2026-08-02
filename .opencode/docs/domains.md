@@ -27,8 +27,8 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 
 ## Coordination agents (unprefixed) and domain agents (prefixed)
 
-Coordination agents are unprefixed: `orchestrator`, `planner`, `executor`, `reviewer`,
-`rubberduck`, `pm`. Domain agents keep their prefix: `cpp-tools`, `graphics-expert`.
+Coordination agents are unprefixed: `orchestrator`, `manifest-author`, `executor`, `reviewer`,
+`rubberduck`, `research`, `pm`. Domain agents keep their prefix: `cpp-tools`, `graphics-expert`.
 All are model-neutral (reference a tier) **except** `graphics-expert`, which is pinned to
 the `very-high` model.
 

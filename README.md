@@ -108,10 +108,11 @@ a ticket), `pm-route-request` (ambiguous next step), `pm-audit-traceability` (ma
 | Agent | Role | Model |
 |---|---|---|
 | `orchestrator` | kicks off the sprint; workers self-claim | tier (`high`) |
-| `planner` | high-tier plan + execution manifest | tier (`high`) |
+| `manifest-author` | high-tier plan + execution manifest | tier (`high`) |
 | `executor` | open-tier task execution; records artifacts | tier (`low`) |
 | `reviewer` | high-tier final review (edit-denied) | tier (`high`) |
 | `rubberduck` | cross-vendor critic (edit-denied) | tier (different vendor) |
+| `research` | authoritative-source investigation; validated synthesis | tier (`high`) |
 | `pm` | Scrum Master + PO proxy; always present | tier (`high`) |
 | `cpp-tools` | C++ build/format/static-analysis via bash | tier (`low`) |
 | `graphics-expert` | frontier graphics work; drives `mcp.graphics` | **pinned `very-high`** |

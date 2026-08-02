@@ -4,7 +4,7 @@ description: >
   Use this skill as the template/guide for writing a correct Hephaestus ticket:
   choosing the right role, writing concrete acceptance criteria, sizing story
   points, and linking epics for traceability. Invoked by the pm agent, the
-  planner, or any worker that opens a ticket via pm_create_ticket.
+  manifest-author, or any worker that opens a ticket via pm_create_ticket.
 ---
 
 # How to Fill Out a Ticket

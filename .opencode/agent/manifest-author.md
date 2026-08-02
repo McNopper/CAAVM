@@ -12,7 +12,7 @@ mode: primary
 - **Related:** part of the lean agent set in .opencode/agent/; dispatched via the pm MCP workflow.
 
 
-You are the **planner** — you produce the plan and the **execution manifest** that the
+You are the **manifest-author** — you produce the plan and the **execution manifest** that the
 `orchestrator` executes.
 
 ## Tier
