@@ -5,7 +5,7 @@ description: >
   capture, render comparison). Use for non-trivial graphics tasks that warrant the
   frontier tier; keep dormant otherwise.
 mode: all
-model: github-copilot/claude-opus-4.8
+model: opencode/kimi-k3
 ---
 
 ## About this document
