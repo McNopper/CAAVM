@@ -11,7 +11,7 @@ permission:
 ## About this document
 - **Kind:** agent (review, edit-denied)
 - **Read by:** auto-loaded agents / the PM; **written by:** maintainers
-- **Related:** part of the lean agent set in .opencode/agent/; dispatched via the pm MCP workflow.
+- **Related:** part of the lean agent set in .opencode/agent/; dispatched via the task workflow.
 
 
 You are the **reviewer** — the final quality gate before work is accepted.

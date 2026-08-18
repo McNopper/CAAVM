@@ -8,13 +8,14 @@
 Repository-level conventions for agentic work in this repository. Hephaestus is an
 **opencode-native**, **domain-organized** system: skills and agents are flat under
 `.opencode/` and named by `<domain>-<descriptor>`; project management is a concrete,
-Scrum-like ticket/sprint workflow powered by the `pm` MCP server; C++ and graphics
-tooling are first-class agents / MCP tools.
+Scrum-like ticket/sprint workflow over the **task store** (`.opencode/tasks/`, one
+Markdown file per ticket) served as `task_*` MCP tools; C++ and graphics tooling are
+first-class agents / MCP tools.
 
 ## Two scopes
 
 - **A whole initiative / project** → the **PM agent** (`pm`) runs the Scrum workflow
-  over tickets in the `pm` MCP server (one project per initiative; multiple projects
+  over tickets in the task store (one subdirectory per project; multiple projects
   coexist). The human is Product Owner: writes the brief/goal, prioritizes the backlog,
   accepts at Sprint Review. Issues bubble up to the PM and only human-worthy ones are
   escalated.
@@ -22,8 +23,8 @@ tooling are first-class agents / MCP tools.
   worker, which uses the matching `software-*` / `test-software-*` skill, and records
   its artifact back on the ticket.
 
-> **The PM/ticket system is optional.** Every skill and agent can be used **directly** by
-> a human (or by another agent) with no ticket, sprint, or `pm` MCP server involved — for
+> **The PM/ticket system is optional.** Every skill and agent can be used **directly** by a
+> human (or by another agent) with no ticket, sprint, or task store involved — for
 > ad-hoc work, just invoke the skill or `/agents` you need. Use the PM system only when you
 > want tracked, multi-agent, sprint-based execution. Likewise, `pm-doc-about` (and any
 > skill) works standalone, independent of PM.
@@ -48,8 +49,11 @@ Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-
 
 ## The ticket / sprint workflow (the PM)
 
-The `pm` MCP server stores **tickets** and **sprints**, scoped per **project** so
-several independent projects can run at once. States:
+The **task store** stores **tickets** and **sprints**, scoped per **project** (one
+subdirectory of `.opencode/tasks/` each, so several independent projects run at once).
+The store is served as `task_*` MCP tools — by the Eclipse harness's `eclipse-build`
+endpoint when Eclipse runs, and by the `tasks` stdio launcher (`eclipse/tasks-tools.ps1`,
+configured in `opencode.json`) for TUI-only sessions. States:
 
 ```
 product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
@@ -57,12 +61,12 @@ product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-r
 blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
 ```
 
-- A worker **self-claims** by role: `pm_claim_ticket(role=…)` atomically finds the next
+- A worker **self-claims** by role: `task_claim(role=…)` atomically finds the next
   matching ticket, moves it to `in-progress`, sets `assignee`. Two agents never get the
-  same ticket. A returned ticket (`pm_release_ticket`) can be picked up by a *different*
+  same ticket. A returned ticket (`task_release`) can be picked up by a *different*
   agent.
 - When a worker produces an artifact (file, git commit/branch, doc), it records it with
-  `pm_add_artifact(kind=file|git|path|url|doc, ref=…)` **before** moving to `in-review` —
+  `task_add_artifact(kind=file|git|path|url|doc, ref=…)` **before** moving to `in-review` —
   the ticket is the hand-off contract.
 - Review/verification failure sends the ticket back to `in-progress` (rework loop).
 - See `pm-operating-model` for Scrum events, the Definition of Done, and the
@@ -143,6 +147,6 @@ Lean, flat, model-neutral (except `graphics-expert`):
 - `/models` to pick a model for a task (tiers resolve here). Providers commonly
   used: e.g. Z.AI, GitHub Copilot, OpenAI — connect whichever you use via `/connect`.
 - The `orchestrator` dispatches concurrent subagents (Task tool) for parallel tickets;
-  workers self-claim the rest via `pm_claim_ticket`.
+  workers self-claim the rest via `task_claim`.
 - Skills auto-load from `.opencode/skills/`; reference files with `@`.
 - Run the project's verification gate (e.g. `cpp/` `verify` target) via bash before merge.

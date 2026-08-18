@@ -5,7 +5,7 @@ description: >
   plan: decompose into tickets, map work to disciplines, drive the agile loop
   (sprint-backlog -> in-progress -> in-review -> done with rework), and bubble
   up blockers to the human. opencode workflow utility; pairs with the pm agent
-  and the pm MCP server.
+  and the task store (`task_*` tools).
 ---
 
 # Plan Orchestration Skill
@@ -25,7 +25,7 @@ and to keep that execution loop spinning until the work is done.
 
 This is a **standalone, on-demand** workflow utility. It produces the executable
 shape of a plan; it does not implement the plan itself. It works in lockstep
-with the `pm` agent and the pm MCP server.
+with the `pm` agent and the task store (`task_*` tools).
 
 ## Model tiers (selection rules — model-neutral)
 
@@ -108,17 +108,17 @@ sprint-backlog --claim--> in-progress --done+verify--> in-review --DoD+accept-->
                           `---------- rework ----------------'
 ```
 
-- Agent claims via `pm_claim_ticket(role=...)`. Two agents never get the same ticket.
+- Agent claims via `task_claim(role=...)`. Two agents never get the same ticket.
 - On finish, ticket moves to `in-review`; the matching test skill verifies.
 - Review finding -> back to `in-progress` (rework). Converge, don't restart.
-- A returned/unclaimed ticket can be released (`pm_release_ticket`) and picked
+- A returned/unclaimed ticket can be released (`task_release`) and picked
   up by a **different** agent.
 - `done` only on Definition-of-Done + PO acceptance.
 
 ## Bubble-up -> escalation
 
 When an agent cannot proceed:
-1. It sets `blocked` + `blocker` on the ticket (`pm_set_blocked`).
+1. It sets `blocked` + `blocker` on the ticket (`task_set_blocked`).
 2. You triage: resolve internally (reassign, resequence) or **escalate to the
    human** for scope/goal/spend/security decisions.
 

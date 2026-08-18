@@ -17,5 +17,6 @@
   <plugin id="com.opencode.ide.git" version="0.0.0" unpack="false"/>
   <plugin id="com.opencode.ide.fleet" version="0.0.0" unpack="false"/>
   <plugin id="com.opencode.ide.tools" version="0.0.0" unpack="false"/>
+  <plugin id="com.opencode.ide.tasks" version="0.0.0" unpack="false"/>
   <plugin id="com.opencode.ide.mcp" version="0.0.0" unpack="false"/>
 </feature>

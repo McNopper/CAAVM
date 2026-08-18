@@ -25,6 +25,7 @@ for a second backend, extracted when one actually arrives).
 | `com.opencode.ide.git` | **agentic git** | — (git CLI) — Eclipse-free | `WorktreeManager`: branch + worktree per agent task (under `.git/opencode-fleet/`), serial merge-back with clean conflict abort. Fleet isolation layer, no UI. |
 | `com.opencode.ide.fleet` | **fleet engine** | `client` + `git` — **Eclipse-free, build-enforced** | `FleetRunner`: the headless Phase 15 loop — submit (worktree + directory-scoped session + prompt) → poll completion → merge back (MERGED / FAILED-on-conflict). The future Fleet view drives this. |
 | `com.opencode.ide.tools` | **agent tools** | `com.google.gson` only — **Eclipse-free, build-enforced** | **`ToolProvider` SPI** + JSON-RPC dispatch + the built-in C++ tool pack (`tools.cpp`: toolchains, build, lint, format). Future language packs = new providers depending on this bundle only. |
+| `com.opencode.ide.tasks` | **task board** | `tools` + gson — **Eclipse-free, build-enforced** | The **task store** (`.opencode/tasks/<project>/`, one Markdown file per ticket) + the **`task_*` tool pack** (create/claim/release/sprint/traceability; replaces the retired Python pm MCP server). Also ships `TasksStdioMain` — the same tools over stdio via `eclipse/tasks-tools.ps1` for TUI-only sessions. |
 | `com.opencode.ide.mcp` | **agent endpoint** | `tools` + gson | Local **MCP server** (stateless Streamable HTTP on 127.0.0.1): OSGi DS lifecycle + HTTP endpoint only; tool implementations live in `tools`. |
 | `com.opencode.ide.cdt` | **C++/CDT** | `core` + CDT bundles | (Phase 4) implements the `ProjectContext` seam that will feed CDT project info into opencode. Stub for now. |
 
@@ -53,6 +54,7 @@ opencode-eclipse/
 │   ├── com.opencode.ide.git       # + git.tests (worktree fleet isolation, Eclipse-free)
 │   ├── com.opencode.ide.fleet     # + fleet.tests — headless fleet engine (Eclipse-free)
 │   ├── com.opencode.ide.tools     # + tools.tests — ToolProvider SPI + C++ pack (Eclipse-free)
+│   ├── com.opencode.ide.tasks     # + tasks.tests — task store + task_* tool pack (Eclipse-free)
 │   ├── com.opencode.ide.mcp       # + mcp.tests — MCP HTTP endpoint + DS lifecycle
 │   └── com.opencode.ide.cdt
 ├── features/com.opencode.ide.feature
@@ -141,18 +143,20 @@ what you touched; add siblings like `core`+`client` when manifests require them)
             -pl bundles/com.opencode.ide.git -pl bundles/com.opencode.ide.git.tests `
             -pl bundles/com.opencode.ide.fleet -pl bundles/com.opencode.ide.fleet.tests `
             -pl bundles/com.opencode.ide.tools -pl bundles/com.opencode.ide.tools.tests `
+            -pl bundles/com.opencode.ide.tasks -pl bundles/com.opencode.ide.tasks.tests `
             -pl bundles/com.opencode.ide.mcp -pl bundles/com.opencode.ide.mcp.tests clean verify
-.\deploy-dev.ps1     # close Eclipse first (jars are locked while it runs); copies all 9 jars
+.\deploy-dev.ps1     # close Eclipse first (jars are locked while it runs); copies all 10 jars
 ```
 
-This runs **171 Java tests** (6 core + 85 client + 26 chat + 13 git + 12 fleet + 23 tools +
-6 mcp — the mcp suite includes a real ucrt64 compile-and-run E2E test) plus the three Node
-checks against `components/chat-web` (`renderer-check.mjs` 43, `bridge-check.mjs` 54,
-`mermaid-check.mjs` 8 — the last renders diagrams in **real headless Edge** and SKIPs where
-Edge/puppeteer-core are absent — wired into `mvn verify` via `exec-maven-plugin`; the client,
-tools and fleet bundles additionally fail the build on any `org.eclipse.*`/`org.osgi.*`
-import). The full reactor additionally assembles the p2 update site at
-`releng/com.opencode.ide.repository/target/repository/`.
+This runs **229 Java tests** (6 core + 85 client + 26 chat + 13 git + 12 fleet + 23 tools +
+58 tasks + 6 mcp — the mcp suite includes a real ucrt64 compile-and-run E2E test and the
+endpoint↔task-store wiring; the tasks suite includes a cross-process claim race against a
+spawned stdio JVM) plus the three Node checks against `components/chat-web` (`renderer-check.mjs` 43, `bridge-check.mjs`
+54, `mermaid-check.mjs` 8 — the last renders diagrams in **real headless Edge** and SKIPs
+where Edge/puppeteer-core are absent — wired into `mvn verify` via `exec-maven-plugin`; the
+client, tools, fleet and tasks bundles additionally fail the build on any
+`org.eclipse.*`/`org.osgi.*` import). The full reactor additionally assembles the p2 update
+site at `releng/com.opencode.ide.repository/target/repository/`.
 
 ## Install into Eclipse CDT
 

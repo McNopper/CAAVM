@@ -31,7 +31,8 @@ reviewed decision**, not an accident:
 | `com.opencode.ide.client` (+ tests) | ✅ **enforced by build** (pwsh scan fails the build on `org.eclipse.`/`org.osgi.` imports) | — | neutral | opencode (HTTP+SSE, DTOs, ChatRequests/McpRequests, server launcher; hardened error semantics + URL validation) | M1 done |
 | `com.opencode.ide.core` (+ tests) | ❌ (by design — the **Eclipse adapter**): preferences, activator + `ClientLog` bridge, `ProjectContext` service tracking, `OpencodeConnection` service, **MCP registration component** | — | neutral | — | M1 done |
 | `com.opencode.ide.tools` (+ tests) | ✅ enforced by build | — | SPI (`ToolProvider`, `McpDispatcher`) + built-in C++ pack (`tools.cpp`) | neutral | M3 done |
-| `com.opencode.ide.mcp` (+ tests) | ✅ mostly (OSGi DS lifecycle only; publishes `McpInfo` as a service) | — | — (delegates to tools) | neutral | M3 done |
+| `com.opencode.ide.tasks` (+ tests) | ✅ enforced by build | — | — (cross-cutting domain pack) | neutral | H1 done |
+| `com.opencode.ide.mcp` (+ tests) | ✅ mostly (OSGi DS lifecycle only; publishes `McpInfo` as a service) | — | — (delegates to tools + tasks packs) | neutral | M3 done |
 | `components/chat-web` | n/a (non-Java) | ✅ chat.html, chat.js, markdown-it, hljs, KaTeX, mermaid + checks (43 renderer / 54 bridge / **8 mermaid in real headless Edge**) + standalone README | neutral | renders opencode data only | M2 done |
 | `com.opencode.ide.chat` | ❌ (by design — Eclipse host for chat-web: `ChatPage` + `ChatSessionController`, SWT-free) | consumes chat-web at build time (resources-plugin copy → jar `web/`) | neutral | renders opencode data | M2 done |
 | `com.opencode.ide.git` | ✅ yes (zero Eclipse/OSGi imports) | — | neutral | neutral | good |
@@ -47,6 +48,10 @@ reviewed decision**, not an accident:
 │                              banned at build time; usable as a plain library      │
 │  com.opencode.ide.tools      ToolProvider SPI + JSON-RPC dispatch + the built-in  │
 │  (OSGi bundle, pure Java)    C++ pack (tools.cpp) — Eclipse imports banned        │
+│  com.opencode.ide.tasks      The task store (.opencode/tasks/<project>/: one md    │
+│  (OSGi bundle, pure Java)    file per ticket) + the task_* tool pack replacing     │
+│                              the retired Python pm MCP server; TasksStdioMain is   │
+│                              the stdio transport (eclipse/tasks-tools.ps1)        │
 │  com.opencode.ide.fleet      Headless fleet engine: FleetRunner drives the client │
 │  (OSGi bundle, pure Java)    + git worktrees (submit → poll → mergeBack) — the    │
 │                              layer the future Fleet view/scheduler will call     │

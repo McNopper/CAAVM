@@ -4,7 +4,7 @@ description: >
   Use this skill as the template/guide for writing a correct Hephaestus ticket:
   choosing the right role, writing concrete acceptance criteria, sizing story
   points, and linking epics for traceability. Invoked by the pm agent, the
-  manifest-author, or any worker that opens a ticket via pm_create_ticket.
+  manifest-author, or any worker that opens a ticket via task_create.
 ---
 
 # How to Fill Out a Ticket
@@ -16,7 +16,7 @@ description: >
 
 You are the **ticket authoring guide** for Hephaestus. A good ticket is
 self-contained, verifiable, and traceable. Use it whenever you create a ticket
-through `pm_create_ticket` (pm MCP server).
+through `task_create` (task store).
 
 ## Why this exists
 
@@ -37,7 +37,7 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | `acceptance_criteria` | Concrete, checkable bullets ("Given … When … Then …"). Verification passes only when all are met. |
 | `labels` | Free tags for filtering (e.g. `vulkan`, `regression`). |
 | `epic` | Parent ticket id for traceability (definition ticket id on a verification ticket, or vice-versa). Optional but strongly recommended for linking. |
-| `sprint` | Leave null — the PM commits it at Sprint Planning (`pm_plan_sprint`). |
+| `sprint` | Leave null — the PM commits it at Sprint Planning (`task_plan_sprint`). |
 
 ## Role map (who owns / claims the ticket)
 
@@ -51,7 +51,7 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | `graphics-engineer` | render capture / compare | `mcp.graphics` tools (+ `graphics-expert`) | `graphics-render-comparison` |
 
 The `role` is **extensible** — it is an open, non-empty string, so you can mint a
-new discipline on the spot (the `pm` server accepts any non-empty value; it does
+new discipline on the spot (the task store accepts any non-empty value; it does
 not reject unknown roles). The trade-off: keep the claim routing in
 `pm-orchestrate-execution` (the role → skill/agent map) in sync whenever you
 introduce one, or a worker claiming by that role won't find its skill. Prefer a
@@ -64,7 +64,7 @@ role from the known set above when one fits.
 - Keep stable prefixes per artifact kind: `FR-` requirements, `AC-` acceptance,
   `SW-` system, `ARCH-` architecture, `DS-` design, `UT-` unit, `CT-` component,
   `LT-` library, `IT-` integration, `T-` generic. Pass `id_prefix` to
-  `pm_create_ticket` to mint the right id.
+  `task_create` to mint the right id.
 
 ## Definition of Done (matches `pm-operating-model`)
 
@@ -82,7 +82,7 @@ a completion report with evidence returned, and the human (PO) accepted at Revie
 ## Recording artifacts (the hand-off contract)
 
 The ticket is the hand-off contract: **whenever you produce something, point the
-next agent to it.** Use `pm_add_artifact` with a `kind` so the locator is
+next agent to it.** Use `task_add_artifact` with a `kind` so the locator is
 unambiguous:
 
 | kind | ref example | when |

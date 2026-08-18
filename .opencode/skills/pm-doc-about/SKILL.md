@@ -30,14 +30,14 @@ the rule applies to any `*.md` file, not just skills or agents.
 
 ## Independence from the PM system
 
-This skill does **not** require tickets, sprints, or the `pm` MCP server. It is a plain
+This skill does **not** require tickets, sprints, or the task store (`task_*` tools). It is a plain
 authoring standard you (or any agent) can apply to **any** Markdown file:
 
 - A **human** can invoke `pm-doc-about` directly to write a standalone document (a spec,
   a design note, meeting minutes) and just fill in the `About` section — no PM workflow,
   no ticket.
 - An **agent** can use it the same way, or as part of a PM-driven task. Both are fine.
-- If you do use the PM system, mirror the document `kind` into the ticket's `pm_add_artifact`
+- If you do use the PM system, mirror the document `kind` into the ticket's `task_add_artifact`
   (`kind=doc`) so the ticket and the file agree — but that step is optional.
 
 The PM/ticket workflow is itself **optional** in Hephaestus: skills and agents can be used
@@ -97,7 +97,7 @@ For a human-facing planning doc:
 ## About this document
 - **Kind:** `roadmap` (time plan / milestones)
 - **Read by:** the human (Product Owner); **written by:** the PM agent
-- **Related:** rolls up from `BOARD.md`; driven by tickets in the `pm` MCP server.
+- **Related:** rolls up from `BOARD.md`; driven by tickets in the task store (`task_*` tools).
 ```
 
 ## Where it is mandatory
@@ -128,5 +128,5 @@ changelog entries) where the filename + format is self-evident; when in doubt, a
 
 ## Hand off
 
-- When you create a Markdown artifact for a ticket, record it with `pm_add_artifact`
+- When you create a Markdown artifact for a ticket, record it with `task_add_artifact`
   (`kind=doc`) and mirror the `About` `kind` there so the ticket and the file agree.

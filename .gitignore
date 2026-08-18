@@ -2,15 +2,18 @@
 __pycache__/
 *.pyc
 
-# MCP server runtime data (tickets/sprints/captures are generated at runtime)
-mcp/pm/data/
+# MCP server runtime data (captures are generated at runtime)
 mcp/graphics/data/
+
+# Task store runtime locks (the .md task files themselves are version-controlled)
+.opencode/tasks/**/.lock
 
 # Node (if any tooling installed locally)
 node_modules/
 
 # Eclipse/Tycho build outputs (eclipse/ subproject)
 target/
+.tycho-consumer-pom.xml
 
 # Logs
 *.log

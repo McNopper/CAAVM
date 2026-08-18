@@ -3,34 +3,58 @@
 ## About this document
 - **Kind:** `doc` / reference (part of `.opencode/docs/`).
 - **Read by:** agents and maintainers; **written by:** maintainers.
-- **Related:** complements `domains.md`; the ticket/artifact rules are enforced by the `pm` MCP server and the `pm-create-ticket` skill.
+- **Related:** complements `domains.md`; the ticket/artifact rules are enforced by the `task_*` MCP tools (the `tasks` pack of the Eclipse harness's `eclipse-build` endpoint, also served over stdio via `eclipse/tasks-tools.ps1`) and the `pm-create-ticket` skill.
 
 The shared, durable agreements every skill and agent honors. Change these centrally and
 update all references.
 
-## Ticket contract (pm MCP server)
+## Ticket contract (`task_*` tools, `.opencode/tasks/` store)
 
 A ticket is the **hand-off unit**. Its authoritative shape (per project):
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | `T-NNN` (or prefix, e.g. `FR-001`) | minted by `pm_create_ticket(id_prefix=)` |
+| `id` | `T-NNN` (or prefix, e.g. `FR-001`) | minted by `task_create(id_prefix=)` |
 | `title` | string | active verb, states outcome |
 | `description` | string | what + why |
 | `type` | `story`/`task`/`bug`/`spike` | |
 | `status` | enum | `product-backlog` → `sprint-backlog` → `in-progress` → `in-review` → `done` |
 | `blocked` + `blocker` | bool + string | **orthogonal** flag, any active state |
-| `sprint` | `S-NN` / null | set by `pm_plan_sprint`; null in backlog |
+| `sprint` | `S-NN` / null | set by `task_plan_sprint`; null in backlog |
 | `story_points` | int | relative size; `pm-estimate-costs` can later feed a `cost` field |
 | `priority` | `low`/`medium`/`high`/`critical` | drives self-claim order |
 | `role` | enum (extensible) | `architect`/`developer`/`tester`/`pm`/`cpp-engineer`/`graphics-engineer` → who claims it |
-| `assignee` | string | set by `pm_claim_ticket` |
+| `assignee` | string | set by `task_claim` |
 | `acceptance_criteria` | string[] | GIVEN/WHEN/THEN; verification must satisfy all |
 | `labels` | string[] | free tags |
 | `epic` | string | parent ticket id for traceability |
 | `artifacts` | `{kind, ref, note, by, ts}[]` | **where the produced output lives** |
 | `history` | append-only | state transitions |
 | `comments` | append-only | human/agent notes |
+| `created_at` / `updated_at` | timestamp (UTC, ms) | drives claim/backlog ordering |
+
+### The store (Maven-ready Markdown storage)
+
+One **file per ticket** — `<repo>/.opencode/tasks/<project>/T-NNN.md` — Markdown with a
+frontmatter block (scalars + one-line JSON lists) and tool-owned body sections
+(`## Todos`, `## Artifacts`, `## Comments`, `## History`); the free-form description is the
+body. A `_meta.json` sidecar holds the per-prefix id counters and sprint metadata
+(goal/status/timestamps); the board is derived from the tickets. The files are
+**version-controlled** (`.gitattributes` pins LF; the codec tolerates CRLF/BOM on read) so
+task changes ride the normal git/Maven workflow — the seam the future
+`opencode-tasks:sync`/`plan` mojos build on.
+
+### Tool surface (`pm_*` → `task_*`)
+
+`task_create`, `task_get`, `task_list`, `task_update`, `task_set_blocked`,
+`task_clear_blocked`, `task_claim`, `task_release`, `task_add_comment`,
+`task_add_artifact`, `task_add_todo`, `task_toggle_todo`, `task_remove_todo`,
+`task_backlog`, `task_board`, `task_plan_sprint`, `task_close_sprint`,
+`task_traceability`. Served by the **`eclipse-build` MCP endpoint** when the Eclipse
+harness runs (plus the C++ tool pack) and by the **`tasks` stdio launcher**
+(`eclipse/tasks-tools.ps1`, configured in `opencode.json`) for TUI-only sessions — one tool
+surface, two transports. Note: opencode prefixes tools with the server name, so TUI
+sessions see them as `tasks_task_*`; in-Eclipse agents as `eclipse-build_task_*`.
 
 ### Artifact kinds (the hand-off locator)
 
@@ -42,19 +66,25 @@ A ticket is the **hand-off unit**. Its authoritative shape (per project):
 | `url` | `https://…/diff.png` | a remote resource |
 | `doc` | `ARCH-003` | another artifact/ticket id |
 
-**Rule:** a worker records its artifact with `pm_add_artifact` *before* moving the ticket
+**Rule:** a worker records its artifact with `task_add_artifact` *before* moving the ticket
 to `in-review`, so the next agent needs no questions.
 
 ## Concurrency contract
 
-- **Self-claim:** workers loop `pm_claim_ticket(role=…)`; the call is atomic
-  (threading.RLock + cross-process filelock + temp-rename write) so concurrent agents get
-  distinct tickets.
-- **Reassign:** a returned ticket (`pm_release_ticket` → `sprint-backlog`, `assignee` cleared)
+- **Self-claim:** workers loop `task_claim(role=…)`; the call is atomic (an in-JVM lock
+  plus an OS file lock on the project's `.lock`, whole-directory transactions, temp-rename
+  writes) so concurrent agents — Eclipse-hosted sessions and stdio TUI processes alike —
+  get distinct tickets. A claim with nothing to do returns the JSON literal `null`; worker
+  loops terminate on it.
+- **Reassign:** a returned ticket (`task_release` → `sprint-backlog`, `assignee` cleared)
   can be claimed by a *different* agent.
-- **Store:** `mcp/base/locking_store.py` — one JSON doc per project, atomic transactions.
-- **Worker instances** are opencode agents (`.opencode/agent/*.md`) that self-claim tickets
-  by `role`; there is no file-based worker folder to copy.
+- **Store:** `eclipse/bundles/com.opencode.ide.tasks` — one Markdown file per ticket,
+  atomic transactions, id counters persisted in `_meta.json` (task ids are never reused,
+  even after a lost sidecar — they are recovered from the files; the sprint counter is
+  not, so a lost sidecar can re-mint a sprint id — harmless because the board derives
+  from the tickets).
+- **Direct edits:** hand edits to a task file are allowed between tool writes but the
+  tools rewrite whole files — last writer wins. Treat direct edits as read-only hints.
 
 ## Role → skill/agent dispatch
 

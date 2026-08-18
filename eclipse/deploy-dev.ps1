@@ -25,7 +25,7 @@ if (Test-Path $dropins) {
 New-Item -ItemType Directory -Path $plugins -Force | Out-Null
 
 # p2 recognizes a dropin subfolder that has a plugins/ (and optional features/) layout.
-$bundles = @("com.opencode.ide.core", "com.opencode.ide.client", "com.opencode.ide.ui", "com.opencode.ide.chat", "com.opencode.ide.cdt", "com.opencode.ide.git", "com.opencode.ide.fleet", "com.opencode.ide.tools", "com.opencode.ide.mcp")
+$bundles = @("com.opencode.ide.core", "com.opencode.ide.client", "com.opencode.ide.ui", "com.opencode.ide.chat", "com.opencode.ide.cdt", "com.opencode.ide.git", "com.opencode.ide.fleet", "com.opencode.ide.tools", "com.opencode.ide.tasks", "com.opencode.ide.mcp")
 foreach ($b in $bundles) {
     $jar = Get-ChildItem (Join-Path $bundleDir "$b\target\$b-*.jar") -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1

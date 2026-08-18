@@ -1,9 +1,0 @@
-[project]
-name = "hephaestus-mcp-pm"
-version = "1.0.0"
-description = "Concrete Scrum-like ticket & sprint management MCP server for Hephaestus (multi-project)."
-requires-python = ">=3.10"
-dependencies = ["filelock>=3.13"]
-
-[project.scripts]
-mcp-pm = "server:main"

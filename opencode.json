@@ -3,9 +3,9 @@
   "model": "zai-coding-plan/glm-5.2",
   "instructions": ["AGENTS.md"],
   "mcp": {
-    "pm": {
+    "tasks": {
       "type": "local",
-      "command": ["python", "mcp/pm/server.py"],
+      "command": ["pwsh", "-NoProfile", "-File", "eclipse/tasks-tools.ps1"],
       "enabled": true
     },
     "graphics": {

@@ -34,6 +34,8 @@
     <module>bundles/com.opencode.ide.fleet.tests</module>
     <module>bundles/com.opencode.ide.tools</module>
     <module>bundles/com.opencode.ide.tools.tests</module>
+    <module>bundles/com.opencode.ide.tasks</module>
+    <module>bundles/com.opencode.ide.tasks.tests</module>
     <module>bundles/com.opencode.ide.mcp</module>
     <module>bundles/com.opencode.ide.mcp.tests</module>
     <module>features/com.opencode.ide.feature</module>

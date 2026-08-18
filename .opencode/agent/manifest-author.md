@@ -9,7 +9,7 @@ mode: primary
 ## About this document
 - **Kind:** agent (planning)
 - **Read by:** auto-loaded agents / the PM; **written by:** maintainers
-- **Related:** part of the lean agent set in .opencode/agent/; dispatched via the pm MCP workflow.
+- **Related:** part of the lean agent set in .opencode/agent/; dispatched via the task workflow.
 
 
 You are the **manifest-author** — you produce the plan and the **execution manifest** that the

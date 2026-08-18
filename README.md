@@ -12,9 +12,11 @@
 Hephaestus is an **opencode-native** template for **agentic project management and
 software development**. It is organized by **domain** (not by a lifecycle or folder
 tree): skills and agents are flat under `.opencode/` and named `<domain>-<descriptor>`.
-Project management is a concrete, Scrum-like **ticket/sprint** workflow powered by the
-`pm` MCP server; C++ and graphics are first-class **tools** (an agent and an MCP server),
-not a separate lifecycle.
+Project management is a concrete, Scrum-like **ticket/sprint** workflow over the
+**task store** (`.opencode/tasks/`, one Markdown file per ticket) served as `task_*`
+MCP tools by the Eclipse harness's `eclipse-build` endpoint and the stdio
+`tasks-tools` launcher; C++ and graphics are first-class **tools** (an agent and an
+MCP server), not a separate lifecycle.
 
 Three ideas hold it together:
 
@@ -22,9 +24,11 @@ Three ideas hold it together:
   `.opencode/skills/*/`. Naming convention `<domain>-<descriptor>`
   (`software-`, `test-software-`, `pm-`, `cpp-`, `graphics-`); coordination agents are
   unprefixed.
-- **A concrete PM, not a metaphor.** The `pm` agent runs Scrum over tickets in the `pm`
-  MCP server. Tickets carry a `role` (discipline), and workers **self-claim** by role
-  (`pm_claim_ticket`). Multiple independent **projects** coexist in one server.
+- **A concrete PM, not a metaphor.** The `pm` agent runs Scrum over tickets in the
+  task store. Tickets carry a `role` (discipline), and workers **self-claim** by role
+  (`task_claim`). Multiple independent **projects** coexist as subdirectories of the
+  store. The store is version-controlled Markdown — the seam the Maven mojos
+  (`opencode-tasks:sync`/`plan`) and the Eclipse Board view build on.
 - **Model-neutral by default.** Agents reference a *tier*; the concrete model
   resolves from `opencode.json` (default) and any per-agent overrides. Only `graphics-expert`
   is pinned (to `very-high`).
@@ -39,15 +43,15 @@ Three ideas hold it together:
 
 | Path | What it is |
 |---|---|
-| `opencode.json` (repo root) | project config — default `model`, `AGENTS.md`, and the `pm` + `graphics` MCP servers. |
+| `opencode.json` (repo root) | project config — default `model`, `AGENTS.md`, and the `tasks` (stdio launcher) + `graphics` MCP servers. |
 | `AGENTS.md` (repo root) | opencode-first workflow conventions and routing. |
 | `.opencode/skills/*/SKILL.md` | the skill library, flat by domain. |
 | `.opencode/agent/*.md` | lean custom agents (coordination + domain). |
 | `.opencode/docs/` | `domains.md`, `contracts.md`. |
-| `mcp/pm/`, `mcp/graphics/` | reusable MCP servers (project-scoped state, locking). |
-| `mcp/base/locking_store.py` | shared concurrency-safe JSON store used by the `pm` server (a module, not a server). |
+| `.opencode/tasks/` | the **task store** — one Markdown file per ticket per project (`<project>/T-NNN.md` + `_meta.json` sidecar), version-controlled. |
+| `mcp/graphics/` | the graphics MCP server (captures, comparisons). |
 | `cpp/` | standalone AI-first C++23 build skeleton (its own `AGENTS.md`). |
-| `eclipse/` | the Eclipse plugin — the agentic IDE harness (chat, Server/Providers/Board views, the `eclipse-build` MCP build-tools endpoint, git-worktree fleet; Maven/Tycho reactor). |
+| `eclipse/` | the Eclipse plugin — the agentic IDE harness (chat, Server/Providers views, the `eclipse-build` MCP endpoint serving the C++ **and** `task_*` tool packs, git-worktree fleet, `tasks-tools.ps1` stdio launcher; Maven/Tycho reactor). |
 
 ## Skills (flat, by domain)
 
@@ -80,8 +84,10 @@ not static-vs-shared linkage (that is a build decision):
 
 ## The ticket / sprint workflow
 
-The `pm` MCP server stores **tickets** and **sprints**, scoped per **project** so several
-independent projects run at once. Ticket states:
+The **task store** (`.opencode/tasks/<project>/`, one Markdown file per ticket) holds
+**tickets** and **sprints**, scoped per **project** so several independent projects run at
+once. Agents read/write it through the `task_*` MCP tools; humans can read the files
+directly (and hand edits are tolerated between tool writes). Ticket states:
 
 ```
 product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
@@ -91,11 +97,12 @@ blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
 
 Key rules:
 
-- **Self-claim by role.** A worker loops `pm_claim_ticket(role=…)`; the call is atomic so
-  two agents never get the same ticket. A returned ticket (`pm_release_ticket`) can be
-  picked up by a *different* agent.
+- **Self-claim by role.** A worker loops `task_claim(role=…)`; the call is atomic (file
+  lock + temp-rename writes) so two agents never get the same ticket. A returned ticket
+  (`task_release`) can be picked up by a *different* agent. A claim with nothing to do
+  returns `null` — worker loops stop on it.
 - **Record artifacts.** When a worker produces a file, git commit/branch, or doc, it
-  records it with `pm_add_artifact(kind=file|git|path|url|doc, ref=…)` *before* moving to
+  records it with `task_add_artifact(kind=file|git|path|url|doc, ref=…)` *before* moving to
   `in-review` — the ticket is the hand-off contract.
 - **Rework loop.** Review/verification failure returns the ticket to `in-progress`.
 - **Bubble-up → escalation.** A blocked worker sets `blocked` + a `blocker`; the PM resolves
@@ -145,12 +152,12 @@ and in any per-agent override (only `graphics-expert` overrides, pinning to
 ## Recommended opencode workflow
 
 1. **Frame the project:** the human writes the brief/goal; the `pm` agent creates tickets
-   (`pm_create_ticket`) in `product-backlog`.
-2. **Sprint planning:** `pm_plan_sprint` commits tickets to a sprint (`sprint-backlog`).
-3. **Execute:** workers `pm_claim_ticket(role=…)`, use the matching `software-*` /
+   (`task_create`) in `product-backlog`.
+2. **Sprint planning:** `task_plan_sprint` commits tickets to a sprint (`sprint-backlog`).
+3. **Execute:** workers `task_claim(role=…)`, use the matching `software-*` /
    `test-software-*` skill, record artifacts, and move tickets to `in-review`.
 4. **Review & accept:** `reviewer` / test skills verify; the `pm` agent accepts → `done`.
-5. **Iterate:** defects rework; `pm_close_sprint` returns unfinished tickets to the backlog.
+5. **Iterate:** defects rework; `task_close_sprint` returns unfinished tickets to the backlog.
 
 Use **Plan mode** (`Tab`) for multi-file changes; `/agents` to pick an agent; `/models` to
 resolve a tier; the `orchestrator` dispatches parallel subagents. Skills auto-load from
@@ -161,14 +168,18 @@ resolve a tier; the `orchestrator` dispatches parallel subagents. Skills auto-lo
 1. [Install opencode](https://opencode.ai/docs/) (e.g. `npm install -g opencode-ai`).
 2. Connect providers via `/connect` (e.g. Z.AI, GitHub Copilot, OpenAI —
    whichever you use).
-3. Install MCP deps: `pip install -r mcp/pm/requirements.txt -r mcp/graphics/requirements.txt`.
-4. Run `opencode` from this repo. Skills, agents, and `AGENTS.md` auto-load; the `pm` and
-   `graphics` MCP servers start from `opencode.json`.
+3. Install the graphics MCP deps: `pip install -r mcp/graphics/requirements.txt`.
+4. Build the task tools once: `cd eclipse; .\build.ps1 -pl bundles/com.opencode.ide.tasks
+   -pl bundles/com.opencode.ide.tools clean package` (needs a JDK 17+; the launcher also
+   resolves gson from the local Tycho cache).
+5. Run `opencode` from this repo. Skills, agents, and `AGENTS.md` auto-load; the `tasks`
+   stdio launcher and the `graphics` MCP server start from `opencode.json`.
 
-> **MCP scope:** the bundled `pm` and `graphics` servers implement a deliberately
-> minimal stdio JSON-RPC loop (`initialize`, `tools/list`, `tools/call`). They expose
-> the tools listed above; they do not implement `resources`, `prompts`, cancellation,
-> or progress. That is sufficient for opencode tool calls.
+> **MCP scope:** the bundled servers implement a deliberately minimal JSON-RPC surface
+> (`initialize`, `tools/list`, `tools/call`). The `tasks` launcher (Java, stdio) and the
+> Eclipse-hosted `eclipse-build` endpoint (Streamable HTTP) expose the same `task_*` tool
+> set — one surface, two transports; `graphics` is stdio. None implement `resources`,
+> `prompts`, cancellation, or progress. That is sufficient for opencode tool calls.
 
 > **Local plugin deps:** `.opencode/` carries a local `.opencode/package.json`
 > (`@opencode-ai/plugin`) that is **git-ignored** along with its `node_modules` — it is
@@ -183,9 +194,13 @@ Hephaestus is a **template repo**. Copy the pieces you need:
 mkdir -p .opencode/skills .opencode/agent mcp
 cp -R /path/to/Hephaestus/.opencode/skills/* .opencode/skills/
 cp -R /path/to/Hephaestus/.opencode/agent/*  .opencode/agent/
-cp -R /path/to/Hephaestus/mcp/*               mcp/
+cp -R /path/to/Hephaestus/mcp/graphics       mcp/
 cp    /path/to/Hephaestus/opencode.json .
 cp    /path/to/Hephaestus/AGENTS.md .
+# task board: copy the launcher + build the bundles (or point opencode.json's
+# "tasks" entry at your own build of eclipse/tasks-tools.ps1)
+mkdir -p eclipse
+cp    /path/to/Hephaestus/eclipse/tasks-tools.ps1 eclipse/
 ```
 
 Trim to what you need (e.g. drop `graphics-*` / `mcp.graphics` if unused). Set the
@@ -221,8 +236,8 @@ host without Clang/Ninja, use `cmake --preset windows`.
 
 ### Third-party licenses
 
-The bundled MCP servers depend on **filelock** (Unlicense), **Pillow** (HPND)
-and **numpy** (BSD-3-Clause) — all permissive and compatible with MIT. Their
+The bundled graphics MCP server depends on **Pillow** (HPND) and **numpy**
+(BSD-3-Clause) — all permissive and compatible with MIT. Their
 full license texts and copyright notices are in
 [`THIRD-PARTY.md`](THIRD-PARTY.md). The local opencode Node plugin
 (`.opencode/`, git-ignored) and the `cpp/` template's test-only GoogleTest
