@@ -66,8 +66,17 @@ public final class ActivityTracker {
             return false;
         }
         String status = event.string("status");
-        MutableSession session = sessions.computeIfAbsent(sessionId, id -> new MutableSession());
         boolean running = "busy".equals(status) || "retry".equals(status);
+        MutableSession session = sessions.get(sessionId);
+        if (session == null) {
+            if (!running) {
+                return false;
+            }
+            MutableSession created = new MutableSession();
+            created.running = true;
+            sessions.put(sessionId, created);
+            return true;
+        }
         if (session.running != running) {
             session.running = running;
             return true;
@@ -103,34 +112,56 @@ public final class ActivityTracker {
         if (sessionId == null || partType == null) {
             return false;
         }
-        MutableSession session = sessions.computeIfAbsent(sessionId, id -> new MutableSession());
         if ("tool".equals(partType)) {
-            String tool = event.at("part.tool");
-            String state = event.at("part.state.status");
-            String file = firstNonNull(event.at("part.input.filePath"), event.at("part.input.path"),
-                    event.at("part.input.file"), event.at("part.input.absolutePath"));
-            if (tool == null && state == null) {
-                return false;
-            }
-            ToolActivity.State parsed = parseState(state);
-            String key = tool + "|" + file;
-            session.tools.put(key, new ToolActivity(tool, file, parsed));
-            if (file != null) {
-                if (parsed == ToolActivity.State.RUNNING) {
-                    files.put(file, new FileActivity(sessionId, tool, file));
-                } else {
-                    files.remove(file);
-                }
-            }
-            session.thinking = false;
-            return true;
+            return applyToolPart(event, sessionId);
         }
         boolean thinking = "reasoning".equals(partType);
+        MutableSession session = sessions.get(sessionId);
+        if (session == null) {
+            if (!thinking) {
+                return false;
+            }
+            session = sessions.computeIfAbsent(sessionId, id -> new MutableSession());
+        }
         if (session.thinking != thinking) {
             session.thinking = thinking;
             return true;
         }
         return false;
+    }
+
+    private boolean applyToolPart(OpencodeEvent event, String sessionId) {
+        String tool = event.at("part.tool");
+        String state = event.at("part.state.status");
+        if (tool == null && state == null) {
+            return false;
+        }
+        String file = firstNonNull(event.at("part.input.filePath"), event.at("part.input.path"),
+                event.at("part.input.file"), event.at("part.input.absolutePath"));
+        ToolActivity.State parsed = parseState(state);
+        ToolActivity activity = new ToolActivity(tool, file, parsed);
+        MutableSession session = sessions.computeIfAbsent(sessionId, id -> new MutableSession());
+        boolean changed = false;
+        ToolActivity previous = session.tools.put(tool + "|" + file, activity);
+        if (previous == null || !previous.equals(activity)) {
+            changed = true;
+        }
+        if (file != null) {
+            if (parsed == ToolActivity.State.RUNNING) {
+                FileActivity entry = new FileActivity(sessionId, tool, file);
+                FileActivity previousEntry = files.put(file, entry);
+                if (previousEntry == null || !previousEntry.equals(entry)) {
+                    changed = true;
+                }
+            } else if (files.remove(file) != null) {
+                changed = true;
+            }
+        }
+        if (session.thinking) {
+            session.thinking = false;
+            changed = true;
+        }
+        return changed;
     }
 
     private static ToolActivity.State parseState(String state) {
@@ -155,6 +186,9 @@ public final class ActivityTracker {
 
     /** Drops all derived state for a session (e.g. after it ended). */
     public void sessionEnded(String sessionId) {
+        if (sessionId == null) {
+            return;
+        }
         if (sessions.remove(sessionId) != null) {
             files.values().removeIf(f -> sessionId.equals(f.sessionId()));
             for (Runnable listener : listeners) {
@@ -168,7 +202,7 @@ public final class ActivityTracker {
         Map<String, SessionActivity> copy = new java.util.LinkedHashMap<>();
         sessions.forEach((id, session) -> copy.put(id,
                 new SessionActivity(id, session.running, session.thinking,
-                        new ArrayList<>(session.tools.values())));
+                        new ArrayList<>(session.tools.values()))));
         return new ActivitySnapshot(copy, new java.util.LinkedHashMap<>(files));
     }
 }

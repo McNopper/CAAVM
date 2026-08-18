@@ -12,8 +12,4 @@ public record SessionActivity(String sessionId, boolean running, boolean thinkin
     public SessionActivity {
         activity = activity == null ? List.of() : List.copyOf(activity);
     }
-
-    /** One tool invocation observed in a {@code message.part.updated} event. */
-    public record Tool(String tool, String file) {
-    }
 }

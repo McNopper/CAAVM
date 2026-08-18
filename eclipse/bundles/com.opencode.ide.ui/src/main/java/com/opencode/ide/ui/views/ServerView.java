@@ -3,6 +3,7 @@ package com.opencode.ide.ui.views;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,10 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.part.ViewPart;
 
 import com.opencode.ide.client.OpencodeEventListener;
+import com.opencode.ide.client.activity.ActivityTracker;
+import com.opencode.ide.client.activity.FileActivity;
+import com.opencode.ide.client.activity.SessionActivity;
+import com.opencode.ide.client.activity.ToolActivity;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.OpencodeEvent;
@@ -53,9 +58,12 @@ public class ServerView extends ViewPart implements Refreshable {
 
     private volatile ServerNode current;
     private OpencodeEventListener eventListener;
+    private Runnable trackerListener;
     private boolean refreshPending;
 
-    enum CategoryKind { AGENTS, SESSIONS }
+    private final ActivityTracker tracker = new ActivityTracker();
+
+    enum CategoryKind { AGENTS, SESSIONS, ACTIVE_FILES }
 
     static final class ServerNode {
         final String mode;
@@ -69,6 +77,7 @@ public class ServerView extends ViewPart implements Refreshable {
         final Map<String, String> activity;    // sessionId -> live label ("thinking"/"running tool"/...)
         final CategoryNode agentsCategory;
         final CategoryNode sessionsCategory;
+        final CategoryNode filesCategory;
 
         ServerNode(String mode, String url, boolean healthy, String version, Long pid,
                 List<Agent> agents, List<Session> sessions, Map<String, SessionStatus> statuses) {
@@ -83,6 +92,7 @@ public class ServerView extends ViewPart implements Refreshable {
             this.activity = new HashMap<>();
             this.agentsCategory = new CategoryNode("Agents", CategoryKind.AGENTS, this);
             this.sessionsCategory = new CategoryNode("Sessions", CategoryKind.SESSIONS, this);
+            this.filesCategory = new CategoryNode("Active files", CategoryKind.ACTIVE_FILES, this);
         }
     }
 
@@ -108,7 +118,7 @@ public class ServerView extends ViewPart implements Refreshable {
                 SWT.MULTI | SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION | SWT.BORDER);
         viewer.getTree().setHeaderVisible(true);
         viewer.getTree().setLinesVisible(true);
-        viewer.setContentProvider(new TreeContentProvider());
+        viewer.setContentProvider(new TreeContentProvider(tracker));
 
         TreeViewerColumn nameCol = new TreeViewerColumn(viewer, SWT.NONE);
         nameCol.getColumn().setText("Name");
@@ -251,22 +261,40 @@ public class ServerView extends ViewPart implements Refreshable {
             eventListener = this::onEvent;
             OpencodeConnection.getInstance().addEventListener(eventListener);
         }
+        if (trackerListener == null) {
+            trackerListener = this::onTrackerChanged;
+            tracker.addListener(trackerListener);
+        }
         // Pass a list as input (NOT the ServerNode itself): if the input equals a
         // tree element, the TreeViewer's expansion logic can misbehave.
         viewer.setInput(java.util.List.of(node));
         // Default: server + categories expanded so agents and the top-level sessions
         // are visible, but the subagent children stay collapsed (use Expand All to open them).
-        viewer.setExpandedElements(new Object[] { node, node.agentsCategory, node.sessionsCategory });
+        viewer.setExpandedElements(
+                new Object[] { node, node.agentsCategory, node.sessionsCategory, node.filesCategory });
         updateContentDescription();
     }
 
     // ---------- live updates (driven by /event SSE via core) ----------
 
-    /** Called on the SSE thread; hop to the UI thread to mutate the viewer's model. */
+    /** Called on the SSE thread; feeds the tracker, then hops to the UI thread to mutate the viewer's model. */
     private void onEvent(OpencodeEvent event) {
+        tracker.apply(event);
         Display display = Display.getDefault();
         if (display != null && !display.isDisposed()) {
             display.asyncExec(() -> handleEvent(event));
+        }
+    }
+
+    /** Called on the SSE thread when derived activity changes; hop to the UI thread for a coalesced refresh. */
+    private void onTrackerChanged() {
+        Display display = Display.getDefault();
+        if (display != null && !display.isDisposed()) {
+            display.asyncExec(() -> {
+                if (viewer != null && !viewer.getControl().isDisposed()) {
+                    scheduleRefresh();
+                }
+            });
         }
     }
 
@@ -427,8 +455,15 @@ public class ServerView extends ViewPart implements Refreshable {
             return "opencode server";
         }
         if (element instanceof CategoryNode c) {
-            int count = (c.kind == CategoryKind.AGENTS) ? c.server.agents.size() : c.server.sessions.size();
+            int count = switch (c.kind) {
+                case AGENTS -> c.server.agents.size();
+                case SESSIONS -> c.server.sessions.size();
+                case ACTIVE_FILES -> tracker.snapshot().files().size();
+            };
             return c.label + " (" + count + ")";
+        }
+        if (element instanceof FileActivity f) {
+            return f.file() + " \u2014 " + f.tool() + " (" + shortId(f.sessionId()) + ")";
         }
         if (element instanceof Agent a) {
             return a.name();
@@ -486,8 +521,11 @@ public class ServerView extends ViewPart implements Refreshable {
             return sb.toString();
         }
         if (element instanceof Session s) {
-            // prefer the live activity label (thinking / running tool / responding) when present
-            String live = (current != null) ? current.activity.get(s.id()) : null;
+            // prefer the derived activity label (thinking… / tool: name — file), then the legacy part label
+            String live = trackerLabel(s.id());
+            if (live == null && current != null) {
+                live = current.activity.get(s.id());
+            }
             StringBuilder sb = new StringBuilder(live != null ? live : statusOf(s));
             if (s.parentID() != null) {
                 sb.append(" • subagent");
@@ -510,7 +548,9 @@ public class ServerView extends ViewPart implements Refreshable {
         if (element instanceof Session s) {
             // busy/thinking sessions get a distinct (orange) icon so changes are visible at a glance
             ServerNode node = current;
-            boolean active = isBusy(node, s) || (node != null && node.activity.containsKey(s.id()));
+            boolean active = isBusy(node, s)
+                    || (node != null && node.activity.containsKey(s.id()))
+                    || sessionActive(s.id());
             return UiActivator.image(active ? UiActivator.ICON_AGENT_BUSY : UiActivator.ICON_AGENT);
         }
         if (element instanceof Agent) {
@@ -527,6 +567,44 @@ public class ServerView extends ViewPart implements Refreshable {
         SessionStatus status = node.statuses.get(s.id());
         String type = (status == null || status.type() == null) ? "idle" : status.type();
         return type;
+    }
+
+    /** Derived live label from the tracker: thinking, else the first still-running tool. */
+    private String trackerLabel(String sessionId) {
+        SessionActivity session = tracker.snapshot().sessions().get(sessionId);
+        if (session == null) {
+            return null;
+        }
+        if (session.thinking()) {
+            return "thinking\u2026";
+        }
+        ToolActivity running = session.activity().stream()
+                .filter(t -> t.state() == ToolActivity.State.RUNNING)
+                .findFirst()
+                .orElse(null);
+        if (running == null) {
+            return null;
+        }
+        return running.file() != null
+                ? "tool: " + running.tool() + " \u2014 " + running.file()
+                : "tool: " + running.tool();
+    }
+
+    /** Whether the tracker currently sees activity (running/thinking/tool) for the session. */
+    private boolean sessionActive(String sessionId) {
+        SessionActivity session = tracker.snapshot().sessions().get(sessionId);
+        if (session == null) {
+            return false;
+        }
+        return session.running() || session.thinking()
+                || session.activity().stream().anyMatch(t -> t.state() == ToolActivity.State.RUNNING);
+    }
+
+    private static String shortId(String sessionId) {
+        if (sessionId == null) {
+            return "";
+        }
+        return sessionId.length() <= 8 ? sessionId : sessionId.substring(0, 8);
     }
 
     private static boolean isBusy(ServerNode node, Session s) {
@@ -561,7 +639,12 @@ public class ServerView extends ViewPart implements Refreshable {
 
     /** Tree content provider: server -> categories -> items; sessions nest by parentID. */
     private static final class TreeContentProvider implements ITreeContentProvider {
+        private final ActivityTracker tracker;
         private ServerNode root;
+
+        TreeContentProvider(ActivityTracker tracker) {
+            this.tracker = tracker;
+        }
 
         @Override
         public Object[] getElements(Object input) {
@@ -580,7 +663,13 @@ public class ServerView extends ViewPart implements Refreshable {
         @Override
         public Object[] getChildren(Object parent) {
             if (parent instanceof ServerNode node) {
-                return new Object[] { node.agentsCategory, node.sessionsCategory };
+                List<Object> children = new ArrayList<>();
+                children.add(node.agentsCategory);
+                children.add(node.sessionsCategory);
+                if (!tracker.snapshot().files().isEmpty()) {
+                    children.add(node.filesCategory); // hidden while nothing is being worked on
+                }
+                return children.toArray();
             }
             if (parent instanceof CategoryNode category) {
                 if (category.kind == CategoryKind.AGENTS) {
@@ -588,6 +677,9 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 if (category.kind == CategoryKind.SESSIONS) {
                     return topLevelSessions(category.server).toArray();
+                }
+                if (category.kind == CategoryKind.ACTIVE_FILES) {
+                    return activeFiles();
                 }
                 return new Object[0];
             }
@@ -613,6 +705,9 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 if (category.kind == CategoryKind.SESSIONS) {
                     return category.server.sessions.stream().anyMatch(s -> s.parentID() == null);
+                }
+                if (category.kind == CategoryKind.ACTIVE_FILES) {
+                    return !tracker.snapshot().files().isEmpty();
                 }
             }
             if (parent instanceof Session session && root != null) {
@@ -647,6 +742,12 @@ public class ServerView extends ViewPart implements Refreshable {
                     .collect(Collectors.toList());
         }
 
+        private Object[] activeFiles() {
+            return tracker.snapshot().files().values().stream()
+                    .sorted(Comparator.comparing(FileActivity::file))
+                    .toArray();
+        }
+
         private static List<Session> childrenOf(ServerNode node, Session parent) {
             return node.sessions.stream()
                     .filter(s -> parent.id() != null && parent.id().equals(s.parentID()))
@@ -657,6 +758,10 @@ public class ServerView extends ViewPart implements Refreshable {
 
     @Override
     public void dispose() {
+        if (trackerListener != null) {
+            tracker.removeListener(trackerListener);
+            trackerListener = null;
+        }
         if (eventListener != null) {
             try {
                 OpencodeConnection.getInstance().removeEventListener(eventListener);
