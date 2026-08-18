@@ -47,6 +47,7 @@ Three ideas hold it together:
 | `mcp/pm/`, `mcp/graphics/` | reusable MCP servers (project-scoped state, locking). |
 | `mcp/base/locking_store.py` | shared concurrency-safe JSON store used by the `pm` server (a module, not a server). |
 | `cpp/` | standalone AI-first C++23 build skeleton (its own `AGENTS.md`). |
+| `eclipse/` | the Eclipse plugin — the agentic IDE harness (chat, Server/Providers/Board views, the `eclipse-build` MCP build-tools endpoint, git-worktree fleet; Maven/Tycho reactor). |
 
 ## Skills (flat, by domain)
 

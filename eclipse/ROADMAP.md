@@ -1,3 +1,5 @@
+> **Superseded** — the consolidated roadmap now lives at the repository root: [`../ROADMAP.md`](../ROADMAP.md). This file remains as the detailed pre-consolidation history.
+
 # Roadmap — opencode-eclipse
 
 What we're building, why, and in what order. This lives alongside `README.md` (architecture/build)

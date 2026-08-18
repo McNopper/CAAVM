@@ -39,7 +39,7 @@ agents run headless; the IDE is the human's overview + takeover surface. See
 ```
 opencode-eclipse/
 ├── build.ps1                      # thin wrapper: resolves a JDK, then runs the Maven Wrapper
-├── deploy-dev.ps1                 # copies the 8 built JARs to C:\eclipse-cpp\dropins\opencode-ide\plugins\
+├── deploy-dev.ps1                 # copies the 8 built JARs to <eclipse-install>\dropins\opencode-ide\plugins\
 ├── mvnw.cmd / mvnw / .mvn/        # Maven Wrapper (Maven 3.9.9) — no system Maven needed
 ├── pom.xml                        # Tycho 5.0.3 reactor parent
 ├── releng/opencode-eclipse.target # target platform (2026-06 repo)
@@ -106,7 +106,7 @@ Apply these to every change so the plugin stays consistent:
   (note: `ui` needs `core` in the reactor to resolve its `Require-Bundle`). Avoid repeated
   full-reactor `clean verify` unless you need the tests + p2 repo. Use `-pl a -pl b`
   (repeated), not `-pl a,b` (comma is an arg separator under `cmd.exe`).
-- **dropins dev deploy uses the `plugins/` layout:** `C:\eclipse-cpp\dropins\opencode-ide\plugins\*.jar`
+- **dropins dev deploy uses the `plugins/` layout:** `<eclipse-install>\dropins\opencode-ide\plugins\*.jar`
   (a folder of loose JARs is rejected by p2 with "No repository found"). `deploy-dev.ps1` handles this.
 - **Eclipse must be closed** before `deploy-dev.ps1` (the bundle jar is locked while Eclipse runs).
 - **opencode v1.18.x DTO contract.** Agent uses `native` (not `builtIn`) and `permission` is an
@@ -126,7 +126,7 @@ renderer/bridge checks (or pass `-DskipNodeChecks=true`).
 Full reactor build (heavy — compiles everything, runs all tests, assembles the p2 site):
 
 ```powershell
-cd C:\Temp\IDE\opencode-eclipse
+cd eclipse   # from the repo root
 .\build.ps1 clean verify
 ```
 
@@ -157,9 +157,9 @@ import). The full reactor additionally assembles the p2 update site at
 ## Install into Eclipse CDT
 
 1. Build (above).
-2. In Eclipse CDT (`C:\eclipse-cpp`): **Help → Install New Software…**
+2. In Eclipse CDT (`<eclipse-install>`, default `C:\eclipse-cpp`): **Help → Install New Software…**
 3. **Add…** a local repository pointing at:
-   `C:\Temp\IDE\opencode-eclipse\releng\com.opencode.ide.repository\target\repository`
+   `<repo>/eclipse/releng/com.opencode.ide.repository/target/repository`
 4. Select the **OpenCode IDE** feature, finish, restart.
 
 ## Use the first feature (query providers & agents)

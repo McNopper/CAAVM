@@ -5,16 +5,17 @@
 # Usage:
 #   .\build.ps1 clean verify     # build first
 #   .\deploy-dev.ps1             # copy JARs to dropins
-#   # then restart C:\eclipse-cpp (add -clean to eclipse.ini once if state is stale)
+#   # then restart the Eclipse install (default C:\eclipse-cpp; -EclipseRoot / ECLIPSE_HOME to override)
+param([string]$EclipseRoot = $(if ($env:ECLIPSE_HOME) { $env:ECLIPSE_HOME } else { "C:\eclipse-cpp" }))
 $ErrorActionPreference = "Stop"
 
 $root      = Split-Path -Parent $MyInvocation.MyCommand.Path
 $bundleDir = Join-Path $root "bundles"
-$dropins   = Join-Path "C:\eclipse-cpp" "dropins\opencode-ide"
+$dropins   = Join-Path $EclipseRoot "dropins\opencode-ide"
 $plugins   = Join-Path $dropins "plugins"
 
-if (-not (Test-Path "C:\eclipse-cpp\dropins")) {
-    throw "C:\eclipse-cpp\dropins not found. Is Eclipse CDT installed at C:\eclipse-cpp?"
+if (-not (Test-Path (Join-Path $EclipseRoot "dropins"))) {
+    throw "$EclipseRoot\dropins not found. Is Eclipse CDT installed there? (default C:\eclipse-cpp; pass -EclipseRoot or set ECLIPSE_HOME to override)"
 }
 
 # wipe the whole opencode-ide dropin so p2 never sees stale versions/layouts
@@ -36,6 +37,6 @@ foreach ($b in $bundles) {
 }
 
 Write-Host ""
-Write-Host "Done. (Re)start C:\eclipse-cpp to load the plugins." -ForegroundColor Cyan
+Write-Host "Done. (Re)start $EclipseRoot to load the plugins." -ForegroundColor Cyan
 Write-Host "If views/perspective don't update, run eclipse once with -clean" -ForegroundColor DarkGray
-Write-Host "(add '-clean' on its own line near the top of C:\eclipse-cpp\eclipse.ini, then remove it after one launch)." -ForegroundColor DarkGray
+Write-Host "(add '-clean' on its own line near the top of $EclipseRoot\eclipse.ini, then remove it after one launch)." -ForegroundColor DarkGray

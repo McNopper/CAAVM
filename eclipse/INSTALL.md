@@ -1,8 +1,9 @@
 # OpenCode IDE plugin — install & run guide
 
 Eclipse plugin integrating [opencode](https://opencode.ai) into the Eclipse CDT IDE
-(`C:\eclipse-cpp`, Eclipse 4.40 / Java 21 / CDT 12.5). Source lives at
-`C:\Temp\IDE\opencode-eclipse`.
+(`<eclipse-install>` — default `C:\eclipse-cpp`; the deploy scripts accept an
+`-EclipseRoot` argument or the `ECLIPSE_HOME` env var; Eclipse 4.40 / Java 21 / CDT 12.5).
+Source lives in the repo's `eclipse/` folder.
 
 ## Prerequisites
 
@@ -26,7 +27,7 @@ Eclipse plugin integrating [opencode](https://opencode.ai) into the Eclipse CDT 
 Full reactor (heavy; also builds the p2 site):
 
 ```powershell
-cd C:\Temp\IDE\opencode-eclipse
+cd eclipse   # from the repo root
 .\build.ps1 clean verify
 ```
 
@@ -57,24 +58,24 @@ Copies the freshly built plugin JARs straight into the Eclipse dropins folder.
 
 ```powershell
 .\build.ps1 clean verify
-.\deploy-dev.ps1            # copies the 8 JARs to C:\eclipse-cpp\dropins\opencode-ide\plugins\
+.\deploy-dev.ps1            # copies the 8 JARs to <eclipse-install>\dropins\opencode-ide\plugins\
 ```
 
-Then **(re)start `C:\eclipse-cpp`** and open the **OpenCode** perspective.
+Then **(re)start Eclipse CDT** and open the **OpenCode** perspective.
 
 - Re-run both lines after any code change, then restart Eclipse.
 - If the perspective/views don't refresh after a change, run Eclipse once with `-clean`
-  (add a line `-clean` near the top of `C:\eclipse-cpp\eclipse.ini`, start once, remove it).
-- **Undo:** delete `C:\eclipse-cpp\dropins\opencode-ide\` and restart — plugin is gone.
+  (add a line `-clean` near the top of `<eclipse-install>\eclipse.ini`, start once, remove it).
+- **Undo:** delete `<eclipse-install>\dropins\opencode-ide\` and restart — plugin is gone.
 - No debugging/breakpoints with this route.
 
 ### Option B — p2 install (stable / "production")
 
 Install the built p2 repository into Eclipse once:
 
-1. In `C:\eclipse-cpp`: **Help → Install New Software…**
+1. In Eclipse CDT: **Help → Install New Software…**
 2. **Add…** → **Local** → select
-   `C:\Temp\IDE\opencode-eclipse\releng\com.opencode.ide.repository\target\repository`
+   `<repo>/eclipse/releng/com.opencode.ide.repository/target/repository`
 3. Select **OpenCode IDE**, finish, restart.
 
 To update after a rebuild: Help → **Installation Details** → uninstall, then reinstall,
@@ -91,7 +92,7 @@ one-time setup:
    - **Eclipse Java Development Tools**
    - **Maven Integration for Eclipse (m2e)** (+ the m2e Tycho/PDE connector if prompted)
 2. Restart Eclipse.
-3. *File → Import → Maven → Existing Maven Projects* → select `C:\Temp\IDE\opencode-eclipse`.
+3. *File → Import → Maven → Existing Maven Projects* → select the repo's `eclipse` folder.
 4. **Run → Debug As → Eclipse Application** — launches a 2nd Eclipse with your workspace
    plugins live. Set breakpoints in `AgentsView`, `ProvidersView`, `HttpOpencodeClient`, etc.
    Relaunch picks up code changes; no restart/copy needed.
@@ -153,5 +154,5 @@ one-time setup:
 
 ## Uninstall
 
-- **dropins:** delete `C:\eclipse-cpp\dropins\opencode-ide\` and restart.
+- **dropins:** delete `<eclipse-install>\dropins\opencode-ide\` and restart.
 - **p2:** Help → Installation Details → select **OpenCode IDE** → Uninstall.

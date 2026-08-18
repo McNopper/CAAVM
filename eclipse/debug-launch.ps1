@@ -7,10 +7,12 @@ param(
 )
 $ErrorActionPreference = "Continue"
 $eclipse = "C:\eclipse-cpp\eclipsec.exe"
-$ws = "C:\Users\norbe\AppData\Local\Temp\opencode\eclipse-ws"
-$log = "C:\Users\norbe\AppData\Local\Temp\opencode\eclipse-console.log"
+$ocTemp  = Join-Path $env:TEMP "opencode"
+$ws      = Join-Path $ocTemp "eclipse-ws"
+$log     = Join-Path $ocTemp "eclipse-console.log"
 
 if (-not (Test-Path $eclipse)) { throw "eclipsec.exe not found at $eclipse" }
+New-Item -ItemType Directory -Path $ocTemp -Force | Out-Null
 Remove-Item $log -ErrorAction SilentlyContinue
 Remove-Item "$log.err" -ErrorAction SilentlyContinue
 if (-not (Test-Path $ws)) { New-Item -ItemType Directory -Path $ws -Force | Out-Null }

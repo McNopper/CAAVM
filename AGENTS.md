@@ -96,6 +96,16 @@ Verification maps by level: `test-software-implementation` (unit) ↔ `software-
   (pinned to `very-high`) drives them for frontier-level graphics work; `graphics-render-comparison`
   is the thin methodology skill.
 
+## eclipse/ — the IDE harness
+
+The Eclipse plugin (`eclipse/`) is the **agentic harness**: chat plus Server/Providers/Board
+views, the MCP build-tools endpoint `eclipse-build`, a git-worktree agent fleet, and the
+headless FleetRunner. It is a Maven/Tycho reactor — **Maven plans, CMake builds**.
+
+- **Build:** `cd eclipse; .\build.ps1 clean verify` (Java 21 + Tycho; Node for the chat-web checks).
+- **Deploy:** `.\deploy-dev.ps1` (`ECLIPSE_HOME` / `-EclipseRoot`, default `C:\eclipse-cpp`).
+- **Docs:** `eclipse/README.md`, `eclipse/ARCHITECTURE.md`, and the root `ROADMAP.md`.
+
 ## Model tiers (model-neutral agents)
 
 Agents and docs reference **tiers**, never hard-coded model IDs. The concrete
