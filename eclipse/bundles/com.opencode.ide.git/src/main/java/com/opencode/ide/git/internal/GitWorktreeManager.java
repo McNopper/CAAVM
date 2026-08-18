@@ -1,0 +1,242 @@
+package com.opencode.ide.git.internal;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import com.opencode.ide.git.MergeResult;
+import com.opencode.ide.git.Worktree;
+import com.opencode.ide.git.WorktreeException;
+import com.opencode.ide.git.WorktreeManager;
+import com.opencode.ide.git.WorktreeStatus;
+
+/**
+ * Worktree manager on top of the git CLI. All invocations go through
+ * {@code git -C <dir> ...} with UTF-8 output capture and a timeout.
+ */
+public final class GitWorktreeManager implements WorktreeManager {
+
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration MERGE_TIMEOUT = Duration.ofMinutes(10);
+    private static final String FLEET_DIR = ".git/opencode-fleet";
+    private static final String BRANCH_PREFIX = "opencode/";
+
+    private final String gitCommand;
+    private final String gitOrigin;
+
+    public GitWorktreeManager() {
+        GitLocator.Resolution resolution = GitLocator.resolve();
+        this.gitCommand = resolution.command().toString();
+        this.gitOrigin = resolution.source();
+    }
+
+    @Override
+    public Worktree create(Path repoRoot, String taskId) {
+        String branch = branchFor(requireTaskId(taskId));
+        Path repo = repo(repoRoot);
+        Path worktreePath = fleetRoot(repo).resolve(taskId);
+        if (branchExists(repo, branch)) {
+            throw new WorktreeException("Branch " + branch + " already exists for task '" + taskId + "'");
+        }
+        if (Files.exists(worktreePath)) {
+            throw new WorktreeException("Worktree path already exists for task '" + taskId + "': " + worktreePath);
+        }
+        git(repo, "worktree", "add", "-b", branch, worktreePath.toString(), "HEAD");
+        return new Worktree(taskId, worktreePath, branch);
+    }
+
+    @Override
+    public List<Worktree> list(Path repoRoot) {
+        Path repo = repo(repoRoot);
+        Path fleet = fleetRoot(repo);
+        GitOutput out = git(repo, "worktree", "list", "--porcelain");
+        List<Worktree> result = new ArrayList<>();
+        Path current = null;
+        for (String line : out.stdout().split("\\R")) {
+            if (line.startsWith("worktree ")) {
+                current = Path.of(line.substring("worktree ".length()).trim()).toAbsolutePath().normalize();
+            } else if (line.isBlank()) {
+                current = collect(result, fleet, current);
+            }
+        }
+        collect(result, fleet, current);
+        return List.copyOf(result);
+    }
+
+    @Override
+    public Optional<Worktree> find(Path repoRoot, String taskId) {
+        requireTaskId(taskId);
+        return list(repoRoot).stream()
+                .filter(w -> w.taskId().equals(taskId))
+                .findFirst();
+    }
+
+    @Override
+    public void remove(Path repoRoot, String taskId, boolean force) {
+        requireTaskId(taskId);
+        Path repo = repo(repoRoot);
+        Worktree wt = find(repo, taskId)
+                .orElseThrow(() -> new WorktreeException("No fleet worktree for task '" + taskId + "'"));
+        List<String> removeArgs = new ArrayList<>(List.of("worktree", "remove"));
+        if (force) {
+            removeArgs.add("--force");
+        }
+        removeArgs.add(wt.path().toString());
+        git(repo, removeArgs.toArray(new String[0]));
+        git(repo, "branch", force ? "-D" : "-d", wt.branch());
+    }
+
+    @Override
+    public MergeResult mergeBack(Path repoRoot, String taskId) {
+        requireTaskId(taskId);
+        Path repo = repo(repoRoot);
+        String branch = find(repo, taskId)
+                .orElseThrow(() -> new WorktreeException("No fleet worktree for task '" + taskId + "'"))
+                .branch();
+        GitOutput merge = run(repo, MERGE_TIMEOUT, "merge", branch);
+        String output = (merge.stdout() + merge.stderr()).trim();
+        if (merge.exitCode() == 0) {
+            return new MergeResult(true, List.of(), output);
+        }
+        List<String> conflicted = List.of();
+        if (mergeInProgress(repo)) {
+            GitOutput conflicts = run(repo, DEFAULT_TIMEOUT, "diff", "--name-only", "--diff-filter=U");
+            conflicted = Arrays.stream(conflicts.stdout().split("\\R"))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            GitOutput abort = run(repo, DEFAULT_TIMEOUT, "merge", "--abort");
+            if (abort.exitCode() != 0) {
+                throw new WorktreeException("git merge --abort failed (exit " + abort.exitCode() + "): "
+                        + abort.stderr().trim());
+            }
+        }
+        return new MergeResult(false, conflicted, output);
+    }
+
+    @Override
+    public WorktreeStatus status(Path repoRoot, String taskId) {
+        String branch = branchFor(requireTaskId(taskId));
+        Path repo = repo(repoRoot);
+        if (!branchExists(repo, branch)) {
+            return new WorktreeStatus(false, 0, "");
+        }
+        Path worktreePath = fleetRoot(repo).resolve(taskId);
+        if (!Files.isDirectory(worktreePath)) {
+            return new WorktreeStatus(false, 0, "");
+        }
+        GitOutput status = git(worktreePath, "status", "--porcelain");
+        int dirty = (int) Arrays.stream(status.stdout().split("\\R"))
+                .filter(s -> !s.isBlank())
+                .count();
+        GitOutput head = git(worktreePath, "rev-parse", "--short", "HEAD");
+        return new WorktreeStatus(true, dirty, head.stdout().trim());
+    }
+
+    private static Path collect(List<Worktree> into, Path fleet, Path candidate) {
+        if (candidate != null && candidate.startsWith(fleet) && !candidate.equals(fleet)) {
+            String taskId = candidate.getFileName().toString();
+            into.add(new Worktree(taskId, candidate, BRANCH_PREFIX + taskId));
+        }
+        return null;
+    }
+
+    private static Path repo(Path repoRoot) {
+        return repoRoot.toAbsolutePath().normalize();
+    }
+
+    private static Path fleetRoot(Path repo) {
+        return repo.resolve(FLEET_DIR);
+    }
+
+    private static String branchFor(String taskId) {
+        return BRANCH_PREFIX + taskId;
+    }
+
+    private static String requireTaskId(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            throw new WorktreeException("taskId must not be null or blank");
+        }
+        if (taskId.matches(".*[/\\\\\\s].*")) {
+            throw new WorktreeException("taskId must not contain slashes or whitespace: '" + taskId + "'");
+        }
+        return taskId;
+    }
+
+    private boolean branchExists(Path repo, String branch) {
+        return run(repo, DEFAULT_TIMEOUT, "rev-parse", "--verify", "--quiet", "refs/heads/" + branch)
+                .exitCode() == 0;
+    }
+
+    private boolean mergeInProgress(Path repo) {
+        return run(repo, DEFAULT_TIMEOUT, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+                .exitCode() == 0;
+    }
+
+    private record GitOutput(int exitCode, String stdout, String stderr) {
+    }
+
+    private GitOutput git(Path directory, String... args) {
+        GitOutput out = run(directory, DEFAULT_TIMEOUT, args);
+        if (out.exitCode() != 0) {
+            throw new WorktreeException("git " + String.join(" ", args) + " failed (exit " + out.exitCode()
+                    + "): " + out.stderr().trim());
+        }
+        return out;
+    }
+
+    private GitOutput run(Path directory, Duration timeout, String... args) {
+        List<String> command = new ArrayList<>();
+        command.add(gitCommand);
+        command.add("-C");
+        command.add(directory.toString());
+        command.addAll(List.of(args));
+        Process process;
+        try {
+            process = new ProcessBuilder(command).start();
+        } catch (IOException e) {
+            throw new WorktreeException("Failed to start git (resolved via " + gitOrigin + ": " + gitCommand
+                    + "): " + e.getMessage(), e);
+        }
+        CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> readUtf8(process.getInputStream()));
+        CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> readUtf8(process.getErrorStream()));
+        boolean finished;
+        try {
+            finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new WorktreeException("Interrupted while waiting for git " + Arrays.toString(args), e);
+        }
+        if (!finished) {
+            process.destroyForcibly();
+            throw new WorktreeException("git " + Arrays.toString(args) + " timed out after " + timeout);
+        }
+        return new GitOutput(process.exitValue(), join(stdout), join(stderr));
+    }
+
+    private static String join(CompletableFuture<String> future) {
+        try {
+            return future.get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String readUtf8(InputStream in) {
+        try (in) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
+        }
+    }
+}

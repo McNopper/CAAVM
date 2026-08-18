@@ -1,0 +1,246 @@
+# opencode-eclipse
+
+An **Eclipse-based agentic C++ harness**: [opencode](https://opencode.ai) agents create, build,
+test, lint, format and debug C/C++ projects headless (CMake-first, multi-toolchain: MSVC +
+MSYS2 clang64/mingw64/ucrt64), isolated in git worktrees, while the human uses Eclipse CDT for
+overview and takeover. Built with Maven Tycho against Eclipse Platform 4.40 (SimRel 2026-06),
+Java 21, CDT 12.5. The tool layer is a language-agnostic SPI — Python/other packs plug in later.
+
+## Architecture — strictly separated OSGi bundles
+
+**Four separation axes govern every module** (full rationale + migration plan in
+[`ARCHITECTURE.md`](ARCHITECTURE.md)): **Eclipse vs. non-Eclipse** (pure Java stays reusable
+outside OSGi), **Java vs. non-Java** (the `web/` chat renderer is a standalone component with a
+versioned bridge contract), **dev-environment packs** (C++ today, Python etc. later — behind the
+`ToolProvider` SPI), and **coding-agent backend** (opencode today; the client layer is the seam
+for a second backend, extracted when one actually arrives).
+
+| Bundle | Layer | Depends on | Purpose |
+|---|---|---|---|
+| `com.opencode.ide.client` | **opencode** | `com.google.gson` only — **Eclipse-free, build-enforced** | Pure-Java opencode HTTP client, DTOs (records mirroring the server's OpenAPI), `ChatRequests`/`McpRequests`, SSE parsing + event stream, server launcher, `ClientLog` seam. Reusable as a plain library outside Eclipse/OSGi. |
+| `com.opencode.ide.core` | **eclipse adapter** | `client` + Eclipse runtime | Eclipse glue: preferences, activator (installs the Eclipse `ClientLog` adapter), `ProjectContext` service tracking, `OpencodeConnection` lifecycle. |
+| `com.opencode.ide.ui` | **eclipse** | `core` + `client` + `org.eclipse.ui`/`jface`/`swt` | The **OpenCode** perspective, the Server/Providers views, the connection preference page. |
+| `com.opencode.ide.chat` | **chat ui** | `core` + `client` + `ui` + SWT `Browser` | Eclipse **host** for the chat-web component: `ChatPage` (browser facade) + `ChatSessionController` (SWT-free) + embedded `ChatWebServer` serving the component's assets. |
+| `components/chat-web` | **non-Java** | — (static assets + node checks) | The standalone chat renderer (markdown + KaTeX + highlight.js + mermaid) with a documented bridge contract — hostable in any environment that serves files and calls JS. |
+| `com.opencode.ide.git` | **agentic git** | — (git CLI) — Eclipse-free | `WorktreeManager`: branch + worktree per agent task (under `.git/opencode-fleet/`), serial merge-back with clean conflict abort. Fleet isolation layer, no UI. |
+| `com.opencode.ide.fleet` | **fleet engine** | `client` + `git` — **Eclipse-free, build-enforced** | `FleetRunner`: the headless Phase 15 loop — submit (worktree + directory-scoped session + prompt) → poll completion → merge back (MERGED / FAILED-on-conflict). The future Fleet view drives this. |
+| `com.opencode.ide.tools` | **agent tools** | `com.google.gson` only — **Eclipse-free, build-enforced** | **`ToolProvider` SPI** + JSON-RPC dispatch + the built-in C++ tool pack (`tools.cpp`: toolchains, build, lint, format). Future language packs = new providers depending on this bundle only. |
+| `com.opencode.ide.mcp` | **agent endpoint** | `tools` + gson | Local **MCP server** (stateless Streamable HTTP on 127.0.0.1): OSGi DS lifecycle + HTTP endpoint only; tool implementations live in `tools`. |
+| `com.opencode.ide.cdt` | **C++/CDT** | `core` + CDT bundles | (Phase 4) implements the `ProjectContext` seam that will feed CDT project info into opencode. Stub for now. |
+
+Dependency rules (enforced in the manifests, plus build-time Eclipse-import bans in
+`client` and `tools`): **client and tools are Eclipse-free**; core/ui/cdt/chat depend on them;
+`client` never depends on the others. The core/UI bundles talk to the CDT layer only through the
+`ProjectContext` interface (defined in core's context package), implemented as an OSGi service in
+the cdt bundle. `git`, `tools` and `components/chat-web` have no Eclipse dependencies at all —
+agents run headless; the IDE is the human's overview + takeover surface. See
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the four separation axes and the review checklist.
+
+```
+opencode-eclipse/
+├── build.ps1                      # thin wrapper: resolves a JDK, then runs the Maven Wrapper
+├── deploy-dev.ps1                 # copies the 8 built JARs to C:\eclipse-cpp\dropins\opencode-ide\plugins\
+├── mvnw.cmd / mvnw / .mvn/        # Maven Wrapper (Maven 3.9.9) — no system Maven needed
+├── pom.xml                        # Tycho 5.0.3 reactor parent
+├── releng/opencode-eclipse.target # target platform (2026-06 repo)
+├── components/
+│   └── chat-web/                  # standalone chat renderer (web assets + node checks + README)
+├── bundles/
+│   ├── com.opencode.ide.client    # + client.tests — pure-Java opencode client (Eclipse-free)
+│   ├── com.opencode.ide.core      # Eclipse adapter (preferences, activator, connection)
+│   ├── com.opencode.ide.ui
+│   ├── com.opencode.ide.chat      # + chat.tests; consumes components/chat-web at build time
+│   ├── com.opencode.ide.git       # + git.tests (worktree fleet isolation, Eclipse-free)
+│   ├── com.opencode.ide.fleet     # + fleet.tests — headless fleet engine (Eclipse-free)
+│   ├── com.opencode.ide.tools     # + tools.tests — ToolProvider SPI + C++ pack (Eclipse-free)
+│   ├── com.opencode.ide.mcp       # + mcp.tests — MCP HTTP endpoint + DS lifecycle
+│   └── com.opencode.ide.cdt
+├── features/com.opencode.ide.feature
+└── releng/com.opencode.ide.repository   # p2 update site
+```
+
+## Development rules (conventions)
+
+Apply these to every change so the plugin stays consistent:
+
+- **Views are always closeable + detachable.** Add views with `IPageLayout.addView(...)`
+  or `IFolderLayout.addView(...)` — **never** `addStandaloneView(viewId, false, ...)`.
+  A `showTitle=false` standalone view has no title bar, so it can't be closed, moved, or
+  detached. Regular views come with a title bar (close **X**, drag to detach/float, dockable)
+  and can be reopened via *Window → Show View*.
+- **Never pass a tree element as the TreeViewer input.** `setInput(node)` whose `getElements`
+  returns `[node]` (input == element) destabilizes the TreeViewer (we saw it render the root
+  infinitely). Pass a wrapper, e.g. `setInput(List.of(node))`, and resolve the node back in
+  `inputChanged`.
+- **Dev rule (browser views):** never serve a bundled web page via `FileLocator.toFileURL` —
+  jar'd bundles extract single files, so relative assets 404 and the page dies (the blank-chat bug).
+  Use the embedded `ChatWebServer` (localhost HTTP) instead; it is component-tested.
+- **Dev rule (Java→JS bridge):** every Java→JS call goes through **`ChatScripts`** and passes data
+  as a **JSON *string* literal** (never a JS object literal) — the page's `payload()` accepts both
+  and `guard()` reports errors. This matters because **`Browser.execute()` on the Edge backend
+  returns `true` even when the script throws**, so a contract mismatch fails *silently*. The page
+  also reports `page-ready` and every render via `__javaReport` — live verification means reading
+  those log markers, never trusting `execute()`'s return value (`bridge-check.mjs` *executes* the
+  real `chat.js` against a DOM shim to keep this honest).
+- **Dev rule (math before markdown):** KaTeX math is extracted into `\uE000…\uE001` markers and
+  rendered *before* markdown runs — auto-render after markdown breaks on multi-line `$$…$$`
+  (`breaks:true` inserts `<br>` between the delimiters), on `\(...\)`/`\[...\]` (markdown eats the
+  backslashes) and on `\\` (collapses). Currency (`$5`) and code fences are excluded.
+- **Dev rule (PowerShell):** never patch source files with PowerShell regex replacements and never
+  inline JS in `node -e` — `$ref`, `$5` and `\$` get mangled. Use the edit tool for files and write
+  probe scripts to a real `.mjs`/`.cjs` file for Node.
+- **Dev rule (tool providers):** agent tools live behind the mcp bundle's `ToolProvider` SPI
+  (`language()` + `tools()` + `call()`); C++ specifics stay in `CppToolProvider`. New language
+  packs = new providers, never edits to the dispatcher. Toolchains are *detected, never assumed*
+  (MSVC via vswhere; MSYS2 envs by probing `C:\msys64\<env>\bin`) and every optional binary
+  reports an install hint when absent.
+- **Process rule (clean architecture):** every phase lands with tests; every second session
+  starts by clearing the refactor backlog (ROADMAP "Recover next" §5 keeps the list).
+- **Project-root resources (`plugin.xml`, `OSGI-INF/*`) are NOT auto-packaged** by Tycho 5/bnd —
+  put them under `src/main/resources/` so the resources plugin copies them into the jar.
+- **Three-layer separation.** `core` (opencode, no UI/CDT) → `ui` (eclipse, depends on core) →
+  `cdt` (CDT, depends on core). Core/UI never import CDT; cross-layer talk goes through the
+  `ProjectContext` service defined in core.
+- **Keep the build light during iteration.** Build only what changed:
+  `.\build.ps1 -pl bundles/com.opencode.ide.core -pl bundles/com.opencode.ide.ui clean package`
+  (note: `ui` needs `core` in the reactor to resolve its `Require-Bundle`). Avoid repeated
+  full-reactor `clean verify` unless you need the tests + p2 repo. Use `-pl a -pl b`
+  (repeated), not `-pl a,b` (comma is an arg separator under `cmd.exe`).
+- **dropins dev deploy uses the `plugins/` layout:** `C:\eclipse-cpp\dropins\opencode-ide\plugins\*.jar`
+  (a folder of loose JARs is rejected by p2 with "No repository found"). `deploy-dev.ps1` handles this.
+- **Eclipse must be closed** before `deploy-dev.ps1` (the bundle jar is locked while Eclipse runs).
+- **opencode v1.18.x DTO contract.** Agent uses `native` (not `builtIn`) and `permission` is an
+  array of `{permission, pattern, action}`; `Provider.models` is a map keyed by model id; the
+  providers response uses the reserved-word key `default`. Re-validate against a live server if
+  you upgrade opencode.
+- **Server readiness ≠ health.** The spawn launcher must wait for `/global/health` **and** a data
+  endpoint (`/agent`) before returning — `/global/health` goes green before the data endpoints are
+  populated. Views retry on failure as insurance.
+
+## Build
+
+Requirements: a JDK 17+ on the machine (the `build.ps1` wrapper auto-detects one;
+the system `JAVA_HOME` does not have to be valid) and **Node.js on PATH** for the web
+renderer/bridge checks (or pass `-DskipNodeChecks=true`).
+
+Full reactor build (heavy — compiles everything, runs all tests, assembles the p2 site):
+
+```powershell
+cd C:\Temp\IDE\opencode-eclipse
+.\build.ps1 clean verify
+```
+
+Scoped build (use this during iteration; repeat `-pl`, never commas — adjust the module list to
+what you touched; add siblings like `core`+`client` when manifests require them):
+
+```powershell
+.\build.ps1 -pl bundles/com.opencode.ide.client -pl bundles/com.opencode.ide.client.tests `
+            -pl bundles/com.opencode.ide.core -pl bundles/com.opencode.ide.core.tests `
+            -pl bundles/com.opencode.ide.ui -pl bundles/com.opencode.ide.chat `
+            -pl bundles/com.opencode.ide.chat.tests -pl bundles/com.opencode.ide.cdt `
+            -pl bundles/com.opencode.ide.git -pl bundles/com.opencode.ide.git.tests `
+            -pl bundles/com.opencode.ide.fleet -pl bundles/com.opencode.ide.fleet.tests `
+            -pl bundles/com.opencode.ide.tools -pl bundles/com.opencode.ide.tools.tests `
+            -pl bundles/com.opencode.ide.mcp -pl bundles/com.opencode.ide.mcp.tests clean verify
+.\deploy-dev.ps1     # close Eclipse first (jars are locked while it runs); copies all 9 jars
+```
+
+This runs **171 Java tests** (6 core + 85 client + 26 chat + 13 git + 12 fleet + 23 tools +
+6 mcp — the mcp suite includes a real ucrt64 compile-and-run E2E test) plus the three Node
+checks against `components/chat-web` (`renderer-check.mjs` 43, `bridge-check.mjs` 54,
+`mermaid-check.mjs` 8 — the last renders diagrams in **real headless Edge** and SKIPs where
+Edge/puppeteer-core are absent — wired into `mvn verify` via `exec-maven-plugin`; the client,
+tools and fleet bundles additionally fail the build on any `org.eclipse.*`/`org.osgi.*`
+import). The full reactor additionally assembles the p2 update site at
+`releng/com.opencode.ide.repository/target/repository/`.
+
+## Install into Eclipse CDT
+
+1. Build (above).
+2. In Eclipse CDT (`C:\eclipse-cpp`): **Help → Install New Software…**
+3. **Add…** a local repository pointing at:
+   `C:\Temp\IDE\opencode-eclipse\releng\com.opencode.ide.repository\target\repository`
+4. Select the **OpenCode IDE** feature, finish, restart.
+
+## Use the first feature (query providers & agents)
+
+1. Start an opencode server in a terminal (or let the plugin spawn it — Phase 2):
+   ```
+   opencode serve --hostname 127.0.0.1 --port 4096
+   ```
+   (If you set `OPENCODE_SERVER_PASSWORD`, also fill it in below.)
+2. **Window → Perspective → Open Perspective → Other… → OpenCode**.
+3. The **Agents** (left) and **Providers** (bottom) views try to load automatically.
+   If the server URL differs, set it in **Window → Preferences → OpenCode**, then hit
+   the **Refresh** button on each view's toolbar.
+
+The Agents view shows `name / mode / native / description`.
+The Providers view shows providers as tree roots with their models as children
+(`name / id / status / capabilities [R=reasoning A=attachment T=toolcall] / context`).
+
+## Status & roadmap
+
+- **Done (deployed/tested):** Phases 0–6 — toolchain, `core`/`ui`/`cdt` bundles, feature + p2 repo,
+  spawn + connect modes, readiness probe + retry, JVM shutdown hook (no orphaned servers),
+  a unified **Server** view (`Server → Agents / Sessions`, sessions nested by `parentID`,
+  live via `/event` SSE with a thinking/running-tool indicator), a flat **Providers** view
+  (per-model rows, filter + sort, server in header), icons, connection preference page.
+- **Done (Phase 12 chat, live-verified):** a native **Chat** view (`com.opencode.ide.chat`) —
+  markdown (code blocks, tables), **LaTeX math** ($…$, $$…$$ via KaTeX, extracted before
+  markdown), **syntax highlighting** (highlight.js incl. c/cpp/cmake/makefile, offline assets,
+  IDE-theme-synced), streaming reply text via `/event` SSE, agent + model + **variant** pickers,
+  multi-window chat + session resume, external links opened in the system browser, and a
+  capability **`system`** prompt so models format for the view unprompted (toggle:
+  *Preferences → OpenCode → Advertise rendering*). opencode v1.18.x quirks handled:
+  explicit-model requirement, HTTP/1.1 forced, flat `providerID`/`modelID` on assistant messages.
+  **Mermaid diagrams render** — verified by an automated check that drives the real page in
+  headless Edge (SVG output, visible degradation for broken sources; `mermaid-check.mjs`, part
+  of `mvn verify`).
+- **Done (Phase 13, first cut):** `com.opencode.ide.git` — worktree-per-task isolation with
+  serial merge-back and clean conflict abort; `createSession(title, directory)` scopes
+  sessions to a worktree.
+- **Done (Phase 14, first cut, 29 tests):** `com.opencode.ide.mcp` + `com.opencode.ide.tools` —
+  local MCP endpoint (stateless Streamable HTTP) + **`ToolProvider` SPI**; the C++ provider
+  exposes **8 agent tools** (`toolchains_list`, `cmake_configure`, `cmake_build`, `ctest_run`,
+  `run_binary`, `debug_batch`, `lint_run` clang-tidy/cppcheck, `format_run` clang-format)
+  across **MSVC + MSYS2 clang64/mingw64/ucrt64** (auto-detected; E2E test compiles+runs
+  hello-world via ucrt64). **Registration with the opencode server is wired** (OSGi services +
+  `McpRegistrationComponent`; live check pending on next Eclipse start).
+- **Done (Phase 15 engine, 12 tests):** `com.opencode.ide.fleet` — headless `FleetRunner`
+  (submit → worktree + directory-scoped session → poll → mergeBack), Eclipse-free.
+- **Done (hardening):** default-scheme **key bindings** (openPerspective Ctrl+Alt+Shift+O,
+  refreshViews Ctrl+Alt+Shift+R, openChat Ctrl+Alt+Shift+C — rebindable via Preferences →
+  Keys); `ViewLoadSupport` (no more stuck "Loading…" on unchecked failures); client error
+  semantics, SSE trailing-frame fix, URL validation (85 client tests).
+- **Done (architecture migrations M1–M3):** `core` split into the Eclipse-free
+  **`client`** bundle (pure-Java opencode client, Eclipse-import ban enforced at build time) and
+  the Eclipse **adapter** core; the chat web renderer extracted into the standalone
+  **`components/chat-web`** component (own README + checks, hostable anywhere); the
+  **`ToolProvider` SPI** promoted into the Eclipse-free **`tools`** bundle (mcp = endpoint only).
+  See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the four separation axes, the verified module
+  map and the review checklist. M4 (second agent backend) deliberately deferred.
+- **Next:** first-launch live check (MCP endpoint + `eclipse-build` registration + agent tool
+  listing) → Phase 15 Fleet view + scheduler → Phase 9 sprint store → Phase 7 scaling.
+  **171 Java tests + 105 JS checks green in one reactor build.**
+
+**Strategic direction (see [`ROADMAP.md`](ROADMAP.md) for the full plan):**
+- **Agentic C++ harness:** agents create/build/test/lint/format/debug headless in isolated git
+  worktrees (Phases 13–14, first cuts landed); the **Fleet view + scheduler + user takeover**
+  (Phase 15) make Eclipse the human's overview and control surface.
+- **Scale to hundreds of agents** → few servers × many sessions; plural connections; **virtualized**
+  viewers; core-side cache/throttle + a single `/event` SSE fan-out (Phases 7–8).
+- **Maven sprint planning** → milestones/epics/sprints in a version-controlled `.opencode/tasks/`
+  store, synced by `opencode-tasks:sync` and rendered by `opencode-tasks:plan`; agents read/write
+  it via MCP tools; "launch from a task" feeds the fleet (Phase 9). Maven plans — CMake builds.
+- **Multi-language later** → new `ToolProvider` implementations (Python first candidate); the
+  chat/server/git layers are language-agnostic.
+- **Native markdown chat** → shipped (Phase 12); remaining: abort, tool parts, copy-code.
+
+## Notes
+
+- The DTOs are modelled against the **installed** opencode v1.18.x. In this version the
+  agent object uses `native` (not `builtIn`) and `permission` is an array of
+  `{permission, pattern, action}` rules. The OpenAPI `dev`-branch types differ; the
+  records keep newer-only fields nullable for forward-compatibility.
+- The server password is stored in plain instance preferences (local server only);
+  switch to `org.eclipse.equinox.security` for remote servers.

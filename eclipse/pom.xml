@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.opencode.ide</groupId>
+  <artifactId>com.opencode.ide.parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>OpenCode IDE - Parent</name>
+  <description>Eclipse plugin integrating opencode. Parent/reactor POM (Tycho).</description>
+
+  <properties>
+    <tycho.version>5.0.3</tycho.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+  </properties>
+
+  <modules>
+    <module>releng/opencode-eclipse.target</module>
+    <module>bundles/com.opencode.ide.core</module>
+    <module>bundles/com.opencode.ide.core.tests</module>
+    <module>bundles/com.opencode.ide.client</module>
+    <module>bundles/com.opencode.ide.client.tests</module>
+    <module>bundles/com.opencode.ide.ui</module>
+    <module>bundles/com.opencode.ide.chat</module>
+    <module>bundles/com.opencode.ide.chat.tests</module>
+    <module>bundles/com.opencode.ide.cdt</module>
+    <module>bundles/com.opencode.ide.git</module>
+    <module>bundles/com.opencode.ide.git.tests</module>
+    <module>bundles/com.opencode.ide.fleet</module>
+    <module>bundles/com.opencode.ide.fleet.tests</module>
+    <module>bundles/com.opencode.ide.tools</module>
+    <module>bundles/com.opencode.ide.tools.tests</module>
+    <module>bundles/com.opencode.ide.mcp</module>
+    <module>bundles/com.opencode.ide.mcp.tests</module>
+    <module>features/com.opencode.ide.feature</module>
+    <module>releng/com.opencode.ide.repository</module>
+  </modules>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <version>${tycho.version}</version>
+        <extensions>true</extensions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>target-platform-configuration</artifactId>
+        <version>${tycho.version}</version>
+        <configuration>
+          <target>
+            <file>${maven.multiModuleProjectDirectory}/releng/opencode-eclipse.target/opencode-eclipse.target</file>
+          </target>
+          <executionEnvironment>JavaSE-21</executionEnvironment>
+          <pomDependencies>consider</pomDependencies>
+          <environments>
+            <environment>
+              <os>win32</os><ws>win32</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>linux</os><ws>gtk</ws><arch>x86_64</arch>
+            </environment>
+            <environment>
+              <os>macosx</os><ws>cocoa</ws><arch>x86_64</arch>
+            </environment>
+          </environments>
+        </configuration>
+      </plugin>
+    </plugins>
+
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-compiler-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <release>21</release>
+            <compilerArgs>
+              <arg>-warn:-fieldHiding</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-packaging-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <strictBinIncludes>false</strictBinIncludes>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-surefire-plugin</artifactId>
+          <version>${tycho.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

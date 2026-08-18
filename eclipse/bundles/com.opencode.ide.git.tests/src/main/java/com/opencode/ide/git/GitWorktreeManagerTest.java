@@ -1,0 +1,212 @@
+package com.opencode.ide.git;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+import org.junit.After;
+import org.junit.Assume;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.opencode.ide.git.internal.GitWorktreeManager;
+
+/**
+ * End-to-end tests against a real git repo in a temp dir. Skipped when git
+ * is not available.
+ */
+public class GitWorktreeManagerTest {
+
+    private Path repo;
+    private GitWorktreeManager manager;
+
+    @Before
+    public void setUp() throws Exception {
+        Assume.assumeTrue("git not available", gitAvailable());
+        repo = Files.createTempDirectory("opencode-git-test").toAbsolutePath().normalize();
+        git("init");
+        git("config", "user.email", "a@b.c");
+        git("config", "user.name", "Test");
+        Files.writeString(repo.resolve("file.txt"), "line1\nline2\n", StandardCharsets.UTF_8);
+        git("add", ".");
+        git("commit", "-m", "initial");
+        git("branch", "-M", "main");
+        manager = new GitWorktreeManager();
+    }
+
+    @After
+    public void tearDown() {
+        if (repo != null && Files.isDirectory(repo)) {
+            runQuiet("worktree", "prune");
+            deleteRecursively(repo);
+        }
+    }
+
+    @Test
+    public void createMakesBranchAndWorktreeUnderFleetDir() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        assertEquals("opencode/t1", wt.branch());
+        assertEquals(repo.resolve(".git/opencode-fleet/t1"), wt.path());
+        assertTrue(Files.isDirectory(wt.path()));
+        assertTrue(gitOk("rev-parse", "--verify", "--quiet", "refs/heads/opencode/t1"));
+    }
+
+    @Test
+    public void listSeesOnlyFleetWorktrees() throws Exception {
+        manager.create(repo, "t1");
+        manager.create(repo, "t2");
+        List<String> ids = manager.list(repo).stream().map(Worktree::taskId).sorted().toList();
+        assertEquals(List.of("t1", "t2"), ids);
+        assertFalse(git("worktree", "list", "--porcelain").split("\\R")[0].contains("opencode-fleet"));
+    }
+
+    @Test
+    public void doubleCreateFailsWithClearMessage() {
+        manager.create(repo, "t1");
+        try {
+            manager.create(repo, "t1");
+            fail("expected WorktreeException");
+        } catch (WorktreeException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("already exists"));
+        }
+    }
+
+    @Test
+    public void removeCleansWorktreeAndBranch() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        manager.remove(repo, "t1", false);
+        assertFalse(Files.exists(wt.path()));
+        assertFalse(gitOk("rev-parse", "--verify", "--quiet", "refs/heads/opencode/t1"));
+        assertFalse(git("worktree", "list", "--porcelain").contains("opencode-fleet"));
+        try {
+            manager.remove(repo, "t1", false);
+            fail("expected WorktreeException");
+        } catch (WorktreeException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("t1"));
+        }
+    }
+
+    @Test
+    public void statusCleanAfterCreate() {
+        manager.create(repo, "t1");
+        WorktreeStatus st = manager.status(repo, "t1");
+        assertTrue(st.exists());
+        assertEquals(0, st.dirtyFiles());
+        assertTrue("short sha expected: '" + st.head() + "'", st.head().matches("[0-9a-f]{7,40}"));
+    }
+
+    @Test
+    public void statusDirtyAfterWritingFile() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        Files.writeString(wt.path().resolve("new.txt"), "hello\n", StandardCharsets.UTF_8);
+        WorktreeStatus st = manager.status(repo, "t1");
+        assertTrue(st.exists());
+        assertEquals(1, st.dirtyFiles());
+        assertFalse(manager.status(repo, "missing").exists());
+    }
+
+    @Test
+    public void mergeBackHappyPathMergesIntoMain() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        Files.writeString(wt.path().resolve("file.txt"), "line1\nline2\nline3\n", StandardCharsets.UTF_8);
+        commitIn(wt.path(), "worktree change");
+        MergeResult result = manager.mergeBack(repo, "t1");
+        assertTrue(result.output(), result.merged());
+        assertTrue(result.conflictedFiles().isEmpty());
+        assertTrue(Files.readString(repo.resolve("file.txt")).contains("line3"));
+    }
+
+    @Test
+    public void mergeBackConflictAbortsMergeAndReportsFiles() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        Files.writeString(repo.resolve("file.txt"), "main-change\nline2\n", StandardCharsets.UTF_8);
+        commitIn(repo, "main change");
+        Files.writeString(wt.path().resolve("file.txt"), "worktree-change\nline2\n", StandardCharsets.UTF_8);
+        commitIn(wt.path(), "worktree change");
+        MergeResult result = manager.mergeBack(repo, "t1");
+        assertFalse(result.merged());
+        assertTrue(result.conflictedFiles().toString(), result.conflictedFiles().contains("file.txt"));
+        assertEquals("", git("status", "--porcelain").trim());
+        assertTrue(Files.readString(repo.resolve("file.txt")).startsWith("main-change"));
+        assertTrue(gitOk("rev-parse", "--verify", "--quiet", "refs/heads/opencode/t1"));
+    }
+
+    private void commitIn(Path worktree, String message) throws Exception {
+        git(worktree, "add", ".");
+        git(worktree, "commit", "-m", message);
+    }
+
+    private String git(String... args) throws Exception {
+        return git(repo, args);
+    }
+
+    private static String git(Path dir, String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.add("-C");
+        command.add(dir.toString());
+        command.addAll(List.of(args));
+        Process p = new ProcessBuilder(command).start();
+        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String err = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        int code = p.waitFor();
+        if (code != 0) {
+            throw new IllegalStateException("git " + List.of(args) + " failed (exit " + code + "): " + err);
+        }
+        return out;
+    }
+
+    private boolean gitOk(String... args) {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.add("-C");
+        command.add(repo.toString());
+        command.addAll(List.of(args));
+        try {
+            Process p = new ProcessBuilder(command).start();
+            p.getErrorStream().readAllBytes();
+            return p.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void runQuiet(String... args) {
+        try {
+            git(args);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static boolean gitAvailable() {
+        try {
+            Process p = new ProcessBuilder("git", "--version").start();
+            p.getErrorStream().readAllBytes();
+            return p.waitFor() == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void deleteRecursively(Path root) {
+        try (var walk = Files.walk(root)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    p.toFile().setWritable(true);
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ignored) {
+        }
+    }
+}

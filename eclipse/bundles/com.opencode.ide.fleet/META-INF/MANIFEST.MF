@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: OpenCode IDE - Fleet
+Bundle-SymbolicName: com.opencode.ide.fleet
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: OpenCode
+Require-Bundle: com.opencode.ide.client;bundle-version="0.1.0",
+  com.opencode.ide.git;bundle-version="0.1.0"
+Export-Package: com.opencode.ide.fleet
+Bundle-RequiredExecutionEnvironment: JavaSE-21

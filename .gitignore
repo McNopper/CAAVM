@@ -8,3 +8,9 @@ mcp/graphics/data/
 
 # Node (if any tooling installed locally)
 node_modules/
+
+# Eclipse/Tycho build outputs (eclipse/ subproject)
+target/
+
+# Logs
+*.log

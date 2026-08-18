@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: OpenCode IDE - UI
+Bundle-SymbolicName: com.opencode.ide.ui;singleton:=true
+Bundle-Version: 0.1.0.qualifier
+Bundle-Vendor: OpenCode
+Bundle-Activator: com.opencode.ide.ui.internal.UiActivator
+Bundle-ActivationPolicy: lazy
+Require-Bundle: com.opencode.ide.client;bundle-version="0.1.0",
+ com.opencode.ide.core;bundle-version="0.1.0",
+ org.eclipse.ui,
+ org.eclipse.core.runtime,
+ org.eclipse.jface,
+ org.eclipse.swt
+Bundle-RequiredExecutionEnvironment: JavaSE-21
