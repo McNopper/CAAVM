@@ -92,6 +92,8 @@ public final class Task {
     public int storyPoints;
     public String priority = "medium";
     public String role = "developer";
+    /** V-model pipeline stage (see {@link VStages}); {@code null} = legacy/untracked ticket. */
+    public String stage;
     public String assignee;
     public String epic;
     public List<String> labels = new ArrayList<>();
@@ -133,6 +135,7 @@ public final class Task {
         o.addProperty("story_points", storyPoints);
         o.addProperty("priority", priority);
         o.addProperty("role", role);
+        o.addProperty("stage", stage);
         o.addProperty("assignee", assignee);
         JsonArray ac = new JsonArray();
         acceptanceCriteria.forEach(ac::add);

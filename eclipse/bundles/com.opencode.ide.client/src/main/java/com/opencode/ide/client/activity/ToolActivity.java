@@ -7,6 +7,7 @@ package com.opencode.ide.client.activity;
  */
 public record ToolActivity(String tool, String file, State state) {
 
+    /** Coarse tool lifecycle; a missing state on the wire reads as RUNNING. */
     public enum State {
         RUNNING, COMPLETED, ERROR
     }

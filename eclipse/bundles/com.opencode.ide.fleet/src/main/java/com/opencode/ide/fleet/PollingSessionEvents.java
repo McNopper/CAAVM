@@ -1,0 +1,68 @@
+package com.opencode.ide.fleet;
+
+import java.time.Duration;
+
+import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.client.OpencodeException;
+import com.opencode.ide.client.model.SessionStatus;
+
+/**
+ * {@link SessionEvents} over the REST surface: polls
+ * {@code GET /session/status} until the session reports {@code idle} - the
+ * same loop {@link FleetRunner} uses internally. This is the default
+ * (stream-less) completion detection and also serves {@link SseSessionEvents}
+ * as its one-shot fallback check on stream drops ({@code awaitIdle} with a
+ * zero timeout performs exactly one status check).
+ *
+ * <p>Pure Java, no Eclipse/OSGi.</p>
+ */
+public final class PollingSessionEvents implements SessionEvents {
+
+    private static final long DEFAULT_POLL_MILLIS = 1000;
+
+    private final OpencodeClient client;
+    private final Runnable sleeper;
+
+    public PollingSessionEvents(OpencodeClient client) {
+        this(client, PollingSessionEvents::sleepPollInterval);
+    }
+
+    /**
+     * @param sleeper invoked between status polls; inject a no-op to make
+     *                {@link #awaitIdle} run instantly in tests
+     */
+    public PollingSessionEvents(OpencodeClient client, Runnable sleeper) {
+        this.client = client;
+        this.sleeper = sleeper;
+    }
+
+    @Override
+    public boolean awaitIdle(String sessionId, Duration timeout) throws OpencodeException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (!isIdle(sessionId)) {
+            if (System.nanoTime() - deadline >= 0) {
+                return false;
+            }
+            if (Thread.currentThread().isInterrupted()) {
+                // the sleeper restored the interrupt flag: honor cancellation
+                // instead of spinning without sleep until the deadline
+                return false;
+            }
+            sleeper.run();
+        }
+        return true;
+    }
+
+    private boolean isIdle(String sessionId) throws OpencodeException {
+        SessionStatus status = client.getSessionStatus().get(sessionId);
+        return status != null && "idle".equals(status.type());
+    }
+
+    private static void sleepPollInterval() {
+        try {
+            Thread.sleep(DEFAULT_POLL_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

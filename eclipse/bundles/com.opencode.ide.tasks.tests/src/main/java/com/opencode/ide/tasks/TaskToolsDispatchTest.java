@@ -19,7 +19,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * MCP-surface checks over the dispatcher: the 18 task_* tools are advertised
+ * MCP-surface checks over the dispatcher: the 20 task_* tools are advertised
  * with input schemas, results are pretty JSON with the pm field names, a
  * claim with nothing to do returns the JSON literal null, domain errors are
  * isError text results (not protocol errors) and missing parameters map to
@@ -28,8 +28,8 @@ import org.junit.rules.TemporaryFolder;
 public class TaskToolsDispatchTest {
 
     private static final List<String> EXPECTED_TOOLS = List.of(
-            "task_create", "task_get", "task_list", "task_update", "task_set_blocked",
-            "task_clear_blocked", "task_claim", "task_release", "task_add_comment",
+            "task_create", "task_get", "task_list", "task_update", "task_advance", "task_send_back",
+            "task_set_blocked", "task_clear_blocked", "task_claim", "task_release", "task_add_comment",
             "task_add_artifact", "task_add_todo", "task_toggle_todo", "task_remove_todo",
             "task_backlog", "task_board", "task_plan_sprint", "task_close_sprint",
             "task_traceability");
@@ -68,11 +68,11 @@ public class TaskToolsDispatchTest {
     }
 
     @Test
-    public void toolsListAdvertisesAllEighteenToolsWithSchemas() {
+    public void toolsListAdvertisesAllTwentyToolsWithSchemas() {
         JsonObject response = JsonParser.parseString(
                 dispatcher.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}")).getAsJsonObject();
         JsonArray tools = response.getAsJsonObject("result").getAsJsonArray("tools");
-        assertEquals(18, tools.size());
+        assertEquals(20, tools.size());
         for (int i = 0; i < tools.size(); i++) {
             JsonObject tool = tools.get(i).getAsJsonObject();
             assertEquals(EXPECTED_TOOLS.get(i), tool.get("name").getAsString());
@@ -223,5 +223,54 @@ public class TaskToolsDispatchTest {
         // both projects mint their own T-001
         assertEquals(one.get(0).getAsJsonObject().get("id").getAsString(),
                 two.get(0).getAsJsonObject().get("id").getAsString());
+    }
+
+    @Test
+    public void vPipelineAdvanceAndSendBackThroughTools() {
+        JsonObject created = callOk("task_create",
+                "{\"project\":\"p\",\"title\":\"spec it\",\"stage\":\"requirements\"}");
+        assertEquals("requirements", created.get("stage").getAsString());
+        callOk("task_update", "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"status\":\"in-review\"}");
+        JsonObject advanced = callOk("task_advance",
+                "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"by\":\"pm\"}");
+        assertEquals("system", advanced.get("stage").getAsString());
+        assertEquals("architect", advanced.get("role").getAsString());
+        assertEquals("product-backlog", advanced.get("status").getAsString());
+        assertTrue("advance clears the assignee", advanced.get("assignee").isJsonNull());
+
+        JsonObject sentBack = callOk("task_send_back",
+                "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"reason\":\"goals contradict\",\"by\":\"architect\"}");
+        assertEquals("requirements", sentBack.get("stage").getAsString());
+        assertEquals("pm", sentBack.get("role").getAsString());
+        assertEquals("product-backlog", sentBack.get("status").getAsString());
+        assertTrue("send back raises the blocked flag", sentBack.get("blocked").getAsBoolean());
+        assertEquals("sent back from system: goals contradict", sentBack.get("blocker").getAsString());
+        JsonObject cleared = callOk("task_clear_blocked", "{\"project\":\"p\",\"ticket_id\":\"T-001\"}");
+        assertFalse(cleared.get("blocked").getAsBoolean());
+
+        // error channels: unstaged legacy ticket, invalid stage on create, blank reason
+        callOk("task_create", "{\"project\":\"p\",\"title\":\"legacy\"}");
+        assertTrue("legacy ticket has no stage -> isError",
+                call("task_advance", "{\"project\":\"p\",\"ticket_id\":\"T-002\"}").get("isError").getAsBoolean());
+        assertTrue("invalid stage on create -> isError",
+                call("task_create", "{\"project\":\"p\",\"title\":\"x\",\"stage\":\"waterfall\"}")
+                        .get("isError").getAsBoolean());
+        assertTrue("blank reason -> isError",
+                call("task_send_back", "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"reason\":\"\"}")
+                        .get("isError").getAsBoolean());
+    }
+
+    @Test
+    public void updateStageThroughToolsSetsAndClears() {
+        callOk("task_create", "{\"project\":\"p\",\"title\":\"a\"}");
+        JsonObject set = callOk("task_update",
+                "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"stage\":\"design\"}");
+        assertEquals("design", set.get("stage").getAsString());
+        JsonObject cleared = callOk("task_update",
+                "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"stage\":null}");
+        assertTrue("explicit null clears the stage", cleared.get("stage").isJsonNull());
+        assertTrue("invalid stage string -> isError",
+                call("task_update", "{\"project\":\"p\",\"ticket_id\":\"T-001\",\"stage\":\"nope\"}")
+                        .get("isError").getAsBoolean());
     }
 }

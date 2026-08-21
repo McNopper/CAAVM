@@ -47,9 +47,11 @@ public record Model(
         return name != null && variants != null && variants.containsKey(name);
     }
 
+    /** The model's provider API endpoint (rarely set by local providers). */
     public record Api(String id, String url, String npm) {
     }
 
+    /** What the model accepts/supports; drives the Providers view's R/A/T letters. */
     public record Capabilities(
             boolean temperature,
             boolean reasoning,
@@ -59,18 +61,23 @@ public record Model(
             Modalities output) {
     }
 
+    /** Input/output modality switches. */
     public record Modalities(boolean text, boolean audio, boolean image, boolean video, boolean pdf) {
     }
 
+    /** Per-million-token prices (USD) — the basis of cost telemetry. */
     public record Cost(double input, double output, CacheCost cache, ExperimentalCost experimentalOver200K) {
     }
 
+    /** Cached-token prices (cheaper than fresh input). */
     public record CacheCost(double read, double write) {
     }
 
+    /** Prices above the 200K-token threshold some providers use. */
     public record ExperimentalCost(double input, double output, CacheCost cache) {
     }
 
+    /** Context/output token limits — the context column in the Providers view. */
     public record Limit(long context, long output) {
     }
 }

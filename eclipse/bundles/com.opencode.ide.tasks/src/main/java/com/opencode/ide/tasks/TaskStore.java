@@ -124,6 +124,15 @@ public final class TaskStore {
 
     /** Creates a task (status=product-backlog) with a freshly minted id. */
     public Task create(String project, CreateSpec spec) {
+        return create(project, spec, null);
+    }
+
+    /**
+     * Creates a task with an initial V-model pipeline {@code stage} (validated
+     * against {@link VStages}; {@code null} leaves the ticket untracked,
+     * exactly like a legacy ticket).
+     */
+    public Task create(String project, CreateSpec spec, String stage) {
         if (spec.role() != null && (spec.role().isBlank())) {
             throw new Invalid("role must be a non-empty string, got '" + spec.role() + "'");
         }
@@ -134,6 +143,9 @@ public final class TaskStore {
             throw new Invalid("priority must be one of " + List.of("low", "medium", "high", "critical")
                     + ", got '" + spec.priority() + "'");
         }
+        if (stage != null && !VStages.isValid(stage)) {
+            throw new Invalid("stage must be one of " + VStages.STAGES + " (or null), got '" + stage + "'");
+        }
         return transaction(project, data -> {
             String id = nextId(data, spec.idPrefix() == null ? "T" : spec.idPrefix());
             Task t = new Task();
@@ -142,6 +154,7 @@ public final class TaskStore {
             t.description = spec.description() == null ? "" : spec.description();
             t.type = spec.type() == null ? "task" : spec.type();
             t.role = spec.role() == null ? "developer" : spec.role();
+            t.stage = stage;
             t.priority = spec.priority() == null ? "medium" : spec.priority();
             t.storyPoints = spec.storyPoints() == null ? 0 : spec.storyPoints();
             if (spec.acceptanceCriteria() != null) {
@@ -212,6 +225,14 @@ public final class TaskStore {
                         t.role = role;
                         applied.add(e.getKey());
                     }
+                    case "stage" -> {
+                        String stage = string(e.getValue());
+                        if (stage != null && !VStages.isValid(stage)) {
+                            throw new Invalid("stage must be one of " + VStages.STAGES + " (or null), got '" + stage + "'");
+                        }
+                        t.stage = stage;
+                        applied.add(e.getKey());
+                    }
                     case "status" -> {
                         String status = string(e.getValue());
                         if (!Task.VALID_STATUSES.contains(status)) {
@@ -237,6 +258,84 @@ public final class TaskStore {
                 t.history("updated:" + String.join(",", applied), null);
                 data.changed.add(id);
             }
+            return t;
+        });
+    }
+
+    /**
+     * The V-model pipeline hand-forward: moves a ticket whose stage's work is
+     * finished on to the <em>next</em> stage. Quality gate: the ticket must be
+     * {@code in-review} or {@code done} - an unfinished stage never advances.
+     * One transaction: stage and role move to the next stage's, status resets
+     * to {@code product-backlog} (the next stage's backlog is fed by the
+     * previous stage), the assignee is cleared, the blocked flag stays as-is.
+     *
+     * @throws Invalid when the ticket has no (valid) stored stage - legacy
+     *                 tickets must be staged explicitly, no guessing; when the
+     *                 status is not in-review/done; or when the ticket already
+     *                 sits at the V tip ({@code test-requirements}).
+     */
+    public Task advance(String project, String id, String by) {
+        return transaction(project, data -> {
+            Task t = require(data, project, id);
+            if (t.stage == null || !VStages.isValid(t.stage)) {
+                throw new Invalid("ticket has no stage; set one first");
+            }
+            if (!"in-review".equals(t.status) && !"done".equals(t.status)) {
+                throw new Invalid("cannot advance ticket in status '" + t.status
+                        + "' (the stage's work must be finished: in-review or done)");
+            }
+            String next = VStages.next(t.stage);
+            if (next == null) {
+                throw new Invalid("ticket is at the V tip stage '" + t.stage
+                        + "'; there is no next stage");
+            }
+            t.stage = next;
+            t.role = VStages.roleOf(next);
+            t.status = "product-backlog";
+            t.assignee = null;
+            t.updatedAt = now();
+            t.history("advanced to " + next, by);
+            data.changed.add(id);
+            return t;
+        });
+    }
+
+    /**
+     * The V-model feedback loop: sends a ticket back to the <em>previous</em>
+     * stage with a reason. The hand-back is unmissable: the ticket lands in
+     * the previous stage's product backlog with the blocked flag raised and
+     * the blocker text {@code "sent back from <old stage>: <reason>"} (the
+     * flag clears via {@link #clearBlocked} once the previous stage resolves
+     * it). The assignee is cleared; role follows the previous stage.
+     *
+     * @throws Invalid when the ticket has no (valid) stored stage, when the
+     *                 reason is blank, or when the ticket sits at
+     *                 {@code requirements} (no previous stage).
+     */
+    public Task sendBack(String project, String id, String reason, String by) {
+        return transaction(project, data -> {
+            Task t = require(data, project, id);
+            if (t.stage == null || !VStages.isValid(t.stage)) {
+                throw new Invalid("ticket has no stage; set one first");
+            }
+            if (reason == null || reason.isBlank()) {
+                throw new Invalid("reason must be a non-empty string");
+            }
+            String prev = VStages.previous(t.stage);
+            if (prev == null) {
+                throw new Invalid("ticket is at the first stage 'requirements'; there is no previous stage");
+            }
+            String from = t.stage;
+            t.stage = prev;
+            t.role = VStages.roleOf(prev);
+            t.status = "product-backlog";
+            t.assignee = null;
+            t.blocked = true;
+            t.blocker = "sent back from " + from + ": " + reason;
+            t.updatedAt = now();
+            t.history("sent back to " + prev + ": " + reason, by);
+            data.changed.add(id);
             return t;
         });
     }

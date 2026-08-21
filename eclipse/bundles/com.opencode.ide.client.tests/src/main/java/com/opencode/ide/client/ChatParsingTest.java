@@ -12,6 +12,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.ChatMessageInfo;
+import com.opencode.ide.client.model.ChatPart;
 
 /**
  * Unit tests for the {@code GET /session/:id/message} mapping.
@@ -142,5 +143,72 @@ public class ChatParsingTest {
         ChatEntry entry = GSON.fromJson("{\"info\":{\"id\":\"m\"},\"parts\":[]}", ChatEntry.class);
         assertNull(entry.info().role());
         assertNull(entry.info().model());
+    }
+
+    /**
+     * Verbatim-style capture of tool parts (opencode 1.18.x): {@code state} is an
+     * OBJECT on the wire ({@code state.status} = running/completed/error) — never a
+     * string. Regression test: a string-typed {@code state} field made Gson fail the
+     * whole getMessages/sendMessage response with "malformed response body" whenever
+     * a session contained a tool part.
+     */
+    private static final String TOOL_PARTS_JSON = """
+            [
+              {
+                "info": {
+                  "id": "msg_tool_1", "sessionID": "ses_tool", "role": "assistant",
+                  "time": { "created": 1786764000000, "completed": 1786764009000 },
+                  "modelID": "kimi-k2.7-code", "providerID": "opencode-go",
+                  "mode": "build", "agent": "build", "finish": "stop"
+                },
+                "parts": [
+                  { "id": "prt_t0", "type": "step-start" },
+                  { "id": "prt_t1", "type": "tool", "tool": "read",
+                    "state": { "status": "completed",
+                               "input": { "filePath": "src/main.cpp" },
+                               "output": "int main() { return 0; }",
+                               "time": { "start": 1786764001000, "end": 1786764002000 } } },
+                  { "id": "prt_t2", "type": "tool", "tool": "bash",
+                    "state": { "status": "running",
+                               "input": { "command": "cmake --build build" },
+                               "time": { "start": 1786764003000 } } },
+                  { "id": "prt_t3", "type": "tool", "tool": "grep",
+                    "state": { "status": "error",
+                               "input": { "pattern": "TODO" },
+                               "error": "no matches",
+                               "time": { "start": 1786764004000, "end": 1786764005000 } } },
+                  { "id": "prt_t4", "type": "text", "text": "done", "time": { "start": 1786764008000 } },
+                  { "id": "prt_t5", "type": "step-finish", "reason": "stop" }
+                ]
+              }
+            ]
+            """;
+
+    @Test
+    public void toolPartsParseWithNestedStateStatus() {
+        List<ChatEntry> entries = GSON.fromJson(TOOL_PARTS_JSON,
+                TypeToken.getParameterized(List.class, ChatEntry.class).getType());
+        assertEquals(1, entries.size());
+
+        var tools = entries.get(0).parts().stream().filter(ChatPart::isTool).toList();
+        assertEquals(3, tools.size());
+        assertEquals("read", tools.get(0).tool());
+        assertEquals("completed", tools.get(0).stateName());
+        assertEquals("bash", tools.get(1).tool());
+        assertEquals("running", tools.get(1).stateName());
+        assertEquals("grep", tools.get(2).tool());
+        assertEquals("error", tools.get(2).stateName());
+        // text part untouched by the state mapping
+        assertEquals("done", entries.get(0).text());
+    }
+
+    @Test
+    public void toolPartWithoutStateIsNullStateName() {
+        ChatEntry entry = GSON.fromJson(
+                "{\"info\":{\"id\":\"m\",\"role\":\"assistant\"},\"parts\":[{\"type\":\"tool\",\"tool\":\"read\"}]}",
+                ChatEntry.class);
+        ChatPart part = entry.parts().get(0);
+        assertTrue(part.isTool());
+        assertNull(part.stateName());
     }
 }

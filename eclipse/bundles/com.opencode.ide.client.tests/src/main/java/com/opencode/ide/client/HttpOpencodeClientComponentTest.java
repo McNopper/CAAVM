@@ -2,6 +2,7 @@ package com.opencode.ide.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -18,7 +19,10 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.opencode.ide.client.model.ChatEntry;
+import com.opencode.ide.client.model.McpServerInfo;
 import com.opencode.ide.client.model.Session;
+import com.opencode.ide.client.model.SessionTodo;
+import com.opencode.ide.client.model.SkillInfo;
 
 /**
  * Component test: exercises the real {@code HttpOpencodeClient} over real HTTP
@@ -35,6 +39,8 @@ public class HttpOpencodeClientComponentTest {
     private static final AtomicReference<String> lastQuery = new AtomicReference<>();
     private static final AtomicReference<String> lastBody = new AtomicReference<>();
     private static final AtomicReference<String> lastAuth = new AtomicReference<>();
+    /** Settable body served by the stub for {@code GET /session/:id/todo}. */
+    private static final AtomicReference<String> todoBody = new AtomicReference<>("[]");
 
     @BeforeClass
     public static void startStub() throws IOException {
@@ -56,9 +62,23 @@ public class HttpOpencodeClientComponentTest {
                 }
                 return;
             }
+            if (path.endsWith("/abort")) {
+                // "…idle" ids answer 404 (already idle); everything else 200
+                int status = path.contains("idle") ? 404 : 200;
+                byte[] bytes = (status == 404
+                        ? "{\"error\":\"session is not active\"}" : "{}").getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(status, bytes.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(bytes);
+                }
+                return;
+            }
             String response;
             if ("POST".equals(exchange.getRequestMethod()) && "/session".equals(path)) {
                 response = "{\"id\":\"ses_new\",\"title\":\"Eclipse Chat\",\"time\":{\"created\":1,\"updated\":1}}";
+            } else if (path.endsWith("/todo")) {
+                response = todoBody.get();
             } else if (path.endsWith("/message")) {
                 if ("POST".equals(exchange.getRequestMethod())) {
                     // real assistant shape: FLAT providerID/modelID (no nested "model")
@@ -93,7 +113,20 @@ public class HttpOpencodeClientComponentTest {
             lastMethod.set(exchange.getRequestMethod());
             lastPath.set(exchange.getRequestURI().getPath());
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            // live v1.18 GET /mcp shape: a MAP keyed by server name
+            byte[] bytes = ("GET".equals(exchange.getRequestMethod())
+                    ? "{\"tasks\":{\"status\":\"connected\"},\"graphics\":{\"status\":\"error\"}}"
+                    : "{}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+
+        server.createContext("/skill", exchange -> {
+            byte[] bytes = "[{\"name\":\"cpp-tools\",\"description\":\"C++ execution utility\",\"location\":\"<built-in>\",\"content\":\"…\"}]"
+                    .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
@@ -194,6 +227,78 @@ public class HttpOpencodeClientComponentTest {
     }
 
     @Test
+    public void getSessionTodosParsesEntries() throws Exception {
+        todoBody.set("""
+                [
+                 {"id":"todo_1","content":"Write the plan","status":"in_progress","priority":"high"},
+                 {"id":"todo_2","content":"Run the build","status":"completed","priority":"low"}
+                ]
+                """);
+
+        List<SessionTodo> todos = client.getSessionTodos("ses_new");
+
+        assertEquals("GET", lastMethod.get());
+        assertEquals("/session/ses_new/todo", lastPath.get());
+        assertEquals(2, todos.size());
+        assertEquals("todo_1", todos.get(0).id());
+        assertEquals("Write the plan", todos.get(0).content());
+        assertEquals("in_progress", todos.get(0).status());
+        assertEquals("high", todos.get(0).priority());
+        assertEquals("completed", todos.get(1).status());
+    }
+
+    @Test
+    public void getSessionTodosHandlesAnEmptyList() throws Exception {
+        todoBody.set("[]");
+
+        assertTrue(client.getSessionTodos("ses_new").isEmpty());
+    }
+
+    @Test
+    public void getMcpServersParsesTheLiveMapShape() throws Exception {
+        // regression: live v1.18 returns {"<name>": {"status": "…"}} — NOT an array;
+        // array parsing threw "malformed response body" and killed the Server view
+        List<McpServerInfo> servers = client.getMcpServers();
+
+        assertEquals(2, servers.size());
+        assertEquals("tasks", servers.get(0).id());
+        assertEquals("connected", servers.get(0).status());
+        assertEquals("graphics", servers.get(1).id());
+        assertEquals("error", servers.get(1).status());
+    }
+
+    @Test
+    public void getSkillsParsesTheListShape() throws Exception {
+        List<SkillInfo> skills = client.getSkills();
+
+        assertEquals(1, skills.size());
+        assertEquals("cpp-tools", skills.get(0).name());
+        assertTrue(skills.get(0).description().startsWith("C++ execution"));
+    }
+
+    @Test
+    public void getSessionTodosToleratesEntriesWithMissingFieldsAndNulls() throws Exception {
+        todoBody.set("""
+                [
+                 {},
+                 {"content":"Only content","status":"done"},
+                 null
+                ]
+                """);
+
+        List<SessionTodo> todos = client.getSessionTodos("ses_new");
+
+        assertEquals(3, todos.size());
+        assertNull("missing fields map to null components", todos.get(0).id());
+        assertNull(todos.get(0).content());
+        assertNull(todos.get(0).status());
+        assertNull(todos.get(0).priority());
+        assertEquals("Only content", todos.get(1).content());
+        assertEquals("done", todos.get(1).status());
+        assertNull("null array entries parse to null elements (callers skip)", todos.get(2));
+    }
+
+    @Test
     public void sendMessagePostsBuiltBodyAndParsesReply() throws Exception {
         ChatEntry reply = client.sendMessage(new ChatRequest("ses_new", "build", "opencode", "glm-5.2", "high", "SYSTEM-PROMPT", "What is 2+2?"));
         assertEquals("POST", lastMethod.get());
@@ -209,6 +314,37 @@ public class HttpOpencodeClientComponentTest {
         assertEquals("assistant", reply.info().role());
         assertEquals("The answer is $4$.", reply.text());
         assertEquals("opencode/glm-5.2", reply.info().modelLabel());
+    }
+
+    @Test
+    public void abortSessionPostsToTheAbortEndpoint() throws Exception {
+        client.abortSession("ses_new");
+
+        assertEquals("POST", lastMethod.get());
+        assertEquals("/session/ses_new/abort", lastPath.get());
+    }
+
+    @Test
+    public void abortSessionTolerates4xxAlreadyIdle() throws Exception {
+        // the stub answers 404 "session is not active" for ids containing "idle";
+        // abort racing a finished session must not surface that as an error
+        client.abortSession("ses_idle");
+
+        assertEquals("POST", lastMethod.get());
+        assertEquals("/session/ses_idle/abort", lastPath.get());
+    }
+
+    @Test
+    public void abortSessionMaps5xxToOpencodeException() {
+        try {
+            client.abortSession("error");
+            fail("expected OpencodeException");
+        } catch (OpencodeException expected) {
+            assertTrue("message should name the endpoint: " + expected.getMessage(),
+                    expected.getMessage().contains("/session/error/abort"));
+            assertTrue("message should name the HTTP status: " + expected.getMessage(),
+                    expected.getMessage().contains("500"));
+        }
     }
 
     @Test

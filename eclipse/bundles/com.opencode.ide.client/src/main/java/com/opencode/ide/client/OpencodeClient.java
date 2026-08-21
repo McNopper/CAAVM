@@ -8,9 +8,12 @@ import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.ConfigInfo;
 import com.opencode.ide.client.model.HealthStatus;
+import com.opencode.ide.client.model.McpServerInfo;
 import com.opencode.ide.client.model.ProviderList;
+import com.opencode.ide.client.model.SkillInfo;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.SessionTodo;
 
 /**
  * Client for an opencode server ({@code opencode serve}). All methods perform
@@ -67,8 +70,35 @@ public interface OpencodeClient {
      */
     void registerMcp(String name, McpServerConfig config) throws OpencodeException;
 
+    /**
+     * {@code GET /mcp} - the MCP servers registered with the opencode server
+     * (their ids and transport types). Default returns empty so test fakes and
+     * partial implementations stay compiling.
+     */
+    default List<McpServerInfo> getMcpServers() throws OpencodeException {
+        return List.of();
+    }
+
+    /**
+     * {@code GET /skill} - the skills loaded from the working directory's
+     * {@code .opencode/skills/}. Default returns empty so test fakes and
+     * partial implementations stay compiling.
+     */
+    default List<SkillInfo> getSkills() throws OpencodeException {
+        return List.of();
+    }
+
     /** {@code GET /session/:id/message} - the message history of a session. */
     List<ChatEntry> getMessages(String sessionId) throws OpencodeException;
+
+    /**
+     * {@code GET /session/:id/todo} - the session's todo list (opencode v1.18).
+     * Default returns empty so test fakes and partial implementations stay
+     * compiling (same pattern as {@link #abortSession(String)}).
+     */
+    default List<SessionTodo> getSessionTodos(String sessionId) throws OpencodeException {
+        return List.of();
+    }
 
     /**
      * {@code POST /session/:id/message} - send a user prompt and wait for the
@@ -78,6 +108,20 @@ public interface OpencodeClient {
      * @param request model/agent/variant/system + the prompt (see {@link ChatRequest})
      */
     ChatEntry sendMessage(ChatRequest request) throws OpencodeException;
+
+    /**
+     * {@code POST /session/:id/abort} - abort the running agent in a session.
+     * A 4xx reply (typically "session is already idle") is tolerated and
+     * logged, not surfaced; server (>= 5xx) and transport errors raise
+     * {@link OpencodeException}.
+     *
+     * <p>Default implementation throws {@link UnsupportedOperationException} so
+     * in-repo test fakes that never abort stay source-compatible;
+     * {@code HttpOpencodeClient} overrides it.</p>
+     */
+    default void abortSession(String sessionId) throws OpencodeException {
+        throw new UnsupportedOperationException("abortSession");
+    }
 
     /**
      * {@code POST /log} - write an entry into the opencode server log.

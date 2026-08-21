@@ -8,35 +8,16 @@ import static org.junit.Assert.fail;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 import org.junit.Test;
 
 import com.opencode.ide.client.ChatRequest;
-import com.opencode.ide.client.OpencodeClient;
-import com.opencode.ide.client.OpencodeException;
-import com.opencode.ide.client.model.Agent;
-import com.opencode.ide.client.model.ChatEntry;
-import com.opencode.ide.client.model.ChatMessageInfo;
-import com.opencode.ide.client.model.ChatPart;
-import com.opencode.ide.client.model.ConfigInfo;
-import com.opencode.ide.client.model.HealthStatus;
-import com.opencode.ide.client.model.ProviderList;
-import com.opencode.ide.client.model.Session;
-import com.opencode.ide.client.model.SessionStatus;
 import com.opencode.ide.git.MergeResult;
-import com.opencode.ide.git.Worktree;
-import com.opencode.ide.git.WorktreeManager;
-import com.opencode.ide.git.WorktreeStatus;
-import com.opencode.ide.client.McpServerConfig;
 
 /**
  * Unit tests for {@link FleetRunner} against in-memory fakes of
- * {@link OpencodeClient} and {@link WorktreeManager} (no git, no HTTP).
+ * {@link FakeClient} and {@link FakeWorktreeManager} (no git, no HTTP).
  */
 public class FleetRunnerTest {
 
@@ -210,150 +191,5 @@ public class FleetRunnerTest {
             assertTrue(e.getMessage(), e.getMessage().contains("RUNNING"));
         }
         assertTrue(worktrees.mergedTaskIds.isEmpty());
-    }
-
-    private static final class FakeClient implements OpencodeClient {
-
-        final List<String> createdTitles = new ArrayList<>();
-        final List<Path> sessionDirectories = new ArrayList<>();
-        final List<ChatRequest> sentRequests = new ArrayList<>();
-        final Map<String, List<ChatEntry>> messagesBySession = new HashMap<>();
-
-        String sessionType = "busy";
-        String replyOnSend;
-        boolean failSessionCreation;
-        private int sessionCounter;
-        private int messageCounter;
-
-        void addEntry(String sessionId, String role, String text) {
-            messagesBySession.get(sessionId).add(entry(sessionId, role, text));
-        }
-
-        void completeSession(String sessionId, String reply) {
-            sessionType = "idle";
-            addEntry(sessionId, "assistant", reply);
-        }
-
-        private ChatEntry entry(String sessionId, String role, String text) {
-            ChatMessageInfo info = new ChatMessageInfo(
-                    "msg_" + (++messageCounter), sessionId, role,
-                    null, null, null, null, null, null, null, null, null, null);
-            List<ChatPart> parts = (text == null) ? List.of() : List.of(new ChatPart("text", text));
-            return new ChatEntry(info, parts);
-        }
-
-        @Override
-        public Session createSession(String title, Path directory) throws OpencodeException {
-            if (failSessionCreation) {
-                throw new OpencodeException("session create failed");
-            }
-            String id = "ses_" + (++sessionCounter);
-            createdTitles.add(title);
-            sessionDirectories.add(directory);
-            messagesBySession.put(id, new ArrayList<>());
-            return new Session(id, "slug", title, null, null, null, null, null);
-        }
-
-        @Override
-        public Map<String, SessionStatus> getSessionStatus() {
-            Map<String, SessionStatus> status = new HashMap<>();
-            for (String id : messagesBySession.keySet()) {
-                status.put(id, new SessionStatus(sessionType));
-            }
-            return status;
-        }
-
-        @Override
-        public List<ChatEntry> getMessages(String sessionId) {
-            return messagesBySession.getOrDefault(sessionId, List.of());
-        }
-
-        @Override
-        public ChatEntry sendMessage(ChatRequest request) {
-            sentRequests.add(request);
-            List<ChatEntry> entries = messagesBySession.get(request.sessionId());
-            entries.add(entry(request.sessionId(), "user", request.text()));
-            if (replyOnSend != null) {
-                entries.add(entry(request.sessionId(), "assistant", replyOnSend));
-            }
-            return entries.get(entries.size() - 1);
-        }
-
-        @Override
-        public HealthStatus getHealth() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public List<Agent> getAgents() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public ProviderList getProviders() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public ConfigInfo getConfig() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public List<Session> getSessions() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void registerMcp(String name, McpServerConfig config) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void log(String service, String level, String message, Map<String, Object> extra) {
-            throw new UnsupportedOperationException();
-        }
-    }
-
-    private static final class FakeWorktreeManager implements WorktreeManager {
-
-        final List<String> createdTaskIds = new ArrayList<>();
-        final List<String> mergedTaskIds = new ArrayList<>();
-        final List<Path> mergedRepoRoots = new ArrayList<>();
-        MergeResult nextMergeResult = new MergeResult(true, List.of(), "merged");
-
-        @Override
-        public Worktree create(Path repoRoot, String taskId) {
-            createdTaskIds.add(taskId);
-            return new Worktree(taskId, repoRoot.resolve(".git/opencode-fleet").resolve(taskId),
-                    "opencode/" + taskId);
-        }
-
-        @Override
-        public MergeResult mergeBack(Path repoRoot, String taskId) {
-            mergedTaskIds.add(taskId);
-            mergedRepoRoots.add(repoRoot);
-            return nextMergeResult;
-        }
-
-        @Override
-        public List<Worktree> list(Path repoRoot) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Optional<Worktree> find(Path repoRoot, String taskId) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void remove(Path repoRoot, String taskId, boolean force) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public WorktreeStatus status(Path repoRoot, String taskId) {
-            throw new UnsupportedOperationException();
-        }
     }
 }

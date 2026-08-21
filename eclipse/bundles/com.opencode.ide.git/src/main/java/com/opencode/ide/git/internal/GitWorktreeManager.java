@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.opencode.ide.git.FleetGit;
 import com.opencode.ide.git.MergeResult;
 import com.opencode.ide.git.Worktree;
 import com.opencode.ide.git.WorktreeException;
@@ -27,8 +28,6 @@ public final class GitWorktreeManager implements WorktreeManager {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration MERGE_TIMEOUT = Duration.ofMinutes(10);
-    private static final String FLEET_DIR = ".git/opencode-fleet";
-    private static final String BRANCH_PREFIX = "opencode/";
 
     private final String gitCommand;
     private final String gitOrigin;
@@ -41,7 +40,7 @@ public final class GitWorktreeManager implements WorktreeManager {
 
     @Override
     public Worktree create(Path repoRoot, String taskId) {
-        String branch = branchFor(requireTaskId(taskId));
+        String branch = FleetGit.branchFor(requireTaskId(taskId));
         Path repo = repo(repoRoot);
         Path worktreePath = fleetRoot(repo).resolve(taskId);
         if (branchExists(repo, branch)) {
@@ -125,7 +124,7 @@ public final class GitWorktreeManager implements WorktreeManager {
 
     @Override
     public WorktreeStatus status(Path repoRoot, String taskId) {
-        String branch = branchFor(requireTaskId(taskId));
+        String branch = FleetGit.branchFor(requireTaskId(taskId));
         Path repo = repo(repoRoot);
         if (!branchExists(repo, branch)) {
             return new WorktreeStatus(false, 0, "");
@@ -145,7 +144,7 @@ public final class GitWorktreeManager implements WorktreeManager {
     private static Path collect(List<Worktree> into, Path fleet, Path candidate) {
         if (candidate != null && candidate.startsWith(fleet) && !candidate.equals(fleet)) {
             String taskId = candidate.getFileName().toString();
-            into.add(new Worktree(taskId, candidate, BRANCH_PREFIX + taskId));
+            into.add(new Worktree(taskId, candidate, FleetGit.branchFor(taskId)));
         }
         return null;
     }
@@ -155,11 +154,7 @@ public final class GitWorktreeManager implements WorktreeManager {
     }
 
     private static Path fleetRoot(Path repo) {
-        return repo.resolve(FLEET_DIR);
-    }
-
-    private static String branchFor(String taskId) {
-        return BRANCH_PREFIX + taskId;
+        return FleetGit.fleetRoot(repo);
     }
 
     private static String requireTaskId(String taskId) {

@@ -21,9 +21,11 @@ public record Session(
     public record Time(long created, long updated) {
     }
 
+    /** Token usage of the run; the cache breakdown is nullable on some providers. */
     public record Tokens(long input, long output, long reasoning, Cache cache) {
     }
 
+    /** Cache hit (read) vs. fill (write) token counts. */
     public record Cache(long read, long write) {
     }
 }

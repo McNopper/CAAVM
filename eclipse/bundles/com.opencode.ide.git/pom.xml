@@ -13,4 +13,38 @@
 
   <artifactId>com.opencode.ide.git</artifactId>
   <packaging>eclipse-plugin</packaging>
+
+  <build>
+    <plugins>
+      <!-- Keep this bundle Eclipse/OSGi-free (reusable as a plain library): the
+           pwsh scan fails the build on any org.eclipse. / org.osgi. reference
+           under src/main/java, on every OS (skip only with -DskipEclipseBan=true). -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>ban-eclipse-imports</id>
+            <phase>validate</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>pwsh</executable>
+              <arguments>
+                <argument>-NoProfile</argument>
+                <argument>-NonInteractive</argument>
+                <argument>-Command</argument>
+                <argument>$hits = Get-ChildItem 'src/main/java' -Recurse -Filter *.java | Select-String -Pattern 'org\.eclipse\.|org\.osgi\.'; if ($hits) { $hits | ForEach-Object { Write-Host ('FAIL {0}:{1}: {2}' -f $_.Path, $_.LineNumber, $_.Line.Trim()) }; exit 1 }; Write-Host 'git bundle is Eclipse/OSGi-free'</argument>
+              </arguments>
+              <skip>${skipEclipseBan}</skip>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <properties>
+    <skipEclipseBan>false</skipEclipseBan>
+  </properties>
 </project>

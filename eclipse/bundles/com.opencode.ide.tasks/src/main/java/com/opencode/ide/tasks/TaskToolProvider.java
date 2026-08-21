@@ -25,7 +25,10 @@ import com.opencode.ide.tools.ToolProvider;
  * Python {@code pm} MCP server ({@code pm_*} tools) with identical semantics -
  * claim ordering and null-when-empty, lax update rules, sprint force-set on
  * plan, close-sprint returns, traceability pairing - so worker agents and the
- * {@code pm-*} skills keep working after a pure rename.
+ * {@code pm-*} skills keep working after a pure rename. On top of that pack,
+ * {@code task_advance}/{@code task_send_back} drive the V-model pipeline
+ * (stage hand-forward with the in-review/done quality gate, and the blocked
+ * hand-back loop; see {@link VStages}).
  *
  * <p>Parameter names keep the historical {@code ticket_id}/{@code project}
  * spellings for compatibility with existing agent prose ("task" and "ticket"
@@ -92,7 +95,7 @@ public final class TaskToolProvider implements ToolProvider {
                         strList(a, "labels"),
                         optStr(a, "epic", null),
                         orDefault(optStr(a, "id_prefix", null), "T"));
-                return json(store.create(reqStr(a, "project"), spec).toJson());
+                return json(store.create(reqStr(a, "project"), spec, optStr(a, "stage", null)).toJson());
             }
             case "task_get":
                 return json(store.get(reqStr(a, "project"), reqStr(a, "ticket_id")).toJson());
@@ -111,7 +114,8 @@ public final class TaskToolProvider implements ToolProvider {
             {
                 Map<String, Object> changes = new LinkedHashMap<>();
                 for (String field : List.of("title", "description", "type", "status", "story_points",
-                        "priority", "role", "assignee", "acceptance_criteria", "labels", "epic", "sprint")) {
+                        "priority", "role", "stage", "assignee", "acceptance_criteria", "labels",
+                        "epic", "sprint")) {
                     JsonElement v = a.get(field);
                     if (v == null) {
                         continue;
@@ -123,6 +127,12 @@ public final class TaskToolProvider implements ToolProvider {
                 }
                 return json(store.update(reqStr(a, "project"), reqStr(a, "ticket_id"), changes).toJson());
             }
+            case "task_advance":
+                return json(store.advance(reqStr(a, "project"), reqStr(a, "ticket_id"),
+                        optStr(a, "by", null)).toJson());
+            case "task_send_back":
+                return json(store.sendBack(reqStr(a, "project"), reqStr(a, "ticket_id"),
+                        reqStr(a, "reason"), optStr(a, "by", null)).toJson());
             case "task_set_blocked":
                 return json(store.setBlocked(reqStr(a, "project"), reqStr(a, "ticket_id"),
                         reqStr(a, "blocker"), optStr(a, "by", null)).toJson());
@@ -274,6 +284,7 @@ public final class TaskToolProvider implements ToolProvider {
                     obj.add("description", strP());
                     obj.add("type", enumP(Task.VALID_TYPES));
                     obj.add("role", strP(roleDesc));
+                    obj.add("stage", stageP());
                     obj.add("priority", enumP(List.of("low", "medium", "high", "critical")));
                     obj.add("story_points", intP());
                     obj.add("acceptance_criteria", arrP());
@@ -304,11 +315,33 @@ public final class TaskToolProvider implements ToolProvider {
                     obj.add("story_points", intP());
                     obj.add("priority", enumP(List.of("low", "medium", "high", "critical")));
                     obj.add("role", strP(roleDesc));
+                    obj.add("stage", stageP());
                     obj.add("assignee", strP());
                     obj.add("acceptance_criteria", arrP());
                     obj.add("labels", arrP());
                     obj.add("epic", strP());
                     obj.add("sprint", strP());
+                })));
+        out.add(new McpTool("task_advance",
+                "Advance a ticket to the next V-model pipeline stage. Quality gate: the stage's work must be "
+                        + "finished (status in-review or done). Effect: stage and role move to the next stage's, "
+                        + "status resets to product-backlog (the next stage's backlog is fed by the previous "
+                        + "stage), the assignee is cleared, the blocked flag stays as-is.",
+                schema(new String[]{"project", "ticket_id"}, obj -> {
+                    obj.add("project", strP());
+                    obj.add("ticket_id", strP());
+                    obj.add("by", strP());
+                })));
+        out.add(new McpTool("task_send_back",
+                "Send a ticket back to the previous V-model pipeline stage with a reason (the feedback loop). "
+                        + "Effect: stage and role move to the previous stage's, status resets to product-backlog, "
+                        + "the assignee is cleared and the blocked flag is raised with blocker "
+                        + "'sent back from <old stage>: <reason>' (clear via task_clear_blocked once resolved).",
+                schema(new String[]{"project", "ticket_id", "reason"}, obj -> {
+                    obj.add("project", strP());
+                    obj.add("ticket_id", strP());
+                    obj.add("reason", strP("Why the ticket goes back; becomes part of the blocker text."));
+                    obj.add("by", strP());
                 })));
         out.add(new McpTool("task_set_blocked", "Mark a task blocked with a reason (orthogonal flag).",
                 schema(new String[]{"project", "ticket_id", "blocker"}, obj -> {
@@ -459,6 +492,14 @@ public final class TaskToolProvider implements ToolProvider {
         JsonArray arr = new JsonArray();
         values.forEach(arr::add);
         o.add("enum", arr);
+        return o;
+    }
+
+    private static JsonObject stageP() {
+        JsonObject o = enumP(VStages.STAGES);
+        o.addProperty("description", "V-model pipeline stage: definition leg (requirements, system, "
+                + "architecture, design, implementation) then verification leg (test-implementation, "
+                + "test-design, test-architecture, test-system, test-requirements).");
         return o;
     }
 }
