@@ -74,7 +74,7 @@ try {
   const html = readFileSync(join(webDir, "chat.html"), "utf8");
   const js = readFileSync(join(webDir, "chat.js"), "utf8");
   for (const fn of ["__setTheme", "__clear", "__setMessages", "__appendUser",
-    "__startAssistant", "__appendDelta", "__setAssistantText", "__linkClick"]) {
+    "__startAssistant", "__appendDelta", "__setAssistantText", "__linkClick", "__copyCode"]) {
     check(`chat.js exposes ${fn}`, js.includes(`window.${fn} =`));
   }
   check("chat.html loads chat.js", html.includes("chat.js"));
@@ -90,6 +90,18 @@ try {
   check("markdown html disabled (XSS)", js.includes("html: false"));
   check("bridge payloads tolerate string and object", js.includes("function payload("));
   check("bridge calls are guarded and report errors", js.includes("function guard("));
+  // tool parts (compact tool-call lines on assistant messages)
+  check("tool parts render as compact lines", js.includes("renderToolLines") && js.includes("tool-line"));
+  check("tool lines are built without innerHTML (XSS)", /renderToolLines[\s\S]*?insertBefore/.test(js)
+    && !/line\.innerHTML/.test(js));
+  check("chat.html styles tool lines per state",
+    html.includes(".tool-line.tool-running") && html.includes(".tool-line.tool-completed")
+      && html.includes(".tool-line.tool-error"));
+  // copy-code (per-fence Copy button, clipboard + execCommand fallback)
+  check("copy buttons are added to fences", js.includes("addCopyButtons") && js.includes("copy-btn"));
+  check("copy prefers the clipboard API with a fallback",
+    js.includes("navigator.clipboard") && js.includes("execCommand"));
+  check("chat.html styles the copy button", html.includes(".copy-btn") && html.includes("position: absolute"));
 } catch (e) {
   check("chat.html/chat.js readable", false, String(e));
 }

@@ -216,6 +216,7 @@ function renderMarkdown(el, text) {
       }
     });
   }
+  addCopyButtons(el);
 }
 
 const chatEl = document.getElementById("chat");
@@ -251,6 +252,31 @@ function findAssistant(messageId) {
   return chatEl.querySelector('.msg.assistant[data-mid="' + cssEscape(messageId) + '"]') || null;
 }
 function cssEscape(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, "_"); }
+
+// ---- tool parts -------------------------------------------------------------
+// Assistant messages can carry tool-call parts (name + coarse state). They are
+// rendered as compact monospace lines "tool: <name> — <state>", inserted before
+// the body. Built with createElement/textContent only (never innerHTML), so a
+// hostile tool name cannot inject markup.
+const TOOL_LABELS = { running: "running…", completed: "completed ✓", error: "error ✗" };
+
+function renderToolLines(container, tools, before) {
+  if (!container || !Array.isArray(tools) || tools.length === 0) return 0;
+  let rendered = 0;
+  tools.forEach(t => {
+    if (!t || typeof t !== "object") return;
+    const name = (typeof t.name === "string" && t.name) ? t.name : "unknown";
+    const state = typeof t.state === "string" ? t.state : "";
+    const known = Object.prototype.hasOwnProperty.call(TOOL_LABELS, state);
+    const line = document.createElement("div");
+    line.className = "tool-line tool-" + (known ? state : "unknown");
+    line.textContent = "tool: " + name + " — " + (known ? TOOL_LABELS[state] : (state || "unknown"));
+    container.insertBefore(line, before || null);
+    rendered++;
+  });
+  if (rendered > 0) report(rendered + " tool line(s) rendered");
+  return rendered;
+}
 
 // ---- Java bridge (called via browser.execute) ----
 // Payloads are JSON *strings* (Java: ChatScripts). Objects are accepted too, so a
@@ -322,6 +348,7 @@ window.__setMessages = guard("__setMessages", function (json) {
       addUser(e.text);
     } else {
       const a = addAssistant(e.id, e.reasoning);
+      renderToolLines(a.bubble, e.tools, a.body);
       renderMarkdown(a.body, e.text);
       if (e.meta) { const m = document.createElement("div"); m.className = "meta"; m.textContent = e.meta; a.bubble.appendChild(m); }
     }
@@ -368,9 +395,111 @@ window.__setAssistantText = guard("__setAssistantText", function (json) {
   const body = node.querySelector(".body");
   body.innerHTML = "";
   renderMarkdown(body, text);
+  // re-render tool lines (a second authoritative render must not duplicate them)
+  node.querySelectorAll(".tool-line").forEach(l => l.remove());
+  const bubble = node.querySelector(".bubble");
+  if (bubble) renderToolLines(bubble, p.tools, body);
   if (p.meta) { let m = node.querySelector(".meta"); if (!m) { m = document.createElement("div"); m.className = "meta"; node.querySelector(".bubble").appendChild(m); } m.textContent = p.meta; }
   scrollBottom();
   report("assistant bubble rendered (" + text.length + " chars, meta=" + (p.meta || "") + ")");
+  return true;
+});
+
+// Stops the streaming cursor of one bubble: the host calls this when the send
+// completed, failed or was aborted. Harmless when the bubble or cursor is
+// absent (idempotent), and never touches the streamed text itself.
+window.__stopStream = guard("__stopStream", function (json) {
+  const p = payload(json);
+  const node = findAssistant(p.mid);
+  if (node) {
+    node.querySelectorAll(".cursor").forEach(c => c.remove());
+    node.classList.add("stream-done");
+  }
+  return true;
+});
+
+// ---- copy-code ---------------------------------------------------------------
+// Every rendered code fence gets a Copy button (top-right of the fence, styled
+// by the page theme, no external assets). It copies the RAW code text via the
+// async clipboard API, falling back to execCommand + an offscreen textarea.
+// window.__copyCode is exposed so hosts/tests can drive the click path where
+// the clipboard is unavailable; outcomes are always reported to __javaReport.
+function addCopyButtons(el) {
+  el.querySelectorAll("pre").forEach(pre => {
+    const code = pre.querySelector("code");
+    if (!code) return;
+    if (code.classList.contains("language-mermaid")) return; // a diagram, not code
+    if (pre.querySelector(".copy-btn")) return; // idempotent on re-renders
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy-btn";
+    btn.textContent = "Copy";
+    pre.appendChild(btn);
+    btn.addEventListener("click", function () { window.__copyCode(btn); });
+  });
+}
+
+function rawCodeOf(button) {
+  const pre = button ? button.parentElement : null;
+  const code = pre ? pre.querySelector("code") : null;
+  return code ? code.textContent : (pre ? pre.textContent : "");
+}
+
+function copyToClipboard(text, done) {
+  if (typeof navigator !== "undefined" && navigator.clipboard
+      && typeof navigator.clipboard.writeText === "function") {
+    try {
+      const result = navigator.clipboard.writeText(text);
+      if (result && typeof result.then === "function") {
+        result.then(function () { done(true); },
+                    function () { done(fallbackCopy(text)); });
+        return;
+      }
+    } catch (e) {
+      report("clipboard API failed: " + (e && e.message ? e.message : String(e)));
+    }
+  }
+  done(fallbackCopy(text));
+}
+
+function fallbackCopy(text) {
+  try {
+    if (typeof document.execCommand !== "function") return false;
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    if (ta.style) { ta.style.position = "fixed"; ta.style.top = "0"; ta.style.left = "-9999px"; }
+    document.body.appendChild(ta);
+    if (ta.select) { ta.select(); }
+    const ok = document.execCommand("copy");
+    if (ta.parentElement && ta.parentElement.removeChild) { ta.parentElement.removeChild(ta); }
+    return ok === true;
+  } catch (e) {
+    report("copy fallback failed: " + (e && e.message ? e.message : String(e)));
+    return false;
+  }
+}
+
+function confirmCopied(button) {
+  if (!button || !button.classList) return;
+  button.textContent = "Copied";
+  button.classList.add("copied");
+  setTimeout(function () {
+    button.textContent = "Copy";
+    button.classList.remove("copied");
+  }, 1500);
+}
+
+window.__copyCode = guard("__copyCode", function (button) {
+  const text = rawCodeOf(button);
+  copyToClipboard(text, function (ok) {
+    // report lengths only - code fences can hold secrets, never log their content
+    if (ok) {
+      report("code copied (" + text.length + " chars)");
+      confirmCopied(button);
+    } else {
+      report("copy unavailable (" + text.length + " chars)");
+    }
+  });
   return true;
 });
 

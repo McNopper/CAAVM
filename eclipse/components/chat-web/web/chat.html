@@ -47,7 +47,7 @@
   .msg.assistant .bubble { background: var(--bubble-ai-bg); border: 1px solid var(--border); flex: 1; }
   .bubble p { margin: 0.35em 0; }
   .bubble pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
-                padding: 8px; overflow-x: auto; }
+                padding: 8px; overflow-x: auto; position: relative; }
   .bubble code { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
   .bubble :not(pre) > code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
   .bubble table { border-collapse: collapse; margin: 6px 0; }
@@ -69,6 +69,21 @@
   .mermaid { display: flex; justify-content: center; margin: 8px 0; }
   .mermaid svg { max-width: 100%; }
   .error { color: #e5554f; }
+  /* compact tool-call lines (tool parts of assistant messages) */
+  .tool-line { font-family: Consolas, "Courier New", monospace; font-size: 11px;
+               color: var(--muted); margin: 3px 0; padding: 1px 6px 1px 8px;
+               border-left: 2px solid var(--border); overflow-wrap: anywhere; }
+  .tool-line.tool-running { animation: tool-pulse 1.2s ease-in-out infinite; }
+  .tool-line.tool-completed { opacity: 0.85; }
+  .tool-line.tool-error { color: #e5554f; border-left-color: #e5554f; }
+  @keyframes tool-pulse { 50% { opacity: 0.45; } }
+  /* copy button on every code fence (theme-aware, no external assets) */
+  .copy-btn { position: absolute; top: 4px; right: 4px; padding: 1px 8px;
+              font: inherit; font-size: 11px; cursor: pointer;
+              color: var(--fg); background: var(--bg); border: 1px solid var(--border);
+              border-radius: 4px; opacity: 0.7; }
+  pre:hover .copy-btn, .copy-btn:focus { opacity: 1; }
+  .copy-btn.copied { color: #3fb950; border-color: #3fb950; opacity: 1; }
 </style>
 </head>
 <body>

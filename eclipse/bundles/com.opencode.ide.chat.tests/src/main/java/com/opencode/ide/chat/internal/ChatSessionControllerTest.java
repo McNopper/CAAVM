@@ -67,7 +67,7 @@ public class ChatSessionControllerTest {
         assertEquals(new ChatRequest("ses_1", "build", "prov", "m1", "high", "sys", "hello"),
                 connection.client.requests.get(0));
         assertTrue("final render expected, got: " + renderer.assistants,
-                renderer.assistants.contains("final:msg_1:done||prov/mod"));
+                renderer.assistants.contains("final:msg_1:done||prov/mod|"));
         assertEquals(List.of("Session ses_1"), host.statuses);
         assertFalse(controller.isSending());
         assertEquals(Boolean.FALSE, host.sendingStates.get(host.sendingStates.size() - 1));
@@ -77,6 +77,22 @@ public class ChatSessionControllerTest {
         // the original log markers
         assertTrue(host.infos.contains("send: begin (5 chars)"));
         assertTrue(host.infos.contains("send job: running"));
+    }
+
+    @Test
+    public void sendFinalRenderCarriesToolParts() {
+        connection.client.reply = new ChatEntry(
+                new ChatMessageInfo("msg_t", "ses_1", "assistant", null, null, null, null,
+                        null, null, "prov", "mod", null, null),
+                List.of(new ChatPart("text", "done", null, null),
+                        new ChatPart("tool", null, "read", new ChatPart.ToolState("completed")),
+                        new ChatPart("tool", null, "cmake_build", new ChatPart.ToolState("error")),
+                        new ChatPart("step-start", null, null, null)));
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hi"));
+
+        assertTrue("tool lines expected in the final render, got: " + renderer.assistants,
+                renderer.assistants.contains("final:msg_t:done||prov/mod|read/completed,cmake_build/error"));
     }
 
     @Test
@@ -134,6 +150,67 @@ public class ChatSessionControllerTest {
         assertEquals("first", connection.client.requests.get(0).text());
     }
 
+    // ---------- abort ----------
+
+    @Test
+    public void abortWhileSendingPostsAbortForTheSessionAndNotifies() {
+        controller.resume("ses_9");
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hi"));
+        assertTrue(controller.isSending());
+
+        controller.abort();
+        assertTrue("interrupted notice expected, got: " + renderer.notices,
+                renderer.notices.contains("⏹ Aborted by user."));
+        assertTrue(host.jobs.contains("Aborting opencode chat ses_9"));
+        // the abort POST runs on the background job, never the calling thread
+        assertTrue(connection.client.abortCalls.isEmpty());
+
+        host.holdBackground = false;
+        host.queuedBackground.forEach(Runnable::run);
+        assertEquals(List.of("ses_9"), connection.client.abortCalls);
+        // the aborted send job still completes (the server unblocks its reply
+        // call) and re-enables the send button
+        assertFalse(controller.isSending());
+        assertEquals(Boolean.FALSE, host.sendingStates.get(host.sendingStates.size() - 1));
+    }
+
+    @Test
+    public void abortWithoutSendOrSessionIsANoOp() {
+        controller.abort();
+        assertTrue(renderer.notices.isEmpty());
+        assertTrue(connection.client.abortCalls.isEmpty());
+
+        // sending, but the session is not created yet (first send job queued)
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hi"));
+        controller.abort();
+        assertTrue("nothing to abort yet, got: " + renderer.notices,
+                renderer.notices.isEmpty());
+
+        host.queuedBackground.forEach(Runnable::run);
+        assertTrue(connection.client.abortCalls.isEmpty());
+        assertFalse(controller.isSending());
+    }
+
+    @Test
+    public void abortFailureIsLoggedAndShownAsNotice() {
+        connection.client.abortFailure = new OpencodeException("nope");
+        controller.resume("ses_9");
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hi"));
+        controller.abort();
+        host.holdBackground = false;
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertEquals(1, connection.client.abortCalls.size());
+        assertTrue(renderer.notices.contains("⚠ Abort failed: nope"));
+        assertTrue(host.infos.contains("ERROR abort failed for session ses_9"));
+    }
+
     // ---------- live deltas ----------
 
     @Test
@@ -178,7 +255,7 @@ public class ChatSessionControllerTest {
 
         assertEquals("ses_42", controller.sessionId());
         assertEquals(1, renderer.histories.size());
-        List<Map<String, String>> rows = renderer.histories.get(0);
+        List<Map<String, Object>> rows = renderer.histories.get(0);
         assertEquals(2, rows.size());
         assertEquals("user", rows.get(0).get("role"));
         assertEquals("question", rows.get(0).get("text"));
@@ -187,6 +264,30 @@ public class ChatSessionControllerTest {
         assertEquals(List.of("Resumed session ses_42 - continuing the conversation."),
                 renderer.notices);
         assertTrue(host.jobs.contains("Loading chat history ses_42"));
+    }
+
+    @Test
+    public void resumePassesToolPartsToTheRenderer() {
+        connection.client.history = List.of(
+                entry("u1", "user", "question"),
+                new ChatEntry(
+                        new ChatMessageInfo("a1", "ses_1", "assistant", null, null, null, null,
+                                null, null, "prov", "mod", null, null),
+                        List.of(new ChatPart("text", "answer", null, null),
+                                new ChatPart("tool", null, "read", new ChatPart.ToolState("completed")),
+                                new ChatPart("tool", null, "cmake_build", new ChatPart.ToolState("error")))));
+        controller.resume("ses_42");
+
+        List<Map<String, Object>> rows = renderer.histories.get(0);
+        assertEquals(List.of(), rows.get(0).get("tools")); // user rows carry an empty list
+        @SuppressWarnings("unchecked")
+        List<ChatSessionController.ToolLine> tools =
+                (List<ChatSessionController.ToolLine>) rows.get(1).get("tools");
+        assertEquals(2, tools.size());
+        assertEquals("read", tools.get(0).name());
+        assertEquals("completed", tools.get(0).state());
+        assertEquals("cmake_build", tools.get(1).name());
+        assertEquals("error", tools.get(1).state());
     }
 
     @Test
@@ -275,6 +376,67 @@ public class ChatSessionControllerTest {
 
     // ---------- helpers / fakes ----------
 
+    // ---------- streaming cursor lifecycle ----------
+
+    @Test
+    public void finalRenderTargetsTheStreamedBubbleEvenWhenIdsDiffer() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "again"));
+        // deltas stream into msg_stream while the POST is still in flight; the
+        // reply carries a DIFFERENT id — the final render must hit the streamed
+        // bubble or its blinking cursor never stops
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_stream\",\"field\":\"text\",\"delta\":\"par\"}"));
+        connection.client.reply = entry("msg_reply", "assistant", "done");
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertTrue("final render must target the streamed mid, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.startsWith("final:msg_stream:")));
+        assertTrue("stream stop expected after the send settles, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_stream")));
+    }
+
+    @Test
+    public void failedSendStopsTheStreamingCursor() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "again"));
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_stream\",\"field\":\"text\",\"delta\":\"par\"}"));
+        connection.client.sendFailure = new OpencodeException("boom");
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertTrue(renderer.notices.stream().anyMatch(n -> n.startsWith("⚠ Send failed")));
+        assertTrue("cursor stop must fire even on failure, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_stream")));
+    }
+
+    @Test
+    public void abortStopsTheStreamingCursorImmediately() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "again"));
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_stream\",\"field\":\"text\",\"delta\":\"par\"}"));
+
+        controller.abort();
+
+        assertTrue("abort must stop the cursor, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_stream")));
+        assertTrue(renderer.notices.contains("⏹ Aborted by user."));
+        host.queuedBackground.clear(); // never completes; nothing more to assert
+    }
+
     private static OpencodeEvent deltaEvent(String propertiesJson) {
         JsonObject properties = new Gson().fromJson(propertiesJson, JsonObject.class);
         return new OpencodeEvent("message.part.delta", properties);
@@ -283,7 +445,7 @@ public class ChatSessionControllerTest {
     private static ChatEntry entry(String id, String role, String text) {
         ChatMessageInfo info = new ChatMessageInfo(id, "ses_1", role, null, null, null,
                 null, null, null, "prov", "mod", null, null);
-        return new ChatEntry(info, List.of(new ChatPart("text", text)));
+        return new ChatEntry(info, List.of(new ChatPart("text", text, null, null)));
     }
 
     private static final class RecordingRenderer implements ChatSessionController.Renderer {
@@ -291,7 +453,7 @@ public class ChatSessionControllerTest {
         final List<String> assistants = new ArrayList<>();
         final List<String> deltas = new ArrayList<>();
         final List<String> notices = new ArrayList<>();
-        final List<List<Map<String, String>>> histories = new ArrayList<>();
+        final List<List<Map<String, Object>>> histories = new ArrayList<>();
         int clears;
 
         @Override
@@ -310,12 +472,26 @@ public class ChatSessionControllerTest {
         }
 
         @Override
-        public void setAssistantText(String messageId, String text, String reasoning, String meta) {
-            assistants.add("final:" + messageId + ":" + text + "|" + reasoning + "|" + meta);
+        public void setAssistantText(String messageId, String text, String reasoning, String meta,
+                List<ChatSessionController.ToolLine> tools) {
+            StringBuilder toolText = new StringBuilder();
+            for (ChatSessionController.ToolLine tool : tools) {
+                if (toolText.length() > 0) {
+                    toolText.append(",");
+                }
+                toolText.append(tool.name()).append("/").append(tool.state());
+            }
+            assistants.add("final:" + messageId + ":" + text + "|" + reasoning + "|" + meta
+                    + "|" + toolText);
         }
 
         @Override
-        public void setMessages(List<Map<String, String>> rows) {
+        public void stopStream(String messageId) {
+            assistants.add("stop:" + messageId);
+        }
+
+        @Override
+        public void setMessages(List<Map<String, Object>> rows) {
             histories.add(rows);
         }
 
@@ -403,6 +579,7 @@ public class ChatSessionControllerTest {
     private static final class FakeClient implements OpencodeClient {
         final List<ChatRequest> requests = new ArrayList<>();
         final List<String> createdSessions = new ArrayList<>();
+        final List<String> abortCalls = new ArrayList<>();
         int sessionCounter;
         List<Agent> agents = List.of();
         OpencodeException agentsFailure;
@@ -411,6 +588,7 @@ public class ChatSessionControllerTest {
         OpencodeException sendFailure;
         List<ChatEntry> history = List.of();
         OpencodeException historyFailure;
+        OpencodeException abortFailure;
         int configCalls;
         int providersCalls;
 
@@ -476,6 +654,14 @@ public class ChatSessionControllerTest {
                 throw sendFailure;
             }
             return reply;
+        }
+
+        @Override
+        public void abortSession(String sessionId) throws OpencodeException {
+            abortCalls.add(sessionId);
+            if (abortFailure != null) {
+                throw abortFailure;
+            }
         }
 
         @Override

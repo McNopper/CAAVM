@@ -32,9 +32,18 @@ public class OpencodePerspective implements IPerspectiveFactory {
                 com.opencode.ide.ui.views.ProvidersView.ID,
                 IPageLayout.BOTTOM, 0.50f, editorArea);
 
+        // Board + Fleet views (contributed by com.opencode.ide.board - referenced
+        // by ID so this bundle has no compile dependency on it). Same relationship
+        // + relative part as Providers, so all three share the bottom stack:
+        // Board sits below the chat/editor area, Fleet is a tab sibling.
+        layout.addView("com.opencode.ide.board.views.BoardView", IPageLayout.BOTTOM, 0.50f, editorArea);
+        layout.addView("com.opencode.ide.board.views.FleetView", IPageLayout.BOTTOM, 0.50f, editorArea);
+
         layout.addShowViewShortcut(com.opencode.ide.ui.views.ServerView.ID);
         layout.addShowViewShortcut("com.opencode.ide.chat.views.ChatView");
         layout.addShowViewShortcut(com.opencode.ide.ui.views.ProvidersView.ID);
+        layout.addShowViewShortcut("com.opencode.ide.board.views.BoardView");
+        layout.addShowViewShortcut("com.opencode.ide.board.views.FleetView");
         layout.addPerspectiveShortcut(ID);
     }
 }

@@ -17,7 +17,8 @@ import com.opencode.ide.client.OpencodeException;
 public final class McpRegistration {
 
     /** Name under which the IDE-side MCP endpoint is registered. */
-    public static final String SERVER_NAME = "eclipse-build";
+    /** The wire name the dispatcher answers as — one source of truth (via the mcp bundle's API). */
+    public static final String SERVER_NAME = com.opencode.ide.mcp.McpInfo.SERVER_NAME;
 
     private final ClientLog log;
 

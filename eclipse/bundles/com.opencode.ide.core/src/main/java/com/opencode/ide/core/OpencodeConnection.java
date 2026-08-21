@@ -1,6 +1,7 @@
 package com.opencode.ide.core;
 
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -183,6 +184,17 @@ public final class OpencodeConnection {
             ProjectContext context = CoreActivator.getProjectContext();
             if (context != null) {
                 workingDirectory = context.getWorkingDirectory().orElse(null);
+            }
+            if (workingDirectory == null) {
+                // fallback: the configured repo root (default Hephaestus) so the
+                // server loads that repo's .opencode/ agents, skills and MCP config
+                String configured = preferences.getWorkingDirectory();
+                if (configured != null && !configured.isBlank()) {
+                    Path candidate = Path.of(configured);
+                    if (Files.isDirectory(candidate)) {
+                        workingDirectory = candidate;
+                    }
+                }
             }
 
             launcher = new OpencodeServerLauncher(

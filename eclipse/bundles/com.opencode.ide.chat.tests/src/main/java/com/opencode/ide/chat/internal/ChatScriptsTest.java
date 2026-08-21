@@ -35,11 +35,11 @@ public class ChatScriptsTest {
         return script.substring(open + 1, close);
     }
 
-    private static Map<String, String> payloadOf(String script) {
+    private static Map<String, Object> payloadOf(String script) {
         String argument = argumentOf(script);
         assertTrue("payload must be a JSON string literal, was: " + argument, argument.startsWith("\""));
         String json = GSON.fromJson(argument, String.class);
-        return GSON.fromJson(json, new TypeToken<Map<String, String>>() { }.getType());
+        return GSON.fromJson(json, new TypeToken<Map<String, Object>>() { }.getType());
     }
 
     @Test
@@ -55,7 +55,8 @@ public class ChatScriptsTest {
                 ChatScripts.appendUser("hi"),
                 ChatScripts.startAssistant("msg_1"),
                 ChatScripts.appendDelta("msg_1", "chunk"),
-                ChatScripts.setAssistantText("msg_1", "text", "", "openai/gpt"),
+                ChatScripts.setAssistantText("msg_1", "text", "", "openai/gpt",
+                        List.of(new ChatSessionController.ToolLine("read", "completed"))),
                 ChatScripts.setMessages(List.of(Map.of("role", "user", "text", "hi"))));
         for (String script : scripts) {
             String argument = argumentOf(script);
@@ -75,25 +76,33 @@ public class ChatScriptsTest {
         String tricky = "say \"hi\"\n\tpath C:\\temp\\x  </script> \u00e9\u4e2d";
         assertEquals(tricky, payloadOf(ChatScripts.appendUser(tricky)).get("text"));
         assertEquals(tricky, payloadOf(ChatScripts.appendDelta("m", tricky)).get("text"));
-        assertEquals(tricky, payloadOf(ChatScripts.setAssistantText("m", tricky, "", "")).get("text"));
+        assertEquals(tricky, payloadOf(ChatScripts.setAssistantText("m", tricky, "", "", null)).get("text"));
     }
 
     @Test
     public void streamingScriptsCarryMessageIdAndText() {
         assertEquals("msg_1", payloadOf(ChatScripts.startAssistant("msg_1")).get("mid"));
-        Map<String, String> delta = payloadOf(ChatScripts.appendDelta("msg_1", "ack"));
+        Map<String, Object> delta = payloadOf(ChatScripts.appendDelta("msg_1", "ack"));
         assertEquals("msg_1", delta.get("mid"));
         assertEquals("ack", delta.get("text"));
     }
 
     @Test
-    public void finalRenderCarriesTextReasoningAndMeta() {
-        Map<String, String> payload =
-                payloadOf(ChatScripts.setAssistantText("msg_1", "done", "thinking", "openai/gpt"));
+    public void finalRenderCarriesTextReasoningMetaAndTools() {
+        Map<String, Object> payload = payloadOf(ChatScripts.setAssistantText("msg_1", "done",
+                "thinking", "openai/gpt",
+                List.of(new ChatSessionController.ToolLine("read", "completed"))));
         assertEquals("msg_1", payload.get("mid"));
         assertEquals("done", payload.get("text"));
         assertEquals("thinking", payload.get("reasoning"));
         assertEquals("openai/gpt", payload.get("meta"));
+        assertEquals(List.of(Map.of("name", "read", "state", "completed")), payload.get("tools"));
+    }
+
+    @Test
+    public void finalRenderWithoutToolsEmitsAnEmptyArray() {
+        assertEquals(List.of(), payloadOf(ChatScripts.setAssistantText("m", "t", "", "", null)).get("tools"));
+        assertEquals(List.of(), payloadOf(ChatScripts.setAssistantText("m", "t", "", "", List.of())).get("tools"));
     }
 
     @Test
@@ -119,10 +128,11 @@ public class ChatScriptsTest {
     @Test
     public void nullsBecomeEmptyStringsInsteadOfTheLiteralNull() {
         assertEquals("", payloadOf(ChatScripts.appendUser(null)).get("text"));
-        Map<String, String> payload = payloadOf(ChatScripts.setAssistantText(null, null, null, null));
+        Map<String, Object> payload = payloadOf(ChatScripts.setAssistantText(null, null, null, null, null));
         assertEquals("", payload.get("mid"));
         assertEquals("", payload.get("text"));
         assertEquals("", payload.get("reasoning"));
         assertEquals("", payload.get("meta"));
+        assertEquals(List.of(), payload.get("tools"));
     }
 }

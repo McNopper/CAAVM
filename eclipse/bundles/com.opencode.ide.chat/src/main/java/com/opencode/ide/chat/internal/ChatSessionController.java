@@ -1,6 +1,7 @@
 package com.opencode.ide.chat.internal;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -10,6 +11,7 @@ import com.opencode.ide.client.OpencodeEventListener;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
+import com.opencode.ide.client.model.ChatPart;
 import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.client.model.Session;
@@ -17,11 +19,20 @@ import com.opencode.ide.client.model.Session;
 /**
  * Per-view chat session logic (SWT-free): creates and resumes sessions, sends
  * messages through the opencode client, turns {@code message.part.delta}
- * events for the current session into live bubble updates, and reports
- * everything through the {@link Renderer} (the browser page) and {@link Host}
- * (the owning view) callbacks.
+ * events for the current session into live bubble updates, aborts in-flight
+ * replies ({@link #abort()}), and reports everything through the
+ * {@link Renderer} (the browser page) and {@link Host} (the owning view)
+ * callbacks.
  */
 public final class ChatSessionController {
+
+    /**
+     * One tool-call line for compact rendering: the tool name plus a coarse
+     * state ({@code running}/{@code completed}/{@code error}) extracted from
+     * the {@code tool} parts of a {@link ChatEntry}.
+     */
+    public record ToolLine(String name, String state) {
+    }
 
     /** Rendering surface driven by the controller (implemented by {@link ChatPage}). */
     public interface Renderer {
@@ -32,9 +43,13 @@ public final class ChatSessionController {
 
         void appendDelta(String messageId, String text);
 
-        void setAssistantText(String messageId, String text, String reasoning, String meta);
+        void setAssistantText(String messageId, String text, String reasoning, String meta,
+                List<ToolLine> tools);
 
-        void setMessages(List<Map<String, String>> rows);
+        /** Stops the streaming cursor of a bubble (send completed/failed or aborted). */
+        void stopStream(String messageId);
+
+        void setMessages(List<Map<String, Object>> rows);
 
         void notice(String text);
 
@@ -88,6 +103,8 @@ public final class ChatSessionController {
     private volatile String sessionId;
     private volatile boolean sending;
     private volatile String[] defaultModelParts;
+    /** mid of the bubble the current send streams into (first delta wins); the final render must target it. */
+    private volatile String streamingMid;
     private OpencodeEventListener eventListener;
 
     public ChatSessionController(ChatServerConnection connection, Renderer renderer, Host host) {
@@ -118,6 +135,9 @@ public final class ChatSessionController {
                 }
                 if (!"text".equals(field)) {
                     return;
+                }
+                if (streamingMid == null) {
+                    streamingMid = messageId;
                 }
                 host.runOnUi(() -> {
                     renderer.startAssistant(messageId);
@@ -173,15 +193,17 @@ public final class ChatSessionController {
         host.runInBackground("Loading chat history " + sid, () -> {
             try {
                 List<ChatEntry> entries = connection.getClient().getMessages(sid);
-                List<Map<String, String>> rows = new ArrayList<>();
+                List<Map<String, Object>> rows = new ArrayList<>();
                 for (ChatEntry entry : entries) {
                     String meta = (entry.info() != null) ? entry.info().modelLabel() : "";
-                    rows.add(Map.of(
-                            "role", entry.isUser() ? "user" : "assistant",
-                            "id", entry.info() != null && entry.info().id() != null ? entry.info().id() : "",
-                            "text", entry.text(),
-                            "reasoning", entry.reasoning(),
-                            "meta", meta));
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("role", entry.isUser() ? "user" : "assistant");
+                    row.put("id", entry.info() != null && entry.info().id() != null ? entry.info().id() : "");
+                    row.put("text", entry.text());
+                    row.put("reasoning", entry.reasoning());
+                    row.put("meta", meta);
+                    row.put("tools", toolLinesOf(entry));
+                    rows.add(row);
                 }
                 host.runOnUi(() -> {
                     renderer.setMessages(rows);
@@ -191,6 +213,22 @@ public final class ChatSessionController {
                 host.runOnUi(() -> host.statusChanged("Error loading history: " + e.getMessage()));
             }
         });
+    }
+
+    /** Compact tool-call lines of an entry ({@code tool} parts: name + state). */
+    private static List<ToolLine> toolLinesOf(ChatEntry entry) {
+        if (entry == null) {
+            return List.of();
+        }
+        List<ToolLine> tools = new ArrayList<>();
+        for (ChatPart part : entry.parts()) {
+            if (part.isTool()) {
+                tools.add(new ToolLine(
+                        part.tool() != null ? part.tool() : "",
+                        part.stateName() != null ? part.stateName() : ""));
+            }
+        }
+        return tools;
     }
 
     // ---------- selectors ----------
@@ -217,6 +255,7 @@ public final class ChatSessionController {
             return;
         }
         sending = true;
+        streamingMid = null;
         try {
             host.sendingChanged(true);
             host.info("send: begin (" + message.text().length() + " chars)");
@@ -261,21 +300,63 @@ public final class ChatSessionController {
             ChatRequest request = new ChatRequest(sid, message.agent(), providerId, modelId,
                     message.variant(), message.system(), message.text());
             ChatEntry reply = connection.getClient().sendMessage(request);
-            String mid = (reply != null && reply.info() != null) ? reply.info().id() : "assistant";
+            // The final render MUST target the bubble the deltas streamed into — the POST
+            // response id and the SSE messageID can differ across server versions, and a
+            // mismatched id would orphan the streaming bubble with its blinking cursor.
+            String streamed = streamingMid;
+            String mid = streamed != null ? streamed
+                    : ((reply != null && reply.info() != null) ? reply.info().id() : "assistant");
             String finalText = (reply != null) ? reply.text() : "";
             String reasoning = (reply != null) ? reply.reasoning() : "";
             String meta = metaFor(reply);
+            List<ToolLine> tools = toolLinesOf(reply);
             host.runOnUi(() ->
-                    renderer.setAssistantText(mid, finalText, reasoning, meta));
+                    renderer.setAssistantText(mid, finalText, reasoning, meta, tools));
         } catch (OpencodeException e) {
             String failure = e.getMessage();
             host.runOnUi(() -> renderer.notice("⚠ Send failed: " + failure));
         } finally {
+            String streamed = streamingMid;
+            streamingMid = null;
+            if (streamed != null) {
+                // belt and braces: even on failure/abort the cursor must stop
+                host.runOnUi(() -> renderer.stopStream(streamed));
+            }
             host.runOnUi(() -> {
                 sending = false;
                 host.sendingChanged(false);
             });
         }
+    }
+
+    // ---------- abort ----------
+
+    /**
+     * Aborts the in-flight reply: shows an interrupted notice immediately, then
+     * POSTs the abort endpoint on a background thread (never the UI thread).
+     * The {@code sending} flag itself is cleared by the aborted send job when
+     * the server unblocks its reply call. A no-op when nothing is in flight or
+     * the session does not exist yet (first message still creating it).
+     */
+    public void abort() {
+        String sid = sessionId;
+        if (!sending || sid == null) {
+            return;
+        }
+        String streamed = streamingMid;
+        if (streamed != null) {
+            renderer.stopStream(streamed); // the interrupted bubble must not keep blinking
+        }
+        renderer.notice("⏹ Aborted by user.");
+        host.runInBackground("Aborting opencode chat " + sid, () -> {
+            try {
+                connection.getClient().abortSession(sid);
+                host.info("abort: posted for session " + sid);
+            } catch (OpencodeException e) {
+                host.error("abort failed for session " + sid, e);
+                host.runOnUi(() -> renderer.notice("⚠ Abort failed: " + e.getMessage()));
+            }
+        });
     }
 
     private static String metaFor(ChatEntry reply) {

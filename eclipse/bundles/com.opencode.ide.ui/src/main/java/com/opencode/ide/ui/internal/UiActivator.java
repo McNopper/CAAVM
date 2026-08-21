@@ -38,6 +38,7 @@ public class UiActivator extends AbstractUIPlugin {
     public void stop(BundleContext context) throws Exception {
         try {
             ProviderIcons.disposeAll();
+            ProviderLogos.disposeAll();
             images.values().forEach(Image::dispose);
             images.clear();
         } finally {

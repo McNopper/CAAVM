@@ -1,0 +1,1258 @@
+package com.opencode.ide.board.views;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.jface.action.Action;
+import org.eclipse.jface.action.ControlContribution;
+import org.eclipse.jface.action.IContributionManager;
+import org.eclipse.jface.action.IStatusLineManager;
+import org.eclipse.jface.action.IToolBarManager;
+import org.eclipse.jface.action.MenuManager;
+import org.eclipse.jface.dialogs.InputDialog;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jface.layout.TableColumnLayout;
+import org.eclipse.jface.resource.JFaceResources;
+import org.eclipse.jface.viewers.ArrayContentProvider;
+import org.eclipse.jface.viewers.ColumnLabelProvider;
+import org.eclipse.jface.viewers.ColumnViewerToolTipSupport;
+import org.eclipse.jface.viewers.ColumnWeightData;
+import org.eclipse.jface.viewers.DoubleClickEvent;
+import org.eclipse.jface.viewers.IDoubleClickListener;
+import org.eclipse.jface.viewers.ISelectionChangedListener;
+import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.StructuredSelection;
+import org.eclipse.jface.viewers.TableViewer;
+import org.eclipse.jface.viewers.TableViewerColumn;
+import org.eclipse.jface.window.Window;
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.ScrolledComposite;
+import org.eclipse.swt.events.FocusAdapter;
+import org.eclipse.swt.events.FocusEvent;
+import org.eclipse.swt.events.SelectionAdapter;
+import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Font;
+import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.layout.RowData;
+import org.eclipse.swt.layout.RowLayout;
+import org.eclipse.swt.program.Program;
+import org.eclipse.swt.widgets.Combo;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Menu;
+import org.eclipse.swt.widgets.Text;
+import org.eclipse.ui.IViewPart;
+import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.PartInitException;
+import org.eclipse.ui.part.ViewPart;
+
+import com.opencode.ide.board.fleet.FleetJobHandle;
+import com.opencode.ide.board.fleet.FleetLauncher;
+import com.opencode.ide.board.fleet.TaskFleetLauncher;
+import com.opencode.ide.board.internal.BoardPlugin;
+import com.opencode.ide.board.model.BoardModel;
+import com.opencode.ide.board.model.BoardModel.BoardMode;
+import com.opencode.ide.board.model.BoardSnapshot;
+import com.opencode.ide.board.model.FleetJobsModel;
+import com.opencode.ide.board.model.PipelineSnapshot;
+import com.opencode.ide.board.model.StageColumn;
+import com.opencode.ide.board.model.StageSelection;
+import com.opencode.ide.board.model.TaskStoreWatcher;
+import com.opencode.ide.board.model.TicketRow;
+import com.opencode.ide.core.OpencodeConnection;
+import com.opencode.ide.git.FleetGit;
+import com.opencode.ide.tasks.Task;
+import com.opencode.ide.tasks.TaskStore;
+import com.opencode.ide.tasks.VStages;
+
+/**
+ * The PM Board: a kanban over the Markdown task store, in two layouts. The
+ * toolbar carries the store-root and project inputs (persisted via dialog
+ * settings), the sprint selector, the "Group by" layout choice (None = the
+ * flat five-column status kanban, Pipeline = the ten V-model stage columns
+ * plus a trailing untracked group; persisted too), a blocked-only toggle,
+ * and Refresh / Launch task / Take over. The board refreshes live via
+ * {@link TaskStoreWatcher} on {@code <root>/<project>} and survives a missing
+ * store (notice instead of exception, polling continues).
+ *
+ * <p>Blocked tickets are unmissable in both layouts: red bold rows, a red
+ * blocked count in every pipeline column header. The context menu on a ticket
+ * row offers "Advance stage →" / "Send back…" (the V-pipeline moves; failures
+ * surface in the status line).</p>
+ *
+ * <p>Threading: refreshes are single-flight — the snapshot (and sprint list)
+ * is computed on a background thread and only the apply runs on the UI thread
+ * via {@code Display.asyncExec}. While a compute is in flight further refresh
+ * requests just mark it dirty; the drain loop then re-computes once more
+ * (latest-wins), so bursts of watcher events never queue up or overlap.</p>
+ */
+public class BoardView extends ViewPart {
+
+    public static final String ID = "com.opencode.ide.board.views.BoardView";
+
+    private static final String SETTINGS_SECTION = "BoardView";
+    private static final String SETTING_ROOT = "tasksRoot";
+    private static final String SETTING_PROJECT = "project";
+    private static final String SETTING_MODE = "mode";
+    private static final String SETTING_MODE_PIPELINE = "pipeline";
+    private static final String SETTING_STAGES = "visibleStages";
+
+    /** Fixed width of a non-empty pipeline column (empty ones collapse to their header). */
+    private static final int PIPELINE_COLUMN_WIDTH = 190;
+
+    /** The compact status-prefix legend (tooltip text on pipeline rows). */
+    private static final String STATUS_LEGEND =
+            "[PB] product-backlog · [SB] sprint-backlog · [IP] in-progress · [IR] in-review · [D] done";
+
+    private BoardModel model;
+    private TaskStoreWatcher watcher;
+    /** Assigned in createPartControl — null-checked before every use. */
+    private FleetLauncher launcher;
+
+    private final Map<String, ColumnUi> columns = new LinkedHashMap<>();
+    private final List<PipelineColumnUi> pipelineColumns = new ArrayList<>();
+    /** Container that holds whichever layout the current mode builds. */
+    private Composite boardArea;
+    private Composite flatArea;
+    private ScrolledComposite pipelineScroll;
+    private Composite pipelineContent;
+    private Text rootText;
+    private Text projectText;
+    private Combo sprintCombo;
+    private Combo modeCombo;
+    private Action refreshAction;
+    private Action launchAction;
+    private Action takeOverAction;
+    private Action blockedOnlyAction;
+    private Action stageFilterAction;
+    /** Selected stage ids for the visibility filter; {@code null} = all visible. */
+    private java.util.Set<String> visibleStages;
+    private boolean updatingSprintCombo;
+    private boolean updatingModeCombo;
+    private String rootOverride = "";
+    private String projectName = BoardModel.DEFAULT_PROJECT;
+    private BoardMode boardMode = BoardMode.FLAT;
+
+    /** Single-thread daemon executor: serializes snapshot computes, one per view. */
+    private ExecutorService refreshExecutor;
+    /** True while a drain loop owns the compute (single-flight guard). */
+    private final AtomicBoolean draining = new AtomicBoolean();
+    /** Set on every refresh request; consumed by the drain loop (latest-wins). */
+    private final AtomicBoolean dirty = new AtomicBoolean();
+
+    private static final class ColumnUi {
+        final Label header;
+        final TableViewer viewer;
+
+        ColumnUi(Label header, TableViewer viewer) {
+            this.header = header;
+            this.viewer = viewer;
+        }
+    }
+
+    private static final class PipelineColumnUi {
+        final String stage;
+        final Label headerLabel;
+        final Label blockedLabel;
+        final Composite column;
+        final Composite tableComposite;
+        final TableViewer viewer;
+
+        PipelineColumnUi(String stage, Label headerLabel, Label blockedLabel,
+                Composite column, Composite tableComposite, TableViewer viewer) {
+            this.stage = stage;
+            this.headerLabel = headerLabel;
+            this.blockedLabel = blockedLabel;
+            this.column = column;
+            this.tableComposite = tableComposite;
+            this.viewer = viewer;
+        }
+    }
+
+    @Override
+    public void createPartControl(Composite parent) {
+        refreshExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "board-refresh");
+            thread.setDaemon(true);
+            return thread;
+        });
+
+        Composite outer = new Composite(parent, SWT.NONE);
+        GridLayout outerLayout = new GridLayout(1, false);
+        outerLayout.marginWidth = 0;
+        outerLayout.marginHeight = 0;
+        outer.setLayout(outerLayout);
+
+        boardArea = new Composite(outer, SWT.NONE);
+        GridLayout boardLayout = new GridLayout(1, false);
+        boardLayout.marginWidth = 0;
+        boardLayout.marginHeight = 0;
+        boardArea.setLayout(boardLayout);
+        boardArea.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        contributeToolbar();
+        loadSettings();
+        buildBoardArea();
+        initModel();
+        launcher = new TaskFleetLauncher(
+                BoardView::connectClient,
+                FleetGit::defaultManager,
+                () -> model == null ? null : model.root());
+    }
+
+    private static com.opencode.ide.client.OpencodeClient connectClient() {
+        try {
+            return OpencodeConnection.getInstance().getClient();
+        } catch (com.opencode.ide.client.OpencodeException e) {
+            throw new IllegalStateException("opencode server unavailable: " + e.getMessage(), e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Layout: flat status kanban / V pipeline
+    // ------------------------------------------------------------------
+
+    /** Builds the layout matching {@link #boardMode} into {@link #boardArea}. */
+    private void buildBoardArea() {
+        columns.clear();
+        pipelineColumns.clear();
+        flatArea = null;
+        pipelineScroll = null;
+        pipelineContent = null;
+        if (boardMode == BoardMode.PIPELINE) {
+            buildPipelineArea();
+        } else {
+            buildFlatArea();
+        }
+        boardArea.layout(true, true);
+    }
+
+    /** Disposes the current layout and builds the (new) one. */
+    private void rebuildBoardArea() {
+        if (boardArea == null || boardArea.isDisposed()) {
+            return;
+        }
+        for (Control child : boardArea.getChildren()) {
+            child.dispose();
+        }
+        buildBoardArea();
+    }
+
+    private void buildFlatArea() {
+        flatArea = new Composite(boardArea, SWT.NONE);
+        GridLayout columnLayout = new GridLayout(Task.VALID_STATUSES.size(), true);
+        columnLayout.marginWidth = 0;
+        columnLayout.marginHeight = 0;
+        columnLayout.horizontalSpacing = 3;
+        flatArea.setLayout(columnLayout);
+        flatArea.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        for (String status : Task.VALID_STATUSES) {
+            columns.put(status, createColumn(status));
+        }
+    }
+
+    private void buildPipelineArea() {
+        pipelineScroll = new ScrolledComposite(boardArea, SWT.H_SCROLL | SWT.V_SCROLL);
+        pipelineScroll.setExpandHorizontal(true);
+        pipelineScroll.setExpandVertical(true);
+        pipelineScroll.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        pipelineContent = new Composite(pipelineScroll, SWT.NONE);
+        RowLayout rowLayout = new RowLayout(SWT.HORIZONTAL);
+        rowLayout.wrap = false;
+        rowLayout.fill = true;
+        rowLayout.spacing = 4;
+        rowLayout.marginWidth = 2;
+        rowLayout.marginHeight = 2;
+        pipelineContent.setLayout(rowLayout);
+
+        List<String> stages = new ArrayList<>(VStages.STAGES);
+        stages.add(PipelineSnapshot.UNTRACKED);
+        for (String stage : stages) {
+            pipelineColumns.add(createPipelineColumn(stage));
+        }
+        pipelineScroll.setContent(pipelineContent);
+    }
+
+    private ColumnUi createColumn(String status) {
+        Composite column = new Composite(flatArea, SWT.NONE);
+        GridLayout layout = new GridLayout(1, false);
+        layout.marginWidth = 2;
+        layout.marginHeight = 0;
+        column.setLayout(layout);
+        column.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        Label header = new Label(column, SWT.NONE);
+        header.setText(status + " (0)");
+        header.setFont(boldFont());
+        header.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        TableViewer viewer = createTicketViewer(column);
+        return new ColumnUi(header, viewer);
+    }
+
+    private PipelineColumnUi createPipelineColumn(String stage) {
+        Composite column = new Composite(pipelineContent, SWT.NONE);
+        GridLayout layout = new GridLayout(1, false);
+        layout.marginWidth = 2;
+        layout.marginHeight = 0;
+        column.setLayout(layout);
+        column.setLayoutData(new RowData()); // replaced per snapshot (collapse when empty)
+
+        Composite header = new Composite(column, SWT.NONE);
+        GridLayout headerLayout = new GridLayout(2, false);
+        headerLayout.marginWidth = 0;
+        headerLayout.marginHeight = 0;
+        headerLayout.horizontalSpacing = 0;
+        header.setLayout(headerLayout);
+        header.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Font bold = boldFont();
+        Label headerLabel = new Label(header, SWT.NONE);
+        headerLabel.setFont(bold);
+        Label blockedLabel = new Label(header, SWT.NONE);
+        blockedLabel.setFont(bold);
+
+        Composite tableComposite = new Composite(column, SWT.NONE);
+        TableColumnLayout tableLayout = new TableColumnLayout();
+        tableComposite.setLayout(tableLayout);
+        tableComposite.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        TableViewer viewer = new TableViewer(tableComposite,
+                SWT.SINGLE | SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION | SWT.BORDER);
+        viewer.getTable().setLinesVisible(true);
+        viewer.setContentProvider(ArrayContentProvider.getInstance());
+        hookViewerBehavior(viewer);
+        TableViewerColumn ticket = new TableViewerColumn(viewer, SWT.NONE);
+        ticket.setLabelProvider(new BoardRowLabel(true));
+        tableLayout.setColumnData(ticket.getColumn(), new ColumnWeightData(100, 110, true));
+
+        return new PipelineColumnUi(stage, headerLabel, blockedLabel, column, tableComposite, viewer);
+    }
+
+    /** Shared viewer wiring: selection/double-click/context menu/tooltips + the flat columns. */
+    private TableViewer createTicketViewer(Composite column) {
+        Composite tableComposite = new Composite(column, SWT.NONE);
+        TableColumnLayout tableLayout = new TableColumnLayout();
+        tableComposite.setLayout(tableLayout);
+        tableComposite.setLayoutData(new GridData(GridData.FILL_BOTH));
+
+        TableViewer viewer = new TableViewer(tableComposite,
+                SWT.SINGLE | SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION | SWT.BORDER);
+        viewer.getTable().setLinesVisible(true);
+        viewer.setContentProvider(ArrayContentProvider.getInstance());
+        hookViewerBehavior(viewer);
+
+        TableViewerColumn ticket = new TableViewerColumn(viewer, SWT.NONE);
+        ticket.setLabelProvider(new BoardRowLabel(false));
+        tableLayout.setColumnData(ticket.getColumn(), new ColumnWeightData(100, 110, true));
+
+        TableViewerColumn points = new TableViewerColumn(viewer, SWT.RIGHT);
+        points.setLabelProvider(new ColumnLabelProvider() {
+            @Override
+            public String getText(Object element) {
+                TicketRow row = asRow(element);
+                return row == null ? "" : row.pointsLabel();
+            }
+        });
+        tableLayout.setColumnData(points.getColumn(), new ColumnWeightData(14, 26, true));
+        return viewer;
+    }
+
+    private void hookViewerBehavior(TableViewer viewer) {
+        viewer.addDoubleClickListener(new IDoubleClickListener() {
+            @Override
+            public void doubleClick(DoubleClickEvent event) {
+                openDetails();
+            }
+        });
+        viewer.addSelectionChangedListener((ISelectionChangedListener) e -> updateActionEnablement());
+        ColumnViewerToolTipSupport.enableFor(viewer);
+        hookContextMenu(viewer);
+    }
+
+    private void hookContextMenu(TableViewer viewer) {
+        MenuManager manager = new MenuManager();
+        manager.setRemoveAllWhenShown(true);
+        manager.addMenuListener(this::fillContextMenu);
+        Menu menu = manager.createContextMenu(viewer.getControl());
+        viewer.getControl().setMenu(menu);
+    }
+
+    private void fillContextMenu(IContributionManager manager) {
+        TicketRow row = selectedRow();
+        Action advance = new Action("Advance stage \u2192") {
+            @Override
+            public void run() {
+                advanceSelected(row);
+            }
+        };
+        advance.setEnabled(canAdvance(row));
+        manager.add(advance);
+        Action sendBack = new Action("Send back\u2026") {
+            @Override
+            public void run() {
+                sendBackSelected(row);
+            }
+        };
+        sendBack.setEnabled(canSendBack(row));
+        manager.add(sendBack);
+    }
+
+    private static boolean canAdvance(TicketRow row) {
+        return row != null && row.stage() != null
+                && ("in-review".equals(row.status()) || "done".equals(row.status()))
+                && VStages.next(row.stage()) != null;
+    }
+
+    private static boolean canSendBack(TicketRow row) {
+        return row != null && row.stage() != null && VStages.previous(row.stage()) != null;
+    }
+
+    private void advanceSelected(TicketRow row) {
+        if (row == null || model == null) {
+            return;
+        }
+        String error = model.advance(row.id());
+        IStatusLineManager status = getViewSite().getActionBars().getStatusLineManager();
+        if (error != null) {
+            status.setErrorMessage("Advance " + row.id() + " failed: " + error);
+        } else {
+            status.setErrorMessage(null);
+            status.setMessage("Advanced " + row.id() + " \u2192 " + VStages.next(row.stage()));
+        }
+        refresh();
+    }
+
+    private void sendBackSelected(TicketRow row) {
+        if (row == null || model == null) {
+            return;
+        }
+        String previous = VStages.previous(row.stage());
+        InputDialog dialog = new InputDialog(getSite().getShell(), "Send back " + row.id(),
+                "Reason for sending " + row.id() + " back from '" + row.stage() + "' to '" + previous + "':",
+                "", text -> text == null || text.trim().isEmpty() ? "A reason is required" : null);
+        if (dialog.open() != Window.OK) {
+            return;
+        }
+        String reason = dialog.getValue() == null ? "" : dialog.getValue().trim();
+        if (reason.isEmpty()) {
+            return;
+        }
+        String error = model.sendBack(row.id(), reason);
+        IStatusLineManager status = getViewSite().getActionBars().getStatusLineManager();
+        if (error != null) {
+            status.setErrorMessage("Send back " + row.id() + " failed: " + error);
+        } else {
+            status.setErrorMessage(null);
+            status.setMessage("Sent " + row.id() + " back \u2192 " + previous + " (blocked)");
+        }
+        refresh();
+    }
+
+    private static Font boldFont() {
+        return JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT);
+    }
+
+    private static TicketRow asRow(Object element) {
+        return element instanceof TicketRow row ? row : null;
+    }
+
+    /** Row rendering shared by both layouts: label + tooltip, red bold for blocked rows. */
+    private static final class BoardRowLabel extends ColumnLabelProvider {
+        private final boolean pipeline;
+
+        BoardRowLabel(boolean pipeline) {
+            this.pipeline = pipeline;
+        }
+
+        @Override
+        public String getText(Object element) {
+            TicketRow row = asRow(element);
+            return row == null ? "" : (pipeline ? row.pipelineLabel() : row.label());
+        }
+
+        @Override
+        public String getToolTipText(Object element) {
+            TicketRow row = asRow(element);
+            if (row == null) {
+                return null;
+            }
+            StringBuilder sb = new StringBuilder(STATUS_LEGEND);
+            sb.append("\n").append(safe(row.id())).append(" \u2014 ").append(safe(row.title()));
+            sb.append("\nstatus: ").append(safe(row.status()));
+            sb.append(" · stage: ").append(row.stage() == null ? "(none)" : row.stage());
+            if (row.blocked()) {
+                sb.append("\n[BLOCKED] ").append(safe(row.blocker()));
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public Color getForeground(Object element) {
+            TicketRow row = asRow(element);
+            Display display = Display.getCurrent();
+            return row != null && row.blocked() && display != null
+                    ? display.getSystemColor(SWT.COLOR_RED) : null;
+        }
+
+        @Override
+        public Font getFont(Object element) {
+            TicketRow row = asRow(element);
+            return row != null && row.blocked() ? boldFont() : null;
+        }
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
+    }
+
+    // ------------------------------------------------------------------
+    // Toolbar
+    // ------------------------------------------------------------------
+
+    private void contributeToolbar() {
+        IToolBarManager toolbar = getViewSite().getActionBars().getToolBarManager();
+
+        toolbar.add(new ControlContribution("com.opencode.ide.board.inputs") {
+            @Override
+            protected Control createControl(Composite parent) {
+                Composite box = new Composite(parent, SWT.NONE);
+                GridLayout layout = new GridLayout(4, false);
+                layout.marginWidth = 0;
+                layout.marginHeight = 0;
+                layout.horizontalSpacing = 4;
+                box.setLayout(layout);
+                new Label(box, SWT.NONE).setText("Store:");
+                rootText = new Text(box, SWT.BORDER);
+                rootText.setToolTipText("Task store root (empty = auto-detect ../.opencode/tasks)");
+                rootText.setTextLimit(400);
+                rootText.setLayoutData(fixedSize(170));
+                new Label(box, SWT.NONE).setText("Project:");
+                projectText = new Text(box, SWT.BORDER);
+                projectText.setToolTipText("Task store project (subdirectory of the root)");
+                projectText.setTextLimit(60);
+                projectText.setLayoutData(fixedSize(80));
+                hookApply(rootText);
+                hookApply(projectText);
+                return box;
+            }
+        });
+
+        toolbar.add(new ControlContribution("com.opencode.ide.board.sprint") {
+            @Override
+            protected Control createControl(Composite parent) {
+                Composite box = new Composite(parent, SWT.NONE);
+                GridLayout layout = new GridLayout(2, false);
+                layout.marginWidth = 0;
+                layout.marginHeight = 0;
+                layout.horizontalSpacing = 4;
+                box.setLayout(layout);
+                new Label(box, SWT.NONE).setText("Sprint:");
+                sprintCombo = new Combo(box, SWT.DROP_DOWN | SWT.READ_ONLY);
+                sprintCombo.setToolTipText("Selected sprint (works in both layouts)");
+                sprintCombo.setLayoutData(fixedSize(110));
+                sprintCombo.addSelectionListener(new SelectionAdapter() {
+                    @Override
+                    public void widgetSelected(SelectionEvent e) {
+                        if (updatingSprintCombo) {
+                            return;
+                        }
+                        int index = sprintCombo.getSelectionIndex();
+                        if (index >= 0 && model != null) {
+                            model.setSprint(sprintCombo.getItem(index));
+                            refresh();
+                        }
+                    }
+                });
+                return box;
+            }
+        });
+
+        toolbar.add(new ControlContribution("com.opencode.ide.board.groupby") {
+            @Override
+            protected Control createControl(Composite parent) {
+                Composite box = new Composite(parent, SWT.NONE);
+                GridLayout layout = new GridLayout(2, false);
+                layout.marginWidth = 0;
+                layout.marginHeight = 0;
+                layout.horizontalSpacing = 4;
+                box.setLayout(layout);
+                new Label(box, SWT.NONE).setText("Group by:");
+                modeCombo = new Combo(box, SWT.DROP_DOWN | SWT.READ_ONLY);
+                modeCombo.setItems("None", "Pipeline");
+                modeCombo.setToolTipText(
+                        "None: five-column status kanban. Pipeline: the V-model stages (requirements \u2192 test-requirements).");
+                modeCombo.setLayoutData(fixedSize(90));
+                modeCombo.select(boardMode == BoardMode.PIPELINE ? 1 : 0);
+                modeCombo.addSelectionListener(new SelectionAdapter() {
+                    @Override
+                    public void widgetSelected(SelectionEvent e) {
+                        if (updatingModeCombo || modeCombo.isDisposed()) {
+                            return;
+                        }
+                        BoardMode picked = modeCombo.getSelectionIndex() == 1
+                                ? BoardMode.PIPELINE : BoardMode.FLAT;
+                        if (picked == boardMode) {
+                            return;
+                        }
+                        boardMode = picked;
+                        if (model != null) {
+                            model.setMode(picked);
+                        }
+                        saveSettings();
+                        rebuildBoardArea();
+                        refresh();
+                    }
+                });
+                return box;
+            }
+        });
+
+        blockedOnlyAction = new Action("Blocked only", Action.AS_CHECK_BOX) {
+            @Override
+            public void run() {
+                if (model != null) {
+                    model.setBlockedOnly(isChecked());
+                    refresh();
+                }
+            }
+        };
+        blockedOnlyAction.setToolTipText("Show only blocked tickets (both layouts)");
+
+        stageFilterAction = new Action("Stages", Action.AS_DROP_DOWN_MENU) {
+            @Override
+            public void run() {
+                // opening the dropdown shows the menu; nothing to do on click itself
+            }
+        };
+        stageFilterAction.setToolTipText("Show/hide individual V stages (applies to both layouts)");
+        stageFilterAction.setMenuCreator(new StageFilterMenuCreator());
+
+        refreshAction = new Action("Refresh") {
+            @Override
+            public void run() {
+                applyInputs();
+            }
+        };
+        refreshAction.setToolTipText("Reload the board from the task store");
+
+        launchAction = new Action("Launch task") {
+            @Override
+            public void run() {
+                launchSelected();
+            }
+        };
+        launchAction.setToolTipText("Launch a fleet agent on the selected ticket (sprint-backlog / in-progress)");
+        launchAction.setEnabled(false);
+
+        takeOverAction = new Action("Take over") {
+            @Override
+            public void run() {
+                takeOverSelected();
+            }
+        };
+        takeOverAction.setToolTipText("Open the ticket's fleet worktree in the file explorer and select it on the board");
+        takeOverAction.setEnabled(false);
+
+        toolbar.add(blockedOnlyAction);
+        toolbar.add(stageFilterAction);
+        toolbar.add(refreshAction);
+        toolbar.add(launchAction);
+        toolbar.add(takeOverAction);
+    }
+
+    private static GridData fixedSize(int widthHint) {
+        GridData data = new GridData(SWT.BEGINNING, SWT.CENTER, false, false);
+        data.widthHint = widthHint;
+        return data;
+    }
+
+    private void hookApply(Text text) {
+        text.addListener(SWT.DefaultSelection, e -> applyInputs());
+        text.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                applyInputs();
+            }
+        });
+    }
+
+    private void initModel() {
+        model = new BoardModel(resolveTasksRoot(rootOverride), projectName);
+        model.setMode(boardMode);
+        model.setStageFilter(visibleStages);
+        if (stageFilterAction != null) {
+            stageFilterAction.setText("Stages: " + StageSelection.label(visibleStages));
+        }
+        restartWatcher();
+        refresh();
+    }
+
+    private void applyInputs() {
+        if (model == null || projectText == null || projectText.isDisposed()) {
+            return;
+        }
+        String newProject = projectText.getText().trim();
+        if (newProject.isEmpty()) {
+            newProject = BoardModel.DEFAULT_PROJECT;
+        }
+        String newRoot = rootText.getText().trim();
+        boolean changed = !newProject.equals(model.project()) || !newRoot.equals(rootOverride);
+        rootOverride = newRoot;
+        projectName = newProject;
+        if (changed) {
+            model.setProject(newProject);
+            model.setRoot(resolveTasksRoot(rootOverride));
+            restartWatcher();
+        }
+        saveSettings();
+        refresh();
+    }
+
+    /**
+     * Requests a refresh from any thread (watcher, toolbar, sprint combo,
+     * initial load): marks dirty and ensures exactly one drain loop is
+     * running. Never computes on the caller's thread.
+     */
+    private void refresh() {
+        if (model == null || boardArea == null || boardArea.isDisposed() || refreshExecutor == null) {
+            return;
+        }
+        dirty.set(true);
+        if (draining.compareAndSet(false, true)) {
+            refreshExecutor.execute(this::drainRefresh);
+        }
+    }
+
+    /**
+     * Runs on the refresh executor: computes snapshots (plus the sprint list)
+     * while changes keep arriving, applying each on the UI thread. The final
+     * re-check closes the mark-vs-release race so no change is ever lost.
+     */
+    private void drainRefresh() {
+        while (dirty.compareAndSet(true, false)) {
+            BoardSnapshot snapshot = null;
+            List<String> sprints = List.of();
+            try {
+                snapshot = model.refresh();
+                sprints = model.sprints();
+            } catch (RuntimeException e) {
+                logError("Board refresh failed", e);
+            }
+            if (snapshot == null) {
+                continue; // error already logged; honor any change that arrived meanwhile
+            }
+            Display display = Display.getDefault();
+            if (display == null || display.isDisposed()) {
+                break;
+            }
+            BoardSnapshot toApply = snapshot;
+            List<String> sprintList = sprints;
+            display.asyncExec(() -> {
+                if (boardArea == null || boardArea.isDisposed()) {
+                    return;
+                }
+                try {
+                    applySnapshot(toApply, sprintList);
+                } catch (RuntimeException e) {
+                    logError("Applying board snapshot failed", e);
+                }
+            });
+        }
+        draining.set(false);
+        if (dirty.get() && draining.compareAndSet(false, true)) {
+            try {
+                refreshExecutor.execute(this::drainRefresh);
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                draining.set(false); // view disposed mid-drain — nothing left to refresh
+            }
+        }
+    }
+
+    /** UI-thread apply of a snapshot computed in the background (mode-aware). */
+    private void applySnapshot(BoardSnapshot snapshot, List<String> sprints) {
+        if (boardMode == BoardMode.PIPELINE) {
+            applyPipelineSnapshot(snapshot);
+        } else {
+            applyFlatSnapshot(snapshot);
+        }
+        refreshSprintCombo(sprints);
+        if (snapshot.error() != null) {
+            setContentDescription(snapshot.error());
+        } else {
+            String goal = snapshot.sprintGoal();
+            StringBuilder description = new StringBuilder(model.sprint())
+                    .append("  \u2022  ").append(snapshot.total()).append(" tickets");
+            if (snapshot.blockedCount() > 0) {
+                description.append("  \u2022  ").append(snapshot.blockedCount()).append(" blocked");
+            }
+            if (goal != null && !goal.isBlank()) {
+                description.append("  \u2022  ").append(goal);
+            }
+            setContentDescription(description.toString());
+        }
+        setTitleToolTip("tasks: " + model.root() + "\nrepo: " + repoRoot());
+        updateActionEnablement();
+    }
+
+    private void applyFlatSnapshot(BoardSnapshot snapshot) {
+        for (Map.Entry<String, ColumnUi> entry : columns.entrySet()) {
+            List<TicketRow> rows = snapshot.column(entry.getKey());
+            entry.getValue().viewer.setInput(rows);
+            entry.getValue().header.setText(entry.getKey() + " (" + rows.size() + ")");
+        }
+    }
+
+    private void applyPipelineSnapshot(BoardSnapshot snapshot) {
+        if (pipelineContent == null || pipelineContent.isDisposed()) {
+            return;
+        }
+        PipelineSnapshot pipeline = snapshot.pipeline();
+        for (PipelineColumnUi ui : pipelineColumns) {
+            StageColumn column = pipeline == null ? null : pipeline.column(ui.stage);
+            List<TicketRow> rows = column == null ? List.of() : column.rows();
+            int blockedCount = column == null ? 0 : column.blockedCount();
+            ui.headerLabel.setText(ui.stage + " (" + rows.size());
+            ui.blockedLabel.setText(" \u00b7 " + blockedCount + " blocked)");
+            ui.blockedLabel.setForeground(blockedCount > 0
+                    ? ui.blockedLabel.getDisplay().getSystemColor(SWT.COLOR_RED) : null);
+            boolean empty = rows.isEmpty();
+            ui.tableComposite.setVisible(!empty);
+            ui.column.setLayoutData(empty
+                    ? new RowData() // collapsed: header width only, no table
+                    : new RowData(PIPELINE_COLUMN_WIDTH, SWT.DEFAULT));
+            ui.viewer.setInput(rows);
+        }
+        pipelineContent.layout(true, true);
+        pipelineScroll.setMinSize(pipelineContent.computeSize(SWT.DEFAULT, SWT.DEFAULT));
+    }
+
+    private void refreshSprintCombo(List<String> sprints) {
+        if (sprintCombo == null || sprintCombo.isDisposed() || model == null) {
+            return;
+        }
+        updatingSprintCombo = true;
+        try {
+            List<String> items = new ArrayList<>(sprints);
+            String current = model.sprint();
+            if (!items.contains(current)) {
+                items.add(current);
+            }
+            sprintCombo.setItems(items.toArray(new String[0]));
+            sprintCombo.select(Math.max(0, items.indexOf(current)));
+        } finally {
+            updatingSprintCombo = false;
+        }
+    }
+
+    private void restartWatcher() {
+        if (watcher != null) {
+            watcher.stop();
+        }
+        Path projectDir = model.root().resolve(TaskStore.sanitizeProject(model.project()));
+        watcher = new TaskStoreWatcher(projectDir, () -> {
+            Display display = Display.getDefault();
+            if (display != null && !display.isDisposed()) {
+                display.asyncExec(this::onStoreChange);
+            }
+        });
+        watcher.start();
+    }
+
+    private void onStoreChange() {
+        if (boardArea == null || boardArea.isDisposed()) {
+            return;
+        }
+        refresh();
+    }
+
+    // ------------------------------------------------------------------
+    // Selection
+    // ------------------------------------------------------------------
+
+    /** First selected row across both layouts (deterministic column order). */
+    private TicketRow selectedRow() {
+        for (ColumnUi ui : columns.values()) {
+            TicketRow row = selectionOf(ui.viewer);
+            if (row != null) {
+                return row;
+            }
+        }
+        for (PipelineColumnUi ui : pipelineColumns) {
+            TicketRow row = selectionOf(ui.viewer);
+            if (row != null) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private static TicketRow selectionOf(TableViewer viewer) {
+        if (viewer == null || viewer.getControl() == null || viewer.getControl().isDisposed()) {
+            return null;
+        }
+        IStructuredSelection selection = viewer.getStructuredSelection();
+        return selection != null && !selection.isEmpty()
+                && selection.getFirstElement() instanceof TicketRow row ? row : null;
+    }
+
+    private void selectTicket(String id) {
+        for (ColumnUi ui : columns.values()) {
+            if (selectIn(ui.viewer, id)) {
+                return;
+            }
+        }
+        for (PipelineColumnUi ui : pipelineColumns) {
+            if (selectIn(ui.viewer, id)) {
+                return;
+            }
+        }
+    }
+
+    private static boolean selectIn(TableViewer viewer, String id) {
+        Object input = viewer.getInput();
+        if (!(input instanceof List<?> rows)) {
+            return false;
+        }
+        for (Object element : rows) {
+            if (element instanceof TicketRow row && id.equals(row.id())) {
+                viewer.setSelection(new StructuredSelection(row), true);
+                viewer.getControl().setFocus();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateActionEnablement() {
+        if (launchAction == null) {
+            return;
+        }
+        TicketRow row = selectedRow();
+        boolean launchable = launcher != null
+                && row != null
+                && ("sprint-backlog".equals(row.status()) || "in-progress".equals(row.status()))
+                && FleetJobsModel.getDefault().jobs().stream()
+                        .noneMatch(j -> row.id().equals(j.taskId()) && j.state() == FleetJobHandle.State.RUNNING);
+        launchAction.setEnabled(launchable);
+        takeOverAction.setEnabled(row != null);
+    }
+
+    // ------------------------------------------------------------------
+    // Ticket actions
+    // ------------------------------------------------------------------
+
+    private void openDetails() {
+        TicketRow row = selectedRow();
+        if (row == null) {
+            return;
+        }
+        Task task = model.loadTask(row.id());
+        if (task == null) {
+            MessageDialog.openInformation(getSite().getShell(), "Board",
+                    "Ticket " + row.id() + " is no longer in the store.");
+            refresh();
+            return;
+        }
+        new TicketDetailsDialog(getSite().getShell(), task, repoRoot()).open();
+    }
+
+    private void launchSelected() {
+        TicketRow row = selectedRow();
+        if (row == null || launcher == null) {
+            return;
+        }
+        // TaskFleetLauncher publishes the RUNNING handle and the final state to the
+        // FleetJobsModel itself — no duplicate add here (double add = double fire)
+        FleetJobHandle handle = launcher.launch(model.project(), row.id());
+        updateActionEnablement(); // the RUNNING row now disables Launch until the job settles
+        revealFleetView();
+        IStatusLineManager status = getViewSite().getActionBars().getStatusLineManager();
+        if (handle.failed()) {
+            status.setErrorMessage("Launch " + row.id() + " failed: " + handle.detail());
+        } else {
+            status.setErrorMessage(null);
+            status.setMessage("Launched " + row.id()
+                    + (handle.sessionId() == null ? "" : " (session " + handle.sessionId() + ")"));
+        }
+    }
+
+    private void takeOverSelected() {
+        TicketRow row = selectedRow();
+        if (row == null) {
+            return;
+        }
+        Path repo = repoRoot();
+        Path worktree = repo == null ? null
+                : FleetGit.worktreePath(repo, row.id());
+        if (worktree != null && Files.isDirectory(worktree)) {
+            Program.launch(worktree.toString());
+        } else {
+            MessageDialog.openInformation(getSite().getShell(), "Take over",
+                    "No fleet worktree for " + row.id() + ".\n"
+                            + "Expected: " + worktree + "\n"
+                            + "Use 'Launch task' first.");
+        }
+        selectTicket(row.id());
+    }
+
+    private void revealFleetView() {
+        IWorkbenchPage page = getSite().getPage();
+        try {
+            IViewPart fleet = page.findView(FleetView.ID);
+            if (fleet == null) {
+                page.showView(FleetView.ID);
+            }
+        } catch (PartInitException e) {
+            logError("Cannot open Fleet view", e);
+        }
+    }
+
+    private static void logError(String message, Throwable error) {
+        Platform.getLog(Platform.getBundle(BoardPlugin.PLUGIN_ID))
+                .log(new Status(Status.ERROR, BoardPlugin.PLUGIN_ID, message, error));
+    }
+
+    private Path repoRoot() {
+        if (model == null) {
+            return null;
+        }
+        Path root = model.root();
+        Path opencode = root == null ? null : root.getParent();
+        return opencode == null ? null : opencode.getParent();
+    }
+
+    private static Path resolveTasksRoot(String override) {
+        Path workspace = workspaceRoot();
+        if (override != null && !override.isBlank()) {
+            Path path = Path.of(override.trim());
+            return (path.isAbsolute() ? path : workspace.resolve(path)).normalize();
+        }
+        for (Path dir = workspace; dir != null; dir = dir.getParent()) {
+            Path candidate = dir.resolve(".opencode").resolve("tasks");
+            if (Files.isDirectory(candidate)) {
+                return candidate.normalize();
+            }
+        }
+        // preference default (Preferences → OpenCode → default task store), when set
+        try {
+            String configured = new com.opencode.ide.core.OpencodePreferences().getTasksRoot();
+            if (configured != null && !configured.isBlank()) {
+                Path candidate = Path.of(configured.trim());
+                if (Files.isDirectory(candidate)) {
+                    return candidate.normalize();
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // headless/test contexts without the preferences node: fall through
+        }
+        return workspace.resolve("..").resolve(".opencode").resolve("tasks").normalize();
+    }
+
+    private static Path workspaceRoot() {
+        var location = Platform.getLocation();
+        return location == null ? Path.of(".").toAbsolutePath().normalize()
+                : location.toFile().toPath().toAbsolutePath().normalize();
+    }
+
+    // ------------------------------------------------------------------
+    // Settings
+    // ------------------------------------------------------------------
+
+    private void loadSettings() {
+        BoardPlugin plugin = BoardPlugin.getDefault();
+        if (plugin != null) {
+            try {
+                var settings = plugin.getDialogSettings().getSection(SETTINGS_SECTION);
+                if (settings != null) {
+                    String root = settings.get(SETTING_ROOT);
+                    if (root != null) {
+                        rootOverride = root;
+                    }
+                    String project = settings.get(SETTING_PROJECT);
+                    if (project != null && !project.isBlank()) {
+                        projectName = project;
+                    }
+                    if (SETTING_MODE_PIPELINE.equalsIgnoreCase(settings.get(SETTING_MODE))) {
+                        boardMode = BoardMode.PIPELINE;
+                    }
+                    String stages = settings.get(SETTING_STAGES);
+                    if (stages != null && !stages.isBlank()) {
+                        visibleStages = new java.util.LinkedHashSet<>(List.of(stages.split(",")));
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // defaults survive an unreadable dialog settings file
+            }
+        }
+        if (rootOverride.isBlank()) {
+            // preference default (Preferences → OpenCode): the repo's task store
+            try {
+                String configuredRoot = new com.opencode.ide.core.OpencodePreferences().getTasksRoot();
+                if (configuredRoot != null && !configuredRoot.isBlank()) {
+                    rootOverride = configuredRoot.trim();
+                }
+            } catch (RuntimeException ignored) {
+                // headless/test contexts: keep the empty override (auto-detect)
+            }
+        }
+        if (projectName == null || projectName.isBlank()) {
+            projectName = BoardModel.DEFAULT_PROJECT;
+        }
+        if (projectText != null && !projectText.isDisposed()) {
+            projectText.setText(projectName);
+        }
+        if (rootText != null && !rootText.isDisposed()) {
+            rootText.setText(rootOverride);
+        }
+        updatingModeCombo = true;
+        try {
+            if (modeCombo != null && !modeCombo.isDisposed()) {
+                modeCombo.select(boardMode == BoardMode.PIPELINE ? 1 : 0);
+            }
+        } finally {
+            updatingModeCombo = false;
+        }
+    }
+
+    private void saveSettings() {
+        BoardPlugin plugin = BoardPlugin.getDefault();
+        if (plugin == null) {
+            return;
+        }
+        try {
+            var all = plugin.getDialogSettings();
+            var settings = all.getSection(SETTINGS_SECTION);
+            if (settings == null) {
+                settings = all.addNewSection(SETTINGS_SECTION);
+            }
+            settings.put(SETTING_ROOT, rootOverride == null ? "" : rootOverride);
+            settings.put(SETTING_PROJECT, model == null ? projectName : model.project());
+            settings.put(SETTING_MODE, boardMode == BoardMode.PIPELINE ? SETTING_MODE_PIPELINE : "flat");
+            settings.put(SETTING_STAGES, visibleStages == null ? "" : String.join(",", visibleStages));
+            plugin.persistDialogSettings();
+        } catch (RuntimeException ignored) {
+            // persistence is best-effort
+        }
+    }
+
+    @Override
+    public void setFocus() {
+        if (boardArea != null && !boardArea.isDisposed()) {
+            boardArea.setFocus();
+        }
+    }
+
+    @Override
+    public void dispose() {
+        saveSettings();
+        if (watcher != null) {
+            watcher.stop();
+            watcher = null;
+        }
+        if (refreshExecutor != null) {
+            refreshExecutor.shutdown();
+            refreshExecutor = null;
+        }
+        super.dispose();
+    }
+
+    /**
+     * The Stages toolbar dropdown: one check item per V stage (plus the
+     * untracked group), an "All stages" reset, and a live count. Checking
+     * stages switches from "all visible" to an explicit selection; unchecking
+     * the last visible stage re-enables everything (never an empty board by
+     * accident).
+     */
+    private final class StageFilterMenuCreator implements org.eclipse.jface.action.IMenuCreator {
+
+        private org.eclipse.swt.widgets.Menu menu;
+
+        @Override
+        public void dispose() {
+            if (menu != null) {
+                menu.dispose();
+                menu = null;
+            }
+        }
+
+        @Override
+        public org.eclipse.swt.widgets.Menu getMenu(org.eclipse.swt.widgets.Control parent) {
+            dispose();
+            menu = new org.eclipse.swt.widgets.Menu(parent);
+            fillMenu();
+            return menu;
+        }
+
+        @Override
+        public org.eclipse.swt.widgets.Menu getMenu(org.eclipse.swt.widgets.Menu parent) {
+            dispose();
+            menu = new org.eclipse.swt.widgets.Menu(parent);
+            fillMenu();
+            return menu;
+        }
+
+        private void fillMenu() {
+            java.util.List<String> stages = new ArrayList<>(VStages.STAGES);
+            stages.add(PipelineSnapshot.UNTRACKED);
+            for (String stage : stages) {
+                org.eclipse.swt.widgets.MenuItem item =
+                        new org.eclipse.swt.widgets.MenuItem(menu, org.eclipse.swt.SWT.CHECK);
+                item.setText(stageLabel(stage));
+                item.setSelection(isStageVisible(stage));
+                item.addListener(org.eclipse.swt.SWT.Selection, e -> toggleStage(stage));
+            }
+            new org.eclipse.swt.widgets.MenuItem(menu, org.eclipse.swt.SWT.SEPARATOR);
+            org.eclipse.swt.widgets.MenuItem all =
+                    new org.eclipse.swt.widgets.MenuItem(menu, org.eclipse.swt.SWT.PUSH);
+            all.setText("Show all stages");
+            all.addListener(org.eclipse.swt.SWT.Selection, e -> {
+                visibleStages = null;
+                applyStageFilter();
+            });
+        }
+
+        private boolean isStageVisible(String stage) {
+            return visibleStages == null || visibleStages.contains(stage);
+        }
+
+        private void toggleStage(String stage) {
+            visibleStages = StageSelection.toggle(visibleStages, stage);
+            applyStageFilter();
+        }
+
+        private void applyStageFilter() {
+            if (model != null) {
+                model.setStageFilter(visibleStages);
+                refresh();
+                saveSettings();
+            }
+            updateStageFilterLabel();
+        }
+
+        private void updateStageFilterLabel() {
+            if (stageFilterAction != null) {
+                stageFilterAction.setText("Stages: " + StageSelection.label(visibleStages));
+            }
+        }
+
+        private String stageLabel(String stage) {
+            return PipelineSnapshot.UNTRACKED.equals(stage) ? stage + " (epics, stage-less)" : stage;
+        }
+    }
+}

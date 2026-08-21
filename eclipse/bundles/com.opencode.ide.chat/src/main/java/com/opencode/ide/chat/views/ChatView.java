@@ -66,6 +66,7 @@ public class ChatView extends ViewPart {
     private ChatSessionController controller;
     private Text input;
     private Button sendButton;
+    private Action abortAction;
     private Combo agentCombo;
     private Combo modelCombo;
     private Combo variantCombo;
@@ -109,6 +110,9 @@ public class ChatView extends ViewPart {
         public void sendingChanged(boolean sending) {
             if (sendButton != null && !sendButton.isDisposed()) {
                 sendButton.setEnabled(!sending);
+            }
+            if (abortAction != null) {
+                abortAction.setEnabled(sending);
             }
         }
     };
@@ -162,7 +166,7 @@ public class ChatView extends ViewPart {
         agentCombo.setToolTipText("Agent");
         agentCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, false, false));
         modelCombo = new Combo(selectorRow, SWT.DROP_DOWN | SWT.READ_ONLY);
-        modelCombo.setToolTipText("Model (provider/model) - pre-set to the server default");
+        modelCombo.setToolTipText("Model (provider/model) - pre-set to your preferred default (Preferences → OpenCode)");
         modelCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
         modelCombo.addListener(SWT.Selection, e -> fillVariants());
         variantCombo = new Combo(selectorRow, SWT.DROP_DOWN | SWT.READ_ONLY);
@@ -212,8 +216,35 @@ public class ChatView extends ViewPart {
             }
         };
         newSessionAction.setToolTipText("Start a fresh chat session");
+
+        abortAction = new Action("Abort") {
+            @Override
+            public void run() {
+                abortRequested();
+            }
+        };
+        abortAction.setToolTipText("Abort the reply currently being generated (Ctrl+Alt+Shift+A)");
+        abortAction.setEnabled(false); // enabled while a send is in flight
+
         IToolBarManager toolBar = getViewSite().getActionBars().getToolBarManager();
         toolBar.add(newSessionAction);
+        toolBar.add(abortAction);
+    }
+
+    /**
+     * Aborts the in-flight reply (toolbar Stop action and the
+     * {@code com.opencode.ide.chat.abort} key binding). The controller posts the
+     * abort on a background thread - never the UI thread.
+     */
+    public void abortRequested() {
+        if (controller != null) {
+            controller.abort();
+        }
+    }
+
+    /** @return true while a reply is being generated (used by the abort handler). */
+    public boolean isGenerating() {
+        return controller != null && controller.isSending();
     }
 
     // ---------- selectors ----------
@@ -273,10 +304,18 @@ public class ChatView extends ViewPart {
                 }
             }
         }
-        controller.setDefaultModel(fallback != null ? fallback[0] : null,
-                fallback != null ? fallback[1] : null);
-        if (fallback != null) {
-            String combined = fallback[0] + "/" + fallback[1];
+        // preferred default (Preferences → OpenCode) wins when it exists on the live
+        // server; otherwise the server's /config default (validated by DefaultModels)
+        OpencodePreferences prefs = new OpencodePreferences();
+        String[] preferred = prefs.getDefaultModelParts();
+        String[] effective = fallback;
+        if (preferred != null && modelCombo.indexOf(preferred[0] + "/" + preferred[1]) >= 0) {
+            effective = preferred;
+        }
+        controller.setDefaultModel(effective != null ? effective[0] : null,
+                effective != null ? effective[1] : null);
+        if (effective != null) {
+            String combined = effective[0] + "/" + effective[1];
             int idx = modelCombo.indexOf(combined);
             if (idx < 0) {
                 modelCombo.add(combined, 1);
@@ -287,6 +326,14 @@ public class ChatView extends ViewPart {
             modelCombo.select(0);
         }
         fillVariants();
+        // preselect the preferred reasoning variant when the selected model exposes it
+        String preferredVariant = prefs.getDefaultVariant();
+        if (preferredVariant != null && !preferredVariant.isBlank() && !variantCombo.isDisposed()) {
+            int variantIndex = variantCombo.indexOf(preferredVariant);
+            if (variantIndex > 0) {
+                variantCombo.select(variantIndex);
+            }
+        }
     }
 
     /**

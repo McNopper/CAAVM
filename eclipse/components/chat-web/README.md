@@ -27,7 +27,10 @@ components/chat-web/
                            github.min.css + github-dark.min.css (theme pair)
   renderer-check.mjs       check: assets present, vendor libs actually render
   bridge-check.mjs         check: executes the bridge against a DOM shim
-  package.json             `npm run check` runs both checks
+                           (incl. tool lines + copy-code paths)
+  mermaid-check.mjs        check: renders diagrams in real headless Edge
+                           (SKIPs when Edge/puppeteer-core are absent)
+  package.json             `npm run check` runs the checks
 ```
 
 ## The bridge contract
@@ -51,8 +54,9 @@ of throwing silently inside `browser.execute()`.
 | `__appendUser(json)` | `{"text": string}` | Appends a user bubble; text is rendered as markdown. |
 | `__startAssistant(json)` | `{"mid": string}` | Appends an empty assistant bubble tagged `data-mid=mid` (idempotent: no-op if `mid` already exists). |
 | `__appendDelta(json)` | `{"mid": string, "text": string}` | Streams raw (unformatted) text into the assistant bubble's `.stream-raw` element with a blinking cursor; creates the bubble if `__startAssistant` was not called. |
-| `__setAssistantText(json)` | `{"mid": string, "text": string, "reasoning"?: string, "meta"?: string}` | Final authoritative render of the assistant bubble: markdown body (replacing streamed raw text), optional collapsible `reasoning` block, optional `meta` model label. |
-| `__setMessages(json)` | JSON string of an array `[{"role":"user"\|"assistant","id":string,"text":string,"reasoning":string,"meta":string}, …]` | Replaces the whole transcript (history/resume load). |
+| `__setAssistantText(json)` | `{"mid": string, "text": string, "reasoning"?: string, "meta"?: string, "tools"?: [{"name": string, "state": string}, …]}` | Final authoritative render of the assistant bubble: markdown body (replacing streamed raw text), optional collapsible `reasoning` block, optional `meta` model label, optional compact tool-call lines (`tool: name — state`, state-colored: running pulses, completed dimmed, error red) above the body. Tool names are escaped — hostile input renders inert. |
+| `__setMessages(json)` | JSON string of an array `[{"role":"user"\|"assistant","id":string,"text":string,"reasoning":string,"meta":string,"tools":[…]}, …]` | Replaces the whole transcript (history/resume load; `tools` optional per entry, same rendering as above). |
+| `__stopStream(json)` | `{"mid": string}` | Removes the streaming cursor from the bubble (host calls this when the send completed, failed or was aborted). Idempotent; the streamed text stays. |
 | `__clear()` | none | Empties the transcript. |
 
 Notes:
@@ -71,7 +75,7 @@ page tolerates them being absent, e.g. in a plain browser):
 
 | Global | Meaning |
 |---|---|
-| `__javaReport(message: string)` | Progress/diagnostics channel. The page reports: `page-ready` on load (authoritative readiness signal — hosts flush queued renders on it), render confirmations (`user bubble rendered: …`, `assistant bubble rendered (N chars, meta=…)`, `notice rendered: …`, `history rendered (N entries)`, `theme set: …`, `mermaid initialised`, `mermaid blocks found: …`, `mermaid diagram rendered`), and failures: `JS ERROR in <fn>: <message>` from guarded bridge calls, `JS ERROR: …` from `window.onerror`, `JS REJECTION: …` from unhandled promise rejections, plus `KaTeX failed: …`, `mermaid … FAILED`, `highlight failed (…)` and `external link (no Java bridge): <url>`. |
+| `__javaReport(message: string)` | Progress/diagnostics channel. The page reports: `page-ready` on load (authoritative readiness signal — hosts flush queued renders on it), render confirmations (`user bubble rendered: …`, `assistant bubble rendered (N chars, meta=…)`, `notice rendered: …`, `history rendered (N entries)`, `theme set: …`, `mermaid initialised`, `mermaid blocks found: …`, `mermaid diagram rendered`, `code copied (N chars)` / `copy unavailable (N chars)` — lengths only, never code content), and failures: `JS ERROR in <fn>: <message>` from guarded bridge calls, `JS ERROR: …` from `window.onerror`, `JS REJECTION: …` from unhandled promise rejections, plus `KaTeX failed: …`, `mermaid … FAILED`, `highlight failed (…)` and `external link (no Java bridge): <url>`. |
 | `__javaOpenExternal(url: string)` | A non-hash link was clicked. The page never navigates itself (that would destroy the transcript); the host must open the URL externally (OS browser). |
 
 ## Rendering rules (these rules ARE the contract)
@@ -105,6 +109,11 @@ page tolerates them being absent, e.g. in a plain browser):
   `#chat` scrolls, so an embedded view never shows a double scrollbar.
 - **Links never navigate the page** — every non-`#` link click is intercepted
   and handed to `__javaOpenExternal`.
+- **Copy-code:** every rendered (non-mermaid) code fence carries a Copy button
+  (top-right, theme-aware) that copies the RAW code text via
+  `navigator.clipboard` with an `execCommand`/textarea fallback and a brief
+  "Copied" confirmation; the exposed `window.__copyCode(button)` hook drives
+  the same path in tests. Reports go through `__javaReport` with lengths only.
 
 ## Running the checks
 
@@ -112,9 +121,13 @@ Requires Node.js on PATH (only for the checks — the component itself is
 build-free):
 
 ```
-node renderer-check.mjs   # assets present; markdown-it/KaTeX/hljs really render (43 checks)
-node bridge-check.mjs     # executes chat.js in a VM with a DOM shim and drives
-                          # the bridge exactly as a host would (54 checks)
+node renderer-check.mjs   # assets present; markdown-it/KaTeX/hljs really render (50 checks)
+node bridge-check.mjs     # executes chat.js in a VM with a DOM shim (move-semantics
+                          # appendChild) and drives the bridge exactly as a host
+                          # would (87 checks, incl. tool lines, copy-code and the
+                          # streaming-cursor stop path)
+node mermaid-check.mjs    # renders real diagrams in headless Edge (8 checks;
+                          # SKIPs when Edge/puppeteer-core are absent)
 ```
 
 or `npm run check` for both. Exit code 0 = all checks pass.

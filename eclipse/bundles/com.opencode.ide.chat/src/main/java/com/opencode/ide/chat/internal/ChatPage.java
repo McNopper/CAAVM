@@ -134,12 +134,18 @@ public final class ChatPage implements ChatSessionController.Renderer {
     }
 
     @Override
-    public void setAssistantText(String messageId, String text, String reasoning, String meta) {
-        executeJs(ChatScripts.setAssistantText(messageId, text, reasoning, meta));
+    public void setAssistantText(String messageId, String text, String reasoning, String meta,
+            List<ChatSessionController.ToolLine> tools) {
+        executeJs(ChatScripts.setAssistantText(messageId, text, reasoning, meta, tools));
     }
 
     @Override
-    public void setMessages(List<Map<String, String>> rows) {
+    public void stopStream(String messageId) {
+        executeJs(ChatScripts.stopStream(messageId));
+    }
+
+    @Override
+    public void setMessages(List<Map<String, Object>> rows) {
         executeJs(ChatScripts.setMessages(rows));
     }
 

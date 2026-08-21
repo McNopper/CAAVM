@@ -24,11 +24,13 @@ public final class ViewLoadSupport {
     private ViewLoadSupport() {
     }
 
+    /** The background work: performs the IO and returns the result (or throws). */
     @FunctionalInterface
     public interface Loader<T> {
         T load() throws Exception;
     }
 
+    /** Runs {@code loader} off the UI thread with retries; delivers to the UI thread. */
     public static <T> void load(String jobName, Loader<T> loader, Consumer<T> onSuccess,
             Consumer<Throwable> onError) {
         Job job = Job.create(jobName, monitor -> {

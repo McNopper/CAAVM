@@ -1,0 +1,289 @@
+package com.opencode.ide.ui.model;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+
+import org.junit.Test;
+
+import com.opencode.ide.client.activity.ActivitySnapshot;
+import com.opencode.ide.client.activity.FileActivity;
+import com.opencode.ide.client.activity.SessionActivity;
+import com.opencode.ide.client.activity.ToolActivity;
+import com.opencode.ide.client.activity.ToolActivity.State;
+import com.opencode.ide.client.model.Agent;
+import com.opencode.ide.client.model.Session;
+import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.ui.model.ServerLabels.Server;
+
+/**
+ * Unit tests for the SWT-free {@link ServerLabels} label and nesting logic
+ * behind the Server view: no SWT, no JFace, no Display.
+ */
+public class ServerLabelsTest {
+
+    private static final long NOW = System.currentTimeMillis();
+
+    // ---------- fixtures ----------
+
+    private static Session session(String id, String parentID, long updated) {
+        return new Session(id, "slug-" + id, "Title " + id, null, parentID,
+                new Session.Time(NOW, updated), null, null);
+    }
+
+    private static Agent agent(String mode, boolean nativeAgent, String description) {
+        return new Agent("name", description, mode, nativeAgent, null, null, null, null, null, null,
+                null, null, null);
+    }
+
+    private record FakeServer(String name, List<Session> sessions) {
+    }
+
+    // ---------- server labels ----------
+
+    @Test
+    public void primaryServerNameIsFixed() {
+        Server server = new Server(true, null, null, "http://localhost:4096", false, null, null);
+
+        assertEquals("opencode server", ServerLabels.serverName(server));
+    }
+
+    @Test
+    public void remoteServerNameTagsOfflineWhenUnhealthy() {
+        Server healthy = new Server(false, "ci", null, "http://ci:4096", true, null, null);
+        Server unhealthy = new Server(false, "ci", null, "http://ci:4096", false, null, null);
+
+        assertEquals("ci", ServerLabels.serverName(healthy));
+        assertEquals("ci  (offline)", ServerLabels.serverName(unhealthy));
+    }
+
+    @Test
+    public void remoteServerNameFallsBackToUrlWhenLabelMissing() {
+        Server noLabel = new Server(false, null, null, "http://ci:4096", false, null, null);
+        Server emptyLabel = new Server(false, "", null, "http://ci:4096", true, null, null);
+
+        assertEquals("http://ci:4096  (offline)", ServerLabels.serverName(noLabel));
+        assertEquals("http://ci:4096", ServerLabels.serverName(emptyLabel));
+    }
+
+    @Test
+    public void serverDetailFormatsHealthVersionModeUrlAndPid() {
+        Server primary = new Server(true, "primary", "idex", "http://localhost:4096", true, "1.18.2", 42L);
+        Server primaryDown = new Server(true, null, null, "http://x", false, null, null);
+        Server remote = new Server(false, "ci", null, "http://ci:4096", true, "1.2", null);
+        Server remoteDown = new Server(false, "ci", null, "http://ci:4096", false, null, null);
+
+        assertEquals("healthy • v1.18.2 • idex • http://localhost:4096 • pid 42",
+                ServerLabels.serverDetail(primary));
+        assertEquals("unhealthy • http://x", ServerLabels.serverDetail(primaryDown));
+        assertEquals("healthy • v1.2 • http://ci:4096", ServerLabels.serverDetail(remote));
+        assertEquals("offline • http://ci:4096", ServerLabels.serverDetail(remoteDown));
+    }
+
+    // ---------- agent labels ----------
+
+    @Test
+    public void agentDetailCombinesModeNativeAndDescription() {
+        assertEquals("build • native — Runs the build",
+                ServerLabels.agentDetail(agent("build", true, "Runs the build")));
+        assertEquals("", ServerLabels.agentDetail(agent(null, false, null)));
+        assertEquals(" — writes code", ServerLabels.agentDetail(agent(null, false, "writes code")));
+    }
+
+    // ---------- session labels ----------
+
+    @Test
+    public void sessionNamePrefersTitleThenSlugThenIdAndPrefixesAgent() {
+        assertEquals("Fix build",
+                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", null, null, null, null, null)));
+        assertEquals("slug-one",
+                ServerLabels.sessionName(new Session("s1", "slug-one", null, null, null, null, null, null)));
+        assertEquals("slug-one",
+                ServerLabels.sessionName(new Session("s1", "slug-one", "", null, null, null, null, null)));
+        assertEquals("s1",
+                ServerLabels.sessionName(new Session("s1", null, null, null, null, null, null, null)));
+        assertEquals("build — Fix build",
+                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", "build", null, null, null, null)));
+    }
+
+    @Test
+    public void sessionDetailPrefersLiveLabelAndMarksSubagents() {
+        Session root = session("s1", null, 0L);
+        Session subagent = session("s2", "s1", 0L);
+
+        assertEquals("thinking…", ServerLabels.sessionDetail(root, "thinking…", "busy"));
+        assertEquals("busy", ServerLabels.sessionDetail(root, null, "busy"));
+        assertEquals("idle", ServerLabels.sessionDetail(root, null, null));
+        assertEquals("busy • subagent", ServerLabels.sessionDetail(subagent, null, "busy"));
+    }
+
+    @Test
+    public void sessionDetailAppendsRelativeUpdateTime() {
+        Session s = new Session("s1", null, null, null, null,
+                new Session.Time(NOW, NOW - 5 * 60_000L - 10_000L), null, null);
+
+        assertEquals("busy • updated 5m ago", ServerLabels.sessionDetail(s, null, "busy"));
+    }
+
+    @Test
+    public void relativeTimeBuckets() {
+        assertEquals("just now", ServerLabels.relative(NOW - 30_000L));
+        assertEquals("5m ago", ServerLabels.relative(NOW - 5 * 60_000L - 10_000L));
+        assertEquals("3h ago", ServerLabels.relative(NOW - 3 * 3_600_000L - 300_000L));
+        assertEquals("2d ago", ServerLabels.relative(NOW - 2 * 86_400_000L - 3_600_000L));
+        assertEquals("just now", ServerLabels.relative(NOW + 60_000L)); // future clamps to 0
+    }
+
+    // ---------- status ----------
+
+    @Test
+    public void statusTypeDefaultsToIdleAndIsBusyMatchesBusyOrRetry() {
+        Map<String, SessionStatus> statuses = Map.of(
+                "s1", new SessionStatus("busy"),
+                "s2", new SessionStatus("idle"),
+                "s3", new SessionStatus(null),
+                "s4", new SessionStatus("Retry"));
+        Session s1 = session("s1", null, 0L);
+        Session s2 = session("s2", null, 0L);
+        Session s3 = session("s3", null, 0L);
+        Session s4 = session("s4", null, 0L);
+        Session unknown = session("zz", null, 0L);
+
+        assertEquals("busy", ServerLabels.statusType(statuses, s1));
+        assertEquals("idle", ServerLabels.statusType(statuses, s2));
+        assertEquals("idle", ServerLabels.statusType(statuses, s3));
+        assertEquals("idle", ServerLabels.statusType(statuses, unknown));
+        assertEquals("idle", ServerLabels.statusType(null, s1));
+
+        assertTrue(ServerLabels.isBusy(statuses, s1));
+        assertTrue(ServerLabels.isBusy(statuses, s4)); // case-insensitive
+        assertFalse(ServerLabels.isBusy(statuses, s2));
+        assertFalse(ServerLabels.isBusy(null, s1));
+    }
+
+    // ---------- live activity labels ----------
+
+    @Test
+    public void trackerLabelPrefersThinkingThenRunningTool() {
+        ActivitySnapshot thinking = new ActivitySnapshot(
+                Map.of("s1", new SessionActivity("s1", false, true, List.of())), Map.of());
+        ActivitySnapshot toolWithFile = new ActivitySnapshot(
+                Map.of("s1", new SessionActivity("s1", true, false,
+                        List.of(new ToolActivity("edit", "Main.java", State.RUNNING),
+                                new ToolActivity("bash", null, State.COMPLETED)))), Map.of());
+        ActivitySnapshot toolWithoutFile = new ActivitySnapshot(
+                Map.of("s1", new SessionActivity("s1", true, false,
+                        List.of(new ToolActivity("bash", null, State.RUNNING)))), Map.of());
+        ActivitySnapshot completedOnly = new ActivitySnapshot(
+                Map.of("s1", new SessionActivity("s1", false, false,
+                        List.of(new ToolActivity("edit", "Main.java", State.COMPLETED)))), Map.of());
+
+        assertEquals("thinking…", ServerLabels.trackerLabel(thinking, "s1"));
+        assertEquals("tool: edit — Main.java", ServerLabels.trackerLabel(toolWithFile, "s1"));
+        assertEquals("tool: bash", ServerLabels.trackerLabel(toolWithoutFile, "s1"));
+        assertNull(ServerLabels.trackerLabel(completedOnly, "s1"));
+        assertNull(ServerLabels.trackerLabel(toolWithFile, "other"));
+        assertNull(ServerLabels.trackerLabel(null, "s1"));
+    }
+
+    @Test
+    public void fileActivityNameUsesFileToolAndShortenedSessionId() {
+        assertEquals("src/Main.java — edit (session-)",
+                ServerLabels.fileActivityName(new FileActivity("session-abcdefgh123", "edit", "src/Main.java")));
+        assertEquals("abc", ServerLabels.shortId("abc"));
+        assertEquals("", ServerLabels.shortId(null));
+    }
+
+    // ---------- category ----------
+
+    @Test
+    public void sessionsCategoryDetailCountsTotalTopLevelAndBusy() {
+        Session root1 = session("a", null, 300L);
+        Session child = session("c1", "a", 999L);
+        Session root2 = session("b", null, 100L);
+        List<Session> sessions = List.of(root1, child, root2);
+        Map<String, SessionStatus> busy = Map.of("c1", new SessionStatus("busy"));
+
+        assertEquals("Agents (2)", ServerLabels.categoryName("Agents", 2));
+        assertEquals("", ServerLabels.sessionsCategoryDetail(List.of(), null));
+        assertEquals("3 total, 2 top-level • 1 busy",
+                ServerLabels.sessionsCategoryDetail(sessions, busy));
+        assertEquals("3 total, 2 top-level",
+                ServerLabels.sessionsCategoryDetail(sessions, null));
+    }
+
+    // ---------- nesting / ownership ----------
+
+    @Test
+    public void ownerOfFindsTheServerOwningTheSessionAndFallsBackOtherwise() {
+        FakeServer primary = new FakeServer("primary", List.of(session("s1", null, 1L)));
+        FakeServer remote = new FakeServer("remote", List.of(session("s2", null, 2L)));
+        List<FakeServer> servers = List.of(primary, remote);
+
+        assertEquals(remote, ServerLabels.ownerOf(servers, session("s2", null, 0L), f -> f.sessions(), primary));
+        assertEquals(primary, ServerLabels.ownerOf(servers, session("s1", null, 0L), f -> f.sessions(), remote));
+        assertEquals(primary, ServerLabels.ownerOf(servers, session("zz", null, 0L), f -> f.sessions(), primary));
+        assertEquals(primary, ServerLabels.ownerOf(servers, null, f -> f.sessions(), primary));
+        assertEquals(primary, ServerLabels.ownerOf(servers,
+                new Session(null, null, null, null, null, null, null, null), f -> f.sessions(), primary));
+    }
+
+    @Test
+    public void topLevelSessionsAreParentlessAndMostRecentFirst() {
+        Session root1 = session("a", null, 300L);
+        Session child = session("c1", "a", 999L);
+        Session root2 = session("b", null, 100L);
+
+        List<Session> top = ServerLabels.topLevelSessions(List.of(root1, child, root2));
+
+        assertEquals(List.of("a", "b"), top.stream().map(Session::id).toList());
+    }
+
+    @Test
+    public void childrenOfNestsByParentIdMostRecentFirstAndStableForEqualTimes() {
+        Session root = session("a", null, 300L);
+        Session cNew = session("c1", "a", 999L);
+        Session cOld = session("c2", "a", 500L);
+        Session other = session("b", null, 100L);
+        List<Session> sessions = List.of(root, cNew, cOld, other);
+
+        assertEquals(List.of("c1", "c2"),
+                ServerLabels.childrenOf(sessions, "a").stream().map(Session::id).toList());
+        assertEquals(List.of(), ServerLabels.childrenOf(sessions, null));
+        assertEquals(List.of(), ServerLabels.childrenOf(sessions, "zz"));
+
+        Session e1 = session("e1", "a", 100L);
+        Session e2 = session("e2", "a", 100L);
+        assertEquals(List.of("e1", "e2"), // equal timestamps keep list order
+                ServerLabels.childrenOf(List.of(e1, e2), "a").stream().map(Session::id).toList());
+    }
+
+    @Test
+    public void parentSessionResolvesParentNullForRootsAndOrphans() {
+        Session root = session("a", null, 300L);
+        Session child = session("c1", "a", 999L);
+        Session orphan = session("o", "missing", 100L);
+        List<Session> sessions = List.of(root, child, orphan);
+
+        assertEquals("a", ServerLabels.parentSession(sessions, child).id());
+        assertNull(ServerLabels.parentSession(sessions, root));
+        assertNull(ServerLabels.parentSession(sessions, orphan));
+        assertNull(ServerLabels.parentSession(sessions, null));
+    }
+
+    @Test
+    public void hasSessionChildrenDetectsNestedSessions() {
+        Session root = session("a", null, 300L);
+        Session child = session("c1", "a", 999L);
+        Session leaf = session("b", null, 100L);
+        List<Session> sessions = List.of(root, child, leaf);
+
+        assertTrue(ServerLabels.hasSessionChildren(sessions, "a"));
+        assertFalse(ServerLabels.hasSessionChildren(sessions, "b"));
+        assertFalse(ServerLabels.hasSessionChildren(sessions, null));
+    }
+}

@@ -35,17 +35,22 @@ Scoped build during iteration (repeat `-pl`, never commas; adjust to the modules
 
 ```powershell
 .\build.ps1 -pl bundles/com.opencode.ide.client -pl bundles/com.opencode.ide.client.tests `
-            -pl bundles/com.opencode.ide.core -pl bundles/com.opencode.ide.ui `
+            -pl bundles/com.opencode.ide.core -pl bundles/com.opencode.ide.core.tests `
+            -pl bundles/com.opencode.ide.ui -pl bundles/com.opencode.ide.ui.tests `
             -pl bundles/com.opencode.ide.chat -pl bundles/com.opencode.ide.chat.tests `
-            -pl bundles/com.opencode.ide.cdt -pl bundles/com.opencode.ide.git `
-            -pl bundles/com.opencode.ide.git.tests -pl bundles/com.opencode.ide.tools `
-            -pl bundles/com.opencode.ide.tools.tests -pl bundles/com.opencode.ide.mcp `
-            -pl bundles/com.opencode.ide.mcp.tests clean verify
+            -pl bundles/com.opencode.ide.cdt -pl bundles/com.opencode.ide.cdt.tests `
+            -pl bundles/com.opencode.ide.git -pl bundles/com.opencode.ide.git.tests `
+            -pl bundles/com.opencode.ide.fleet -pl bundles/com.opencode.ide.fleet.tests `
+            -pl bundles/com.opencode.ide.tools -pl bundles/com.opencode.ide.tools.tests `
+            -pl bundles/com.opencode.ide.tasks -pl bundles/com.opencode.ide.tasks.tests `
+            -pl bundles/com.opencode.ide.board -pl bundles/com.opencode.ide.board.tests `
+            -pl bundles/com.opencode.ide.mcp -pl bundles/com.opencode.ide.mcp.tests clean verify
 ```
 
-Both run the 137 Java tests; `verify` also runs the 97 Node checks (against
-`components/chat-web`) when Node is available (`-DskipNodeChecks=true` to skip). Produces
-plugin JARs in `bundles\<name>\target\` and (full build) a p2 update site in
+Both run the 470 Java tests (plus 13 in the `opencode-tasks` mojo module); `verify` also runs
+the 145 Node checks (50 renderer + 87 bridge + 8 mermaid against `components/chat-web`) when
+Node is available (`-DskipNodeChecks=true` to skip). Produces plugin JARs in
+`bundles\<name>\target\` and (full build) a p2 update site in
 `releng\com.opencode.ide.repository\target\repository\`.
 
 ---
@@ -58,7 +63,7 @@ Copies the freshly built plugin JARs straight into the Eclipse dropins folder.
 
 ```powershell
 .\build.ps1 clean verify
-.\deploy-dev.ps1            # copies the 8 JARs to <eclipse-install>\dropins\opencode-ide\plugins\
+.\deploy-dev.ps1            # copies the 11 JARs to <eclipse-install>\dropins\opencode-ide\plugins\
 ```
 
 Then **(re)start Eclipse CDT** and open the **OpenCode** perspective.
@@ -111,22 +116,39 @@ one-time setup:
      starts and manages an `opencode serve` child process itself (resolves the binary from
      the preference or PATH; kills the process tree on stop).
 2. **Window → Perspective → Open Perspective → Other… → OpenCode**.
-3. The **Server** view (left) shows the connection with agents and live sessions (subagents
-   nested; thinking/running-tool indicator). The **Providers** view (bottom) lists all models
-   with filter + column sorting. Use the views' **Refresh** action to re-query.
+3. The **Server** view (left) shows one root per connection (the primary plus any remote
+    connections configured in the preferences) with **Agents**, **Sessions** (subagents
+    nested, thinking/running-tool indicators), **Active files**, **MCP servers** and
+    **Skills** categories (virtualized for scale). The **Providers** view
+    (bottom) lists all models with filter + column sorting (virtualized; provider logos with
+    letter-badge fallback). Use the views' **Refresh** action to re-query. A session's context
+    menu offers **Session details** — a per-session transcript view (messages, reasoning,
+    tool lines, tokens/cost) that refreshes live over SSE; double-clicking a session resumes
+    it in a chat window.
 4. The **Chat** view (right) is a native markdown chat: pick an agent + model (+ **variant** for
-   models that expose them, e.g. `high`/`thinking`; `(default)` omits it), type a prompt
-   (**ENTER** sends, **Shift+ENTER** = newline). Replies render markdown, **LaTeX math**
-   (`$x^2$`, `$$…$$`), and **syntax-highlighted code** (c/cpp/cmake/…) with streaming text while
-   the model works. Toolbar: **New Session**. Double-clicking a model in Providers or a session in
-   the Server view opens a chat window pre-set to it / resuming it.
-   - Requires **WebView2**; the view shows a hint if unavailable.
-   - The plugin tells the model what the view can render (markdown/math/code fences) via a
-     per-request system prompt — toggle in *Preferences → OpenCode → Advertise rendering*.
-   - **Known issue:** mermaid diagrams currently render as an error box with the diagram source
-     (fix in verification); everything else renders.
-5. If the server URL or credentials differ, set them in
-   **Window → Preferences → OpenCode**, then hit **Refresh**.
+    models that expose them, e.g. `high`/`thinking`; `(default)` omits it), type a prompt
+    (**ENTER** sends, **Shift+ENTER** = newline). Replies render markdown, **LaTeX math**
+    (`$x^2$`, `$$…$$`), **mermaid diagrams**, and **syntax-highlighted code** (c/cpp/cmake/…)
+    with streaming text while the model works; tool invocations render as compact
+    `tool: name — state` lines and every code fence carries a **Copy** button. Toolbar:
+    **New Session**, **Abort** (stops an in-flight reply; also Ctrl+Alt+Shift+A; new chat
+    window Ctrl+Alt+Shift+N). Double-clicking a model in Providers or a session in
+    the Server view opens a chat window pre-set to it / resuming it.
+    - Requires **WebView2**; the view shows a hint if unavailable.
+    - The plugin tells the model what the view can render (markdown/math/code fences) via a
+      per-request system prompt — toggle in *Preferences → OpenCode → Advertise rendering*.
+5. The **Board** view (PM kanban over the repo's `.opencode/tasks/` store: five status
+    columns, sprint selector + goal, blocked flags, ticket details with artifact links,
+    live refresh) and the **Fleet** view (launched fleet jobs: task → session → worktree →
+    state, per-job diff/folder/take-over) drive the headless fleet: select a
+    sprint-backlog/in-progress ticket and **Launch task** to run it in an isolated git
+    worktree with a role-mapped agent (merge-back and ticket bookkeeping are automatic).
+6. If the server URL or credentials differ, set them in
+    **Window → Preferences → OpenCode** — primary connection incl. spawn settings and
+    working directory, plus the **Defaults** group (chat model `provider/model` + variant —
+    default `zai-coding-plan/glm-5.3` with `max`; task-store root + Board project — default
+    this repo and `hephaestus`; remote-connections list with passwords in secure storage) —
+    then hit **Refresh**.
 6. On startup the plugin also starts a local **MCP endpoint** for agents
    (log line: `eclipse-build MCP listening on http://127.0.0.1:<port>/mcp`) exposing
    cmake build/test, run, gdb-batch debug, clang-tidy/cppcheck lint and clang-format tools
@@ -137,7 +159,11 @@ one-time setup:
 | Mode | Where the server comes from | Preference fields |
 |---|---|---|
 | **CONNECT** (default) | You start `opencode serve` | Server URL, Username, Password |
-| **SPAWN** | Plugin starts/owns `opencode serve` | (optional) opencode binary, hostname, port, Password |
+| **SPAWN** | Plugin starts/owns `opencode serve` | (optional) opencode binary, hostname, port, Password, **working directory** (the repo whose `.opencode/` agents/skills/MCP config load; default this repository — an open CDT project still wins) |
+
+> In SPAWN mode the server runs in the configured working directory, so the **Hephaestus
+> harness itself is what the plugin hosts**: its agents, skills and MCP servers (visible in
+> the Server view) are the repo's `.opencode/` configuration.
 
 ## Troubleshooting
 

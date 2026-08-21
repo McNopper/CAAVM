@@ -1,13 +1,11 @@
 package com.opencode.ide.ui.views;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.Action;
@@ -25,28 +23,38 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.part.ViewPart;
 
+import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.OpencodeEventListener;
 import com.opencode.ide.client.activity.ActivityTracker;
 import com.opencode.ide.client.activity.FileActivity;
-import com.opencode.ide.client.activity.SessionActivity;
-import com.opencode.ide.client.activity.ToolActivity;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.HealthStatus;
+import com.opencode.ide.client.model.McpServerInfo;
 import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.SkillInfo;
+import com.opencode.ide.core.ConnectionsManager;
+import com.opencode.ide.core.ManagedConnection;
 import com.opencode.ide.core.OpencodeConnection;
 import com.opencode.ide.ui.internal.Refreshable;
 import com.opencode.ide.ui.internal.UiActivator;
 import com.opencode.ide.ui.internal.ViewLoadSupport;
+import com.opencode.ide.ui.model.ServerLabels;
 
 /**
- * Per-server explorer: the connection (server) as root, with categories for the
- * available agents and the running sessions (nested by {@code parentID}, so
- * subagents appear under the agent that spawned them). Future categories
- * (MCP, tools, ...) slot in alongside Agents/Sessions.
+ * Per-server explorer: one root per connection of the
+ * {@link ConnectionsManager} (the primary opencode server first, then any
+ * remote servers from the preferences), each with categories for the available
+ * agents and the running sessions (nested by {@code parentID}, so subagents
+ * appear under the agent that spawned them).
  *
- * <p>Replaces the earlier separate Connections + Agents views.</p>
+ * <p>The primary root behaves exactly like the former single-root view
+ * (including the live {@code /event} activity tracker); remote roots show
+ * health + agents + sessions from their own client, with an {@code offline}
+ * tag when unreachable. The tree is {@code SWT.VIRTUAL}: tree items are only
+ * materialized when their parent is expanded, and child counts come from the
+ * already-loaded in-memory lists (no fetching for collapsed roots).</p>
  */
 public class ServerView extends ViewPart implements Refreshable {
 
@@ -56,16 +64,20 @@ public class ServerView extends ViewPart implements Refreshable {
     private Action refreshAction;
     private Action reconnectAction;
 
-    private volatile ServerNode current;
+    private volatile List<ServerNode> roots = List.of();
+    private volatile ServerNode current;   // the primary root, while loaded
     private OpencodeEventListener eventListener;
     private Runnable trackerListener;
+    private Runnable connectionsListener;
     private boolean refreshPending;
 
     private final ActivityTracker tracker = new ActivityTracker();
 
-    enum CategoryKind { AGENTS, SESSIONS, ACTIVE_FILES }
+    enum CategoryKind { AGENTS, SESSIONS, ACTIVE_FILES, MCP_SERVERS, SKILLS }
 
     static final class ServerNode {
+        final boolean primary;
+        final String label;
         final String mode;
         final String url;
         final boolean healthy;
@@ -75,12 +87,27 @@ public class ServerView extends ViewPart implements Refreshable {
         final List<Session> sessions;          // mutable: updated live from /event
         final Map<String, SessionStatus> statuses;   // mutable
         final Map<String, String> activity;    // sessionId -> live label ("thinking"/"running tool"/...)
+        final List<McpServerInfo> mcpServers;
+        final List<SkillInfo> skills;
         final CategoryNode agentsCategory;
         final CategoryNode sessionsCategory;
         final CategoryNode filesCategory;
+        final CategoryNode mcpCategory;
+        final CategoryNode skillsCategory;
 
-        ServerNode(String mode, String url, boolean healthy, String version, Long pid,
-                List<Agent> agents, List<Session> sessions, Map<String, SessionStatus> statuses) {
+        ServerNode(boolean primary, String label, String mode, String url, boolean healthy,
+                String version, Long pid, List<Agent> agents, List<Session> sessions,
+                Map<String, SessionStatus> statuses) {
+            this(primary, label, mode, url, healthy, version, pid, agents, sessions, statuses,
+                    List.of(), List.of());
+        }
+
+        ServerNode(boolean primary, String label, String mode, String url, boolean healthy,
+                String version, Long pid, List<Agent> agents, List<Session> sessions,
+                Map<String, SessionStatus> statuses, List<McpServerInfo> mcpServers,
+                List<SkillInfo> skills) {
+            this.primary = primary;
+            this.label = label;
             this.mode = mode;
             this.url = url;
             this.healthy = healthy;
@@ -90,9 +117,18 @@ public class ServerView extends ViewPart implements Refreshable {
             this.sessions = new ArrayList<>(sessions);
             this.statuses = new HashMap<>(statuses);
             this.activity = new HashMap<>();
+            this.mcpServers = mcpServers == null ? List.of() : mcpServers;
+            this.skills = skills == null ? List.of() : skills;
             this.agentsCategory = new CategoryNode("Agents", CategoryKind.AGENTS, this);
             this.sessionsCategory = new CategoryNode("Sessions", CategoryKind.SESSIONS, this);
             this.filesCategory = new CategoryNode("Active files", CategoryKind.ACTIVE_FILES, this);
+            this.mcpCategory = new CategoryNode("MCP servers", CategoryKind.MCP_SERVERS, this);
+            this.skillsCategory = new CategoryNode("Skills", CategoryKind.SKILLS, this);
+        }
+
+        /** The pure (SWT-free) projection used for label derivation. */
+        ServerLabels.Server info() {
+            return new ServerLabels.Server(primary, label, mode, url, healthy, version, pid);
         }
     }
 
@@ -114,8 +150,13 @@ public class ServerView extends ViewPart implements Refreshable {
         TreeColumnLayout layout = new TreeColumnLayout();
         composite.setLayout(layout);
 
+        // SWT.VIRTUAL: tree items are created lazily when a node is expanded
+        // (children are served from the in-memory ServerNode lists, so counts
+        // for collapsed roots are never fetched). Hash lookup is required for
+        // virtual viewers because item.setData order is not guaranteed.
         viewer = new TreeViewer(composite,
-                SWT.MULTI | SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION | SWT.BORDER);
+                SWT.MULTI | SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION | SWT.BORDER | SWT.VIRTUAL);
+        viewer.setUseHashlookup(true);
         viewer.getTree().setHeaderVisible(true);
         viewer.getTree().setLinesVisible(true);
         viewer.setContentProvider(new TreeContentProvider(tracker));
@@ -157,8 +198,52 @@ public class ServerView extends ViewPart implements Refreshable {
             }
         });
 
+        // context menu on sessions: chat resume (double-click) + the session details view
+        org.eclipse.jface.action.MenuManager menu = new org.eclipse.jface.action.MenuManager();
+        org.eclipse.jface.action.Action details = new org.eclipse.jface.action.Action("Session details") {
+            @Override
+            public void run() {
+                Session s = selectedSession();
+                if (s != null) {
+                    openSessionDetails(s.id());
+                }
+            }
+        };
+        details.setToolTipText("Open the transcript view (messages, parts, tools, tokens)");
+        menu.add(details);
+        viewer.getControl().setMenu(menu.createContextMenu(viewer.getControl()));
+        menu.addMenuListener(manager -> {
+            Session s = selectedSession();
+            details.setEnabled(s != null);
+        });
+        getSite().registerContextMenu(menu, viewer);
+
         contributeActions();
+        registerConnectionsListener();
         refresh();
+    }
+
+    /** The currently selected session element, or {@code null}. */
+    private Session selectedSession() {
+        Object selection = viewer.getStructuredSelection();
+        Object first = (selection instanceof org.eclipse.jface.viewers.IStructuredSelection structured)
+                ? structured.getFirstElement()
+                : null;
+        return first instanceof Session s ? s : null;
+    }
+
+    /** Opens the session details view for one session (secondary id = session id). */
+    private void openSessionDetails(String sessionId) {
+        try {
+            getSite().getPage().showView(
+                    "com.opencode.ide.ui.views.SessionDetailsView",
+                    sessionId.replace('%', '_'),
+                    org.eclipse.ui.IWorkbenchPage.VIEW_ACTIVATE);
+        } catch (org.eclipse.ui.PartInitException e) {
+            UiActivator.getDefault().getLog().log(
+                    new org.eclipse.core.runtime.Status(org.eclipse.core.runtime.Status.ERROR,
+                            UiActivator.PLUGIN_ID, "Failed to open session details for " + sessionId, e));
+        }
     }
 
     private void contributeActions() {
@@ -167,7 +252,7 @@ public class ServerView extends ViewPart implements Refreshable {
                 refresh();
             }
         };
-        refreshAction.setToolTipText("Refresh server, agents and sessions");
+        refreshAction.setToolTipText("Refresh servers, agents and sessions");
         reconnectAction = new Action("Reconnect") {
             @Override
             public void run() {
@@ -202,6 +287,27 @@ public class ServerView extends ViewPart implements Refreshable {
         toolBar.add(collapseAllAction);
     }
 
+    /**
+     * Connections came and went (or a remote's liveness changed): reload on the
+     * UI thread. The listener is called from arbitrary threads.
+     */
+    private void registerConnectionsListener() {
+        if (connectionsListener != null) {
+            return;
+        }
+        connectionsListener = () -> {
+            Display display = Display.getDefault();
+            if (display != null && !display.isDisposed()) {
+                display.asyncExec(() -> {
+                    if (viewer != null && !viewer.getControl().isDisposed()) {
+                        refresh();
+                    }
+                });
+            }
+        };
+        ConnectionsManager.getDefault().addListener(connectionsListener);
+    }
+
     /** Resumes the given session in a chat window (via the openChat command - no chat-bundle dependency). */
     private void openChatForSession(String sessionId) {
         try {
@@ -226,21 +332,95 @@ public class ServerView extends ViewPart implements Refreshable {
     @Override
     public void refresh() {
         setContentDescription("Loading...");
-        ViewLoadSupport.load("Loading opencode server", () -> {
-            OpencodeConnection connection = OpencodeConnection.getInstance();
-            connection.getClient(); // ensure spawned/connected
-            HealthStatus health = connection.getClient().getHealth();
-            List<Agent> agents = connection.getClient().getAgents();
-            List<Session> sessions = connection.getClient().getSessions();
-            Map<String, SessionStatus> statuses = connection.getClient().getSessionStatus();
-            String mode = connection.getMode();
-            String url = connection.getConnectConfig().baseUrl().toString();
-            Long pid = connection.getSpawnedProcessId();
-            return new ServerNode(mode, url, health.healthy(), health.version(), pid,
+        ViewLoadSupport.load("Loading opencode servers", () -> {
+            List<ServerNode> nodes = new ArrayList<>();
+            nodes.add(loadPrimaryNode());
+            ConnectionsManager manager = ConnectionsManager.getDefault();
+            for (ManagedConnection connection : manager.connections()) {
+                if (!connection.primary()) {
+                    nodes.add(loadRemoteNode(manager, connection));
+                }
+            }
+            return nodes;
+        }, this::showNodes, this::showError);
+    }
+
+    /** The primary root: exactly the former single-root load (unchanged behavior). */
+    private ServerNode loadPrimaryNode() throws Exception {
+        OpencodeConnection connection = OpencodeConnection.getInstance();
+        connection.getClient(); // ensure spawned/connected
+        HealthStatus health = connection.getClient().getHealth();
+        List<Agent> agents = connection.getClient().getAgents();
+        List<Session> sessions = connection.getClient().getSessions();
+        Map<String, SessionStatus> statuses = connection.getClient().getSessionStatus();
+        List<McpServerInfo> mcpServers = safeMcp(connection.getClient());
+        List<SkillInfo> skills = safeSkills(connection.getClient());
+        String mode = connection.getMode();
+        String url = connection.getConnectConfig().baseUrl().toString();
+        Long pid = connection.getSpawnedProcessId();
+        return new ServerNode(true, "primary", mode, url, health.healthy(), health.version(), pid,
+                agents == null ? Collections.emptyList() : agents,
+                sessions == null ? Collections.emptyList() : sessions,
+                statuses == null ? Collections.emptyMap() : statuses,
+                mcpServers == null ? Collections.emptyList() : mcpServers,
+                skills == null ? Collections.emptyList() : skills);
+    }
+
+    /**
+     * A remote root: health + agents + sessions from its own client. A failure
+     * yields an offline node (tagged in the label) instead of an error - one
+     * unreachable remote must not take the view down.
+     */
+    private ServerNode loadRemoteNode(ConnectionsManager manager, ManagedConnection connection) {
+        String url = connection.config() != null
+                ? connection.config().baseUrl().toString()
+                : connection.id();
+        String label = connection.label() == null ? url : connection.label();
+        try {
+            OpencodeClient client = connection.client();
+            HealthStatus health = client.getHealth();
+            List<Agent> agents = manager.agents(connection); // cached (30s TTL / disconnect)
+            List<Session> sessions = client.getSessions();
+            Map<String, SessionStatus> statuses = client.getSessionStatus();
+            List<McpServerInfo> mcpServers = safeMcp(client);
+            List<SkillInfo> skills = safeSkills(client);
+            return new ServerNode(false, label, null, url,
+                    health != null && health.healthy(),
+                    health == null ? null : health.version(),
+                    null,
                     agents == null ? Collections.emptyList() : agents,
                     sessions == null ? Collections.emptyList() : sessions,
-                    statuses == null ? Collections.emptyMap() : statuses);
-        }, this::showNode, this::showError);
+                    statuses == null ? Collections.emptyMap() : statuses,
+                    mcpServers == null ? Collections.emptyList() : mcpServers,
+                    skills == null ? Collections.emptyList() : skills);
+        } catch (Exception e) {
+            return new ServerNode(false, label, null, url, false, null, null,
+                    Collections.emptyList(), Collections.emptyList(), Collections.emptyMap());
+        }
+    }
+
+    /**
+     * The auxiliary sections (MCP servers, skills) must never take the view
+     * down: any endpoint failure or shape mismatch degrades to an empty
+     * section (the client already tolerates 404/shape issues; this catches
+     * transport errors too).
+     */
+    private static List<McpServerInfo> safeMcp(OpencodeClient client) {
+        try {
+            List<McpServerInfo> servers = client.getMcpServers();
+            return servers == null ? List.of() : servers;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private static List<SkillInfo> safeSkills(OpencodeClient client) {
+        try {
+            List<SkillInfo> skills = client.getSkills();
+            return skills == null ? List.of() : skills;
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private void reconnect() {
@@ -251,11 +431,12 @@ public class ServerView extends ViewPart implements Refreshable {
         }, ignored -> refresh(), this::showError);
     }
 
-    private void showNode(ServerNode node) {
+    private void showNodes(List<ServerNode> nodes) {
         if (viewer.getControl().isDisposed()) {
             return;
         }
-        current = node;
+        roots = List.copyOf(nodes);
+        current = nodes.stream().filter(n -> n.primary).findFirst().orElse(null);
         // Subscribe once to live server events so the Sessions tree self-updates.
         if (eventListener == null) {
             eventListener = this::onEvent;
@@ -265,13 +446,22 @@ public class ServerView extends ViewPart implements Refreshable {
             trackerListener = this::onTrackerChanged;
             tracker.addListener(trackerListener);
         }
-        // Pass a list as input (NOT the ServerNode itself): if the input equals a
-        // tree element, the TreeViewer's expansion logic can misbehave.
-        viewer.setInput(java.util.List.of(node));
-        // Default: server + categories expanded so agents and the top-level sessions
-        // are visible, but the subagent children stay collapsed (use Expand All to open them).
-        viewer.setExpandedElements(
-                new Object[] { node, node.agentsCategory, node.sessionsCategory, node.filesCategory });
+        // Pass a list as input (NEVER a tree element itself): if the input
+        // equals a tree element, the TreeViewer's expansion logic can misbehave.
+        viewer.setInput(roots);
+        // Default: every server + categories expanded so agents and the
+        // top-level sessions are visible, but the subagent children stay
+        // collapsed (use Expand All to open them).
+        List<Object> expanded = new ArrayList<>();
+        for (ServerNode node : nodes) {
+            expanded.add(node);
+            expanded.add(node.agentsCategory);
+            expanded.add(node.sessionsCategory);
+            expanded.add(node.filesCategory);
+            expanded.add(node.mcpCategory);
+            expanded.add(node.skillsCategory);
+        }
+        viewer.setExpandedElements(expanded.toArray());
         updateContentDescription();
     }
 
@@ -355,7 +545,7 @@ public class ServerView extends ViewPart implements Refreshable {
             }
             case "message.part.updated" -> {
                 String sid = partSessionId(event);
-                String label = partActivityLabel(event);
+                String label = ServerLabels.partActivityLabel(event);
                 if (sid != null && label != null) {
                     node.activity.put(sid, label);
                     scheduleRefresh();
@@ -381,19 +571,7 @@ public class ServerView extends ViewPart implements Refreshable {
         return event.at("part.sessionID");
     }
 
-    /** Maps a streamed part to a live activity label ("thinking" / "running tool" / "responding"). */
-    private static String partActivityLabel(OpencodeEvent event) {
-        String partType = event.at("part.type");
-        if (partType == null) {
-            return null;
-        }
-        return switch (partType) {
-            case "reasoning" -> "thinking";
-            case "tool" -> "running".equals(event.at("part.state.status")) ? "running tool" : null;
-            case "text" -> "responding";
-            default -> null;
-        };
-    }
+    // activity label mapping lives in ServerLabels (pure, tested)
 
     private static void upsertSession(ServerNode node, Session session) {
         if (session == null || session.id() == null) {
@@ -428,14 +606,34 @@ public class ServerView extends ViewPart implements Refreshable {
     }
 
     private void updateContentDescription() {
-        ServerNode node = current;
-        if (node == null) {
+        List<ServerNode> nodes = roots;
+        if (nodes == null || nodes.isEmpty()) {
             return;
         }
-        long active = node.activity.size();
-        setContentDescription((node.healthy ? "Connected" : "Unreachable") + ": " + node.url
-                + "  •  live  •  " + node.agents.size() + " agents, " + node.sessions.size() + " sessions"
-                + (active > 0 ? "  •  " + active + " active" : ""));
+        ServerNode primary = current;
+        if (nodes.size() == 1 && primary != null) {
+            // single root: exactly the former description
+            long active = primary.activity.size();
+            setContentDescription((primary.healthy ? "Connected" : "Unreachable") + ": " + primary.url
+                    + "  •  live  •  " + primary.agents.size() + " agents, " + primary.sessions.size() + " sessions"
+                    + (active > 0 ? "  •  " + active + " active" : ""));
+            return;
+        }
+        long up = nodes.stream().filter(n -> n.healthy).count();
+        int agents = nodes.stream().mapToInt(n -> n.agents.size()).sum();
+        int sessions = nodes.stream().mapToInt(n -> n.sessions.size()).sum();
+        StringBuilder sb = new StringBuilder();
+        if (primary != null) {
+            sb.append(primary.healthy ? "Connected" : "Unreachable").append(": ").append(primary.url);
+        } else {
+            sb.append("opencode servers");
+        }
+        sb.append("  •  ").append(nodes.size()).append(" servers (").append(up).append(" up)")
+                .append("  •  ").append(agents).append(" agents, ").append(sessions).append(" sessions");
+        if (primary != null && !primary.activity.isEmpty()) {
+            sb.append("  •  ").append(primary.activity.size()).append(" active");
+        }
+        setContentDescription(sb.toString());
     }
 
     private void showError(Throwable e) {
@@ -448,92 +646,79 @@ public class ServerView extends ViewPart implements Refreshable {
                 new Status(Status.ERROR, UiActivator.PLUGIN_ID, "Failed to load opencode server", e));
     }
 
-    // ---------- label helpers ----------
+    // ---------- label helpers (delegate to the SWT-free ServerLabels) ----------
+
+    /** @return the root node owning the given session (sessions nest within their own server). */
+    private ServerNode ownerOf(Session session) {
+        return ServerLabels.ownerOf(roots, session, node -> node.sessions, current);
+    }
 
     String name(Object element) {
-        if (element instanceof ServerNode) {
-            return "opencode server";
+        if (element instanceof ServerNode node) {
+            return ServerLabels.serverName(node.info());
         }
         if (element instanceof CategoryNode c) {
             int count = switch (c.kind) {
                 case AGENTS -> c.server.agents.size();
                 case SESSIONS -> c.server.sessions.size();
                 case ACTIVE_FILES -> tracker.snapshot().files().size();
+                case MCP_SERVERS -> c.server.mcpServers.size();
+                case SKILLS -> c.server.skills.size();
             };
-            return c.label + " (" + count + ")";
+            return ServerLabels.categoryName(c.label, count);
         }
         if (element instanceof FileActivity f) {
-            return f.file() + " \u2014 " + f.tool() + " (" + shortId(f.sessionId()) + ")";
+            return ServerLabels.fileActivityName(f);
+        }
+        if (element instanceof McpServerInfo mcp) {
+            return mcp.id() == null ? "(unnamed)" : mcp.id();
+        }
+        if (element instanceof SkillInfo skill) {
+            return skill.name() == null ? "(unnamed)" : skill.name();
         }
         if (element instanceof Agent a) {
             return a.name();
         }
         if (element instanceof Session s) {
-            String title = (s.title() != null && !s.title().isEmpty())
-                    ? s.title()
-                    : (s.slug() == null ? s.id() : s.slug());
-            // surface the running agent identity (v1.18.x has no parentID, so no nesting)
-            if (s.agent() != null && !s.agent().isEmpty()) {
-                return s.agent() + " \u2014 " + title;
-            }
-            return title;
+            return ServerLabels.sessionName(s);
         }
         return String.valueOf(element);
     }
 
     String detail(Object element) {
         if (element instanceof ServerNode sn) {
-            StringBuilder sb = new StringBuilder(sn.healthy ? "healthy" : "unhealthy");
-            if (sn.version != null) {
-                sb.append(" • v").append(sn.version);
-            }
-            if (sn.mode != null) {
-                sb.append(" • ").append(sn.mode);
-            }
-            if (sn.url != null) {
-                sb.append(" • ").append(sn.url);
-            }
-            if (sn.pid != null) {
-                sb.append(" • pid ").append(sn.pid);
-            }
-            return sb.toString();
+            return ServerLabels.serverDetail(sn.info());
         }
         if (element instanceof CategoryNode c) {
-            if (c.kind == CategoryKind.SESSIONS && !c.server.sessions.isEmpty()) {
-                long busy = c.server.sessions.stream().filter(s -> isBusy(c.server, s)).count();
-                long roots = c.server.sessions.stream().filter(s -> s.parentID() == null).count();
-                return c.server.sessions.size() + " total, " + roots + " top-level"
-                        + (busy > 0 ? " • " + busy + " busy" : "");
+            if (c.kind == CategoryKind.SESSIONS) {
+                return ServerLabels.sessionsCategoryDetail(c.server.sessions, c.server.statuses);
             }
             return "";
         }
+        if (element instanceof McpServerInfo mcp) {
+            return mcp.status() == null ? "" : mcp.status();
+        }
+        if (element instanceof SkillInfo skill) {
+            String description = skill.description();
+            if (description == null || description.isBlank()) {
+                return "";
+            }
+            return description.length() <= 90 ? description : description.substring(0, 90) + "…";
+        }
         if (element instanceof Agent a) {
-            StringBuilder sb = new StringBuilder();
-            if (a.mode() != null) {
-                sb.append(a.mode());
-            }
-            if (a.isNative()) {
-                sb.append(" • native");
-            }
-            if (a.description() != null && !a.description().isEmpty()) {
-                sb.append(" — ").append(a.description());
-            }
-            return sb.toString();
+            return ServerLabels.agentDetail(a);
         }
         if (element instanceof Session s) {
             // prefer the derived activity label (thinking… / tool: name — file), then the legacy part label
-            String live = trackerLabel(s.id());
-            if (live == null && current != null) {
-                live = current.activity.get(s.id());
+            ServerNode owner = ownerOf(s);
+            String live = (owner != null && owner.primary)
+                    ? ServerLabels.trackerLabel(tracker.snapshot(), s.id())
+                    : null;
+            if (live == null && owner != null) {
+                live = owner.activity.get(s.id());
             }
-            StringBuilder sb = new StringBuilder(live != null ? live : statusOf(s));
-            if (s.parentID() != null) {
-                sb.append(" • subagent");
-            }
-            if (s.time() != null && s.time().updated() > 0) {
-                sb.append(" • updated ").append(relative(s.time().updated()));
-            }
-            return sb.toString();
+            return ServerLabels.sessionDetail(s, live,
+                    ServerLabels.statusType(owner == null ? null : owner.statuses, s));
         }
         return "";
     }
@@ -547,10 +732,10 @@ public class ServerView extends ViewPart implements Refreshable {
         }
         if (element instanceof Session s) {
             // busy/thinking sessions get a distinct (orange) icon so changes are visible at a glance
-            ServerNode node = current;
-            boolean active = isBusy(node, s)
+            ServerNode node = ownerOf(s);
+            boolean active = ServerLabels.isBusy(node == null ? null : node.statuses, s)
                     || (node != null && node.activity.containsKey(s.id()))
-                    || sessionActive(s.id());
+                    || ServerLabels.sessionActive(tracker.snapshot(), s.id());
             return UiActivator.image(active ? UiActivator.ICON_AGENT_BUSY : UiActivator.ICON_AGENT);
         }
         if (element instanceof Agent) {
@@ -559,88 +744,15 @@ public class ServerView extends ViewPart implements Refreshable {
         return null;
     }
 
-    private String statusOf(Session s) {
-        ServerNode node = current;
-        if (node == null || node.statuses == null) {
-            return "idle";
-        }
-        SessionStatus status = node.statuses.get(s.id());
-        String type = (status == null || status.type() == null) ? "idle" : status.type();
-        return type;
-    }
-
-    /** Derived live label from the tracker: thinking, else the first still-running tool. */
-    private String trackerLabel(String sessionId) {
-        SessionActivity session = tracker.snapshot().sessions().get(sessionId);
-        if (session == null) {
-            return null;
-        }
-        if (session.thinking()) {
-            return "thinking\u2026";
-        }
-        ToolActivity running = session.activity().stream()
-                .filter(t -> t.state() == ToolActivity.State.RUNNING)
-                .findFirst()
-                .orElse(null);
-        if (running == null) {
-            return null;
-        }
-        return running.file() != null
-                ? "tool: " + running.tool() + " \u2014 " + running.file()
-                : "tool: " + running.tool();
-    }
-
-    /** Whether the tracker currently sees activity (running/thinking/tool) for the session. */
-    private boolean sessionActive(String sessionId) {
-        SessionActivity session = tracker.snapshot().sessions().get(sessionId);
-        if (session == null) {
-            return false;
-        }
-        return session.running() || session.thinking()
-                || session.activity().stream().anyMatch(t -> t.state() == ToolActivity.State.RUNNING);
-    }
-
-    private static String shortId(String sessionId) {
-        if (sessionId == null) {
-            return "";
-        }
-        return sessionId.length() <= 8 ? sessionId : sessionId.substring(0, 8);
-    }
-
-    private static boolean isBusy(ServerNode node, Session s) {
-        if (node == null || node.statuses == null) {
-            return false;
-        }
-        SessionStatus status = node.statuses.get(s.id());
-        if (status == null || status.type() == null) {
-            return false;
-        }
-        return "busy".equalsIgnoreCase(status.type()) || "retry".equalsIgnoreCase(status.type());
-    }
-
-    private static String relative(long epochMillis) {
-        long ago = Instant.now().toEpochMilli() - epochMillis;
-        if (ago < 0) {
-            ago = 0;
-        }
-        long minutes = ago / 60_000L;
-        if (minutes < 1) {
-            return "just now";
-        }
-        if (minutes < 60) {
-            return minutes + "m ago";
-        }
-        long hours = minutes / 60;
-        if (hours < 24) {
-            return hours + "h ago";
-        }
-        return (hours / 24) + "d ago";
-    }
-
-    /** Tree content provider: server -> categories -> items; sessions nest by parentID. */
+    /**
+     * Tree content provider: servers -> categories -> items; sessions nest by
+     * parentID within their own server. Compatible with {@code SWT.VIRTUAL}:
+     * {@link #getChildren(Object)} serves the in-memory lists only (no IO), so
+     * the viewer can resolve items lazily on expand.
+     */
     private static final class TreeContentProvider implements ITreeContentProvider {
         private final ActivityTracker tracker;
-        private ServerNode root;
+        private List<ServerNode> roots = List.of();
 
         TreeContentProvider(ActivityTracker tracker) {
             this.tracker = tracker;
@@ -666,9 +778,11 @@ public class ServerView extends ViewPart implements Refreshable {
                 List<Object> children = new ArrayList<>();
                 children.add(node.agentsCategory);
                 children.add(node.sessionsCategory);
-                if (!tracker.snapshot().files().isEmpty()) {
+                if (node.primary && !tracker.snapshot().files().isEmpty()) {
                     children.add(node.filesCategory); // hidden while nothing is being worked on
                 }
+                children.add(node.mcpCategory);
+                children.add(node.skillsCategory);
                 return children.toArray();
             }
             if (parent instanceof CategoryNode category) {
@@ -676,21 +790,78 @@ public class ServerView extends ViewPart implements Refreshable {
                     return category.server.agents.toArray();
                 }
                 if (category.kind == CategoryKind.SESSIONS) {
-                    return topLevelSessions(category.server).toArray();
+                    return ServerLabels.topLevelSessions(category.server.sessions).toArray();
                 }
                 if (category.kind == CategoryKind.ACTIVE_FILES) {
                     return activeFiles();
                 }
+                if (category.kind == CategoryKind.MCP_SERVERS) {
+                    return category.server.mcpServers.toArray();
+                }
+                if (category.kind == CategoryKind.SKILLS) {
+                    return category.server.skills.toArray();
+                }
                 return new Object[0];
             }
-            if (parent instanceof Session session && root != null) {
-                return childrenOf(root, session).toArray();
+            if (parent instanceof Session session) {
+                ServerNode owner = ownerOf(session);
+                return owner != null ? ServerLabels.childrenOf(owner.sessions, session.id()).toArray() : new Object[0];
             }
             return new Object[0];
         }
 
+        /**
+         * The tree parent of an element (used by the viewer to preserve
+         * expansion state across refreshes): the category's server, the
+         * agent's agents category, the session's parent session (or the
+         * owning server's Sessions category for top-level sessions) and the
+         * primary's Active files category for file activities.
+         */
         @Override
         public Object getParent(Object element) {
+            if (element instanceof CategoryNode category) {
+                return category.server;
+            }
+            if (element instanceof Agent agent) {
+                for (ServerNode node : roots) {
+                    if (node.agents.contains(agent)) {
+                        return node.agentsCategory;
+                    }
+                }
+                return null;
+            }
+            if (element instanceof McpServerInfo mcp) {
+                for (ServerNode node : roots) {
+                    if (node.mcpServers.contains(mcp)) {
+                        return node.mcpCategory;
+                    }
+                }
+                return null;
+            }
+            if (element instanceof SkillInfo skill) {
+                for (ServerNode node : roots) {
+                    if (node.skills.contains(skill)) {
+                        return node.skillsCategory;
+                    }
+                }
+                return null;
+            }
+            if (element instanceof Session session) {
+                ServerNode owner = ownerOf(session);
+                if (owner == null) {
+                    return null;
+                }
+                Session parent = ServerLabels.parentSession(owner.sessions, session);
+                return parent != null ? parent : owner.sessionsCategory;
+            }
+            if (element instanceof FileActivity) {
+                for (ServerNode node : roots) {
+                    if (node.primary) {
+                        return node.filesCategory;
+                    }
+                }
+                return null;
+            }
             return null;
         }
 
@@ -709,50 +880,54 @@ public class ServerView extends ViewPart implements Refreshable {
                 if (category.kind == CategoryKind.ACTIVE_FILES) {
                     return !tracker.snapshot().files().isEmpty();
                 }
+                if (category.kind == CategoryKind.MCP_SERVERS) {
+                    return !category.server.mcpServers.isEmpty();
+                }
+                if (category.kind == CategoryKind.SKILLS) {
+                    return !category.server.skills.isEmpty();
+                }
             }
-            if (parent instanceof Session session && root != null) {
-                return root.sessions.stream().anyMatch(s -> session.id() != null && session.id().equals(s.parentID()));
+            if (parent instanceof Session session) {
+                ServerNode owner = ownerOf(session);
+                return owner != null && ServerLabels.hasSessionChildren(owner.sessions, session.id());
             }
             return false;
         }
 
         @Override
         public void inputChanged(Viewer viewer, Object oldInput, Object newInput) {
-            // Input is a List containing a single ServerNode (see ServerView.showNode).
-            // Resolve it back to the ServerNode so session->subagent nesting works.
-            if (newInput instanceof ServerNode node) {
-                root = node;
-            } else if (newInput instanceof java.util.Collection<?> collection && !collection.isEmpty()) {
-                Object first = collection.iterator().next();
-                root = (first instanceof ServerNode) ? (ServerNode) first : null;
+            // Input is a List of ServerNodes (see ServerView.showNodes). Keep
+            // the roots so session->subagent nesting can resolve the owner.
+            if (newInput instanceof java.util.Collection<?> collection) {
+                List<ServerNode> resolved = new ArrayList<>();
+                for (Object element : collection) {
+                    if (element instanceof ServerNode node) {
+                        resolved.add(node);
+                    }
+                }
+                roots = List.copyOf(resolved);
+            } else if (newInput instanceof ServerNode node) {
+                roots = List.of(node);
             } else {
-                root = null;
+                roots = List.of();
             }
         }
 
         @Override
         public void dispose() {
-            // stateless beyond root
+            // stateless beyond roots
         }
 
-        private static List<Session> topLevelSessions(ServerNode node) {
-            return node.sessions.stream()
-                    .filter(s -> s.parentID() == null)
-                    .sorted(com.opencode.ide.client.SessionOrder.MOST_RECENT_FIRST) // most current on top
-                    .collect(Collectors.toList());
+        /** @return the root whose session list contains the given session's id (shared logic in ServerLabels). */
+        private ServerNode ownerOf(Session session) {
+            return ServerLabels.ownerOf(roots, session, node -> node.sessions,
+                    roots.isEmpty() ? null : roots.get(0));
         }
 
         private Object[] activeFiles() {
             return tracker.snapshot().files().values().stream()
                     .sorted(Comparator.comparing(FileActivity::file))
                     .toArray();
-        }
-
-        private static List<Session> childrenOf(ServerNode node, Session parent) {
-            return node.sessions.stream()
-                    .filter(s -> parent.id() != null && parent.id().equals(s.parentID()))
-                    .sorted(com.opencode.ide.client.SessionOrder.MOST_RECENT_FIRST)
-                    .collect(Collectors.toList());
         }
     }
 
@@ -769,6 +944,14 @@ public class ServerView extends ViewPart implements Refreshable {
                 // best-effort during dispose
             }
             eventListener = null;
+        }
+        if (connectionsListener != null) {
+            try {
+                ConnectionsManager.getDefault().removeListener(connectionsListener);
+            } catch (Throwable ignored) {
+                // best-effort during dispose
+            }
+            connectionsListener = null;
         }
         super.dispose();
     }

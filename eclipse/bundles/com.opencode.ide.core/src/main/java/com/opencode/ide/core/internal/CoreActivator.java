@@ -11,7 +11,9 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.util.tracker.ServiceTracker;
 
 import com.opencode.ide.client.ClientLog;
+import com.opencode.ide.core.ConnectionsManager;
 import com.opencode.ide.core.OpencodeConnection;
+import com.opencode.ide.core.OpencodePreferences;
 import com.opencode.ide.core.context.ProjectContext;
 
 /**
@@ -28,12 +30,25 @@ public class CoreActivator extends Plugin {
 
     private ServiceTracker<ProjectContext, ProjectContext> projectContextTracker;
     private ServiceRegistration<OpencodeConnection> connectionService;
+    private ServiceRegistration<ConnectionsManager> connectionsService;
     private Thread shutdownHook;
 
     @Override
     public void start(BundleContext context) throws Exception {
         super.start(context);
         instance = this;
+        // Bridge the tasksRoot preference into the system property the
+        // eclipse-build MCP endpoint reads when its DS component activates
+        // (service-driven, i.e. strictly AFTER this activator ran) — one task
+        // store for the Board view, the fleet and the in-session task_* tools.
+        try {
+            String configured = new OpencodePreferences().getTasksRoot();
+            if (configured != null && !configured.isBlank()) {
+                System.setProperty("opencode.tasks.root", configured.trim());
+            }
+        } catch (RuntimeException e) {
+            logWarning("cannot bridge tasksRoot preference into opencode.tasks.root: " + e.getMessage());
+        }
         ClientLog.install((level, message, cause) -> {
             if (Level.WARNING.equals(level)) {
                 logWarning(message);
@@ -43,6 +58,8 @@ public class CoreActivator extends Plugin {
         });
         connectionService = context.registerService(
                 OpencodeConnection.class, OpencodeConnection.getInstance(), null);
+        connectionsService = context.registerService(
+                ConnectionsManager.class, ConnectionsManager.getDefault(), null);
         projectContextTracker = new ServiceTracker<ProjectContext, ProjectContext>(
                 context, ProjectContext.class.getName(), null) {
             @Override
@@ -65,6 +82,11 @@ public class CoreActivator extends Plugin {
         // is never left orphaned when Eclipse closes.
         shutdownHook = new Thread(() -> {
             try {
+                ConnectionsManager.getDefault().dispose();
+            } catch (Throwable t) {
+                // best-effort during shutdown; do not propagate
+            }
+            try {
                 OpencodeConnection.getInstance().dispose();
             } catch (Throwable t) {
                 // best-effort during shutdown; do not propagate
@@ -84,10 +106,15 @@ public class CoreActivator extends Plugin {
                 connectionService.unregister();
                 connectionService = null;
             }
+            if (connectionsService != null) {
+                connectionsService.unregister();
+                connectionsService = null;
+            }
             if (projectContextTracker != null) {
                 projectContextTracker.close();
                 projectContextTracker = null;
             }
+            ConnectionsManager.getDefault().dispose();
             OpencodeConnection.getInstance().dispose();
             if (shutdownHook != null) {
                 try {

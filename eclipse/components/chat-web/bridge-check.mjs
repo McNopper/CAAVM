@@ -63,14 +63,38 @@ class El {
     };
   }
   appendChild(child) {
+    // real-DOM semantics: appending an existing child MOVES it (no duplicates)
+    const at = this.children.indexOf(child);
+    if (at >= 0) {
+      this.children.splice(at, 1);
+    }
     child.parentElement = this;
     this.children.push(child);
     return child;
   }
+  insertBefore(node, ref) {
+    node.parentElement = this;
+    const at = ref ? this.children.indexOf(ref) : -1;
+    if (at < 0) this.children.push(node);
+    else this.children.splice(at, 0, node);
+    return node;
+  }
+  removeChild(child) {
+    const at = this.children.indexOf(child);
+    if (at >= 0) this.children.splice(at, 1);
+    child.parentElement = null;
+    return child;
+  }
+  remove() { if (this.parentElement) this.parentElement.removeChild(this); }
   addEventListener(type, handler) {
     (this._listeners || (this._listeners = {}))[type] = handler;
   }
-  set innerHTML(html) { this._html = String(html); this._text = null; this.children = []; }
+  set innerHTML(html) {
+    this._html = String(html);
+    this._text = null;
+    this.children = [];
+    parseInto(this, this._html);
+  }
   get innerHTML() { return this._html === null ? "" : this._html; }
   set textContent(text) { this._text = String(text); this._html = null; this.children = []; }
   get textContent() { return textOf(this); }
@@ -116,9 +140,64 @@ function matches(el, selector) {
 function textOf(node) {
   if (node.nodeType === 3) return node.textContent;
   let text = node._text !== null && node._text !== undefined ? node._text
-    : (node._html ? stripTags(node._html) : "");
+    : (node._html ? decodeEntities(stripTags(node._html)) : "");
   for (const child of node.children) text += textOf(child);
   return text;
+}
+
+// like a real DOM textContent: markup stripped AND character entities decoded
+function decodeEntities(text) {
+  return String(text)
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"").replace(/&#x27;|&apos;|&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+// Minimal HTML tree builder: markdown/KaTeX/hljs output is set via innerHTML,
+// and features like the per-fence Copy button must find those elements via
+// querySelector - exactly as in a real browser (which parses the markup).
+const VOID_TAGS = new Set(["BR", "HR", "IMG", "INPUT", "META", "LINK", "SOURCE"]);
+function parseInto(parent, html) {
+  const stack = [parent];
+  const text = String(html);
+  const pushText = (host, chunk) => {
+    if (chunk) host.appendChild({ nodeType: 3, textContent: decodeEntities(chunk), children: [] });
+  };
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf("<", i);
+    if (open < 0) { pushText(stack[0], text.slice(i)); break; }
+    if (open > i) pushText(stack[0], text.slice(i, open));
+    if (text.startsWith("<!--", open)) {
+      const end = text.indexOf("-->", open);
+      i = end < 0 ? text.length : end + 3;
+      continue;
+    }
+    const close = text.indexOf(">", open);
+    if (close < 0) { pushText(stack[0], text.slice(open)); break; }
+    let tag = text.slice(open + 1, close).trim();
+    if (tag.startsWith("!")) { i = close + 1; continue; } // doctype
+    if (tag.startsWith("/")) {
+      const name = tag.slice(1).split(/\s+/)[0].toUpperCase();
+      // pop up to and including the INNERMOST matching open tag (stack[0] is
+      // the innermost); a stray closer with no match is ignored (lenient)
+      for (let s = 0; s < stack.length; s++) {
+        if (stack[s].tagName === name) { stack.splice(0, s + 1); break; }
+      }
+      i = close + 1;
+      continue;
+    }
+    const selfClosing = tag.endsWith("/");
+    if (selfClosing) tag = tag.slice(0, -1);
+    const name = tag.match(/^[a-zA-Z][a-zA-Z0-9:-]*/);
+    if (!name) { pushText(stack[0], text.slice(open, close + 1)); i = close + 1; continue; }
+    const el = new El(name[0]);
+    const classAttr = tag.match(/class\s*=\s*"([^"]*)"|class\s*=\s*'([^']*)'/);
+    if (classAttr) el.className = classAttr[1] || classAttr[2] || "";
+    stack[0].appendChild(el);
+    if (!selfClosing && !VOID_TAGS.has(el.tagName)) stack.unshift(el);
+    i = close + 1;
+  }
 }
 
 // ---------------- load the page script ----------------
@@ -133,7 +212,8 @@ const bodyEl = new El("body");
 const reports = [];
 const ctx = {
   console,
-  JSON, Math, Date, String, Number, Boolean, Object, Array, RegExp, Error, parseInt, parseFloat,
+  JSON, Math, Date, String, Number, Boolean, Object, Array, RegExp, Error, Promise,
+  parseInt, parseFloat,
   setTimeout, clearTimeout,
   markdownit: require(join(webDir, "markdown-it.min.js")),
   document: {
@@ -195,6 +275,21 @@ const streamNode = chatEl.querySelector('.msg.assistant[data-mid="msg_1"]');
 check("__startAssistant creates the reply bubble", !!streamNode);
 check("__appendDelta streams text into it", !!streamNode && textOf(streamNode).includes("acknowledged"),
   streamNode ? JSON.stringify(textOf(streamNode)) : "no node");
+check("__appendDelta leaves the blinking cursor in place",
+  !!streamNode && streamNode.querySelectorAll(".cursor").length === 1,
+  "cursors=" + (streamNode ? streamNode.querySelectorAll(".cursor").length : "no-node"));
+
+// cursor stop: the host calls __stopStream when the send completes/fails/aborts;
+// the streamed text must survive, the cursor must go, and it must be idempotent
+const rs0 = exec('window.__stopStream("{\\"mid\\":\\"msg_1\\"}")');
+check("__stopStream returns true", rs0 === true);
+check("__stopStream removes the cursor but keeps the streamed text",
+  !!streamNode && streamNode.querySelectorAll(".cursor").length === 0
+    && textOf(streamNode).includes("acknowledged"));
+exec('window.__stopStream("{\\"mid\\":\\"msg_1\\"}")');
+check("__stopStream is idempotent", streamNode.querySelectorAll(".cursor").length === 0);
+const rs1 = exec('window.__stopStream("{\\"mid\\":\\"no_such_bubble\\"}")');
+check("__stopStream tolerates an unknown mid", rs1 === true);
 
 // final authoritative render (markdown + meta)
 const finalScript = 'window.__setAssistantText("{\\"mid\\":\\"msg_1\\",\\"text\\":\\"# Done\\\\n\\\\n`code` and $x^2$\\",'
@@ -226,6 +321,65 @@ check("__setTheme switches back to light", bodyEl.className.includes("light") &&
 // clear
 exec("window.__clear()");
 check("__clear empties the transcript", textOf(chatEl) === "");
+
+// ---------------- tool parts (compact tool-call lines) ----------------
+// ChatEntry.parts tool parts arrive (via ChatScripts) as a "tools" array of
+// {name, state} on each history row / final assistant render.
+const toolErrBefore = reports.filter(r => r.startsWith("JS ERROR")).length;
+const toolRows = JSON.stringify([
+  { role: "user", id: "", text: "build it", reasoning: "", meta: "", tools: [] },
+  { role: "assistant", id: "msg_t", text: "done", reasoning: "", meta: "",
+    tools: [
+      { name: "read", state: "running" },
+      { name: "bash", state: "completed" },
+      { name: "write", state: "error" },
+      { name: "<script>alert(1)</script>", state: "weird" }
+    ] }
+]);
+const rt = exec("window.__setMessages(" + JSON.stringify(toolRows) + ")");
+check("__setMessages with tool parts returns true", rt === true);
+const toolNode = chatEl.querySelector('.msg.assistant[data-mid="msg_t"]');
+check("running tool renders its line", !!toolNode && textOf(toolNode).includes("tool: read — running"),
+  toolNode ? JSON.stringify(textOf(toolNode)) : "no node");
+check("completed tool renders its line with a check",
+  !!toolNode && textOf(toolNode).includes("tool: bash — completed ✓"));
+check("error tool renders its line", !!toolNode && textOf(toolNode).includes("tool: write — error"));
+check("running line carries the running class",
+  !!toolNode && toolNode.querySelectorAll(".tool-line.tool-running").length === 1);
+check("completed line carries the completed class (dimmed via CSS)",
+  !!toolNode && toolNode.querySelectorAll(".tool-line.tool-completed").length === 1);
+check("error line carries the error class",
+  !!toolNode && toolNode.querySelectorAll(".tool-line.tool-error").length === 1);
+check("unknown state still renders with a fallback class",
+  !!toolNode && toolNode.querySelectorAll(".tool-line.tool-unknown").length === 1
+    && textOf(toolNode).includes("weird"));
+check("hostile tool name cannot inject markup",
+  !!toolNode && toolNode.querySelectorAll("script").length === 0
+    && textOf(toolNode).includes("tool: <script>alert(1)</script>"));
+check("tool lines sit above the message body",
+  !!toolNode && (() => {
+    const bubble = toolNode.querySelector(".bubble");
+    const body = toolNode.querySelector(".body");
+    const kids = bubble ? bubble.children : [];
+    const firstTool = kids.findIndex(c => c.classList && c.classList.contains("tool-line"));
+    return firstTool >= 0 && kids.indexOf(body) > firstTool;
+  })());
+check("__javaReport still fires (history + tool-line reports)",
+  reports.some(r => r.startsWith("history rendered")) && reports.some(r => r.includes("tool line(s) rendered")));
+check("no JS errors while rendering tool parts",
+  reports.filter(r => r.startsWith("JS ERROR")).length === toolErrBefore);
+
+// final assistant render carrying tools (the sendMessage reply shape)
+exec("window.__clear()");
+const toolFinal = JSON.stringify(
+  { mid: "m_t2", text: "hi", reasoning: "", meta: "", tools: [{ name: "grep", state: "completed" }] });
+exec("window.__setAssistantText(" + JSON.stringify(toolFinal) + ")");
+const t2 = chatEl.querySelector('.msg.assistant[data-mid="m_t2"]');
+check("__setAssistantText renders tool lines too",
+  !!t2 && textOf(t2).includes("tool: grep — completed"));
+exec("window.__setAssistantText(" + JSON.stringify(toolFinal) + ")");
+check("re-render does not duplicate tool lines",
+  !!t2 && t2.querySelectorAll(".tool-line").length === 1);
 
 // ---------------- math (extract BEFORE markdown) ----------------
 // Real model output captured from a live opencode server, plus the shapes that
@@ -323,6 +477,68 @@ codeCase("code cannot inject HTML", "```html\n<script>alert(1)</script>\n```", (
   check(name + ": shown as escaped text", visibleText(html).includes("<script>alert(1)</script>"),
     JSON.stringify(visibleText(html)));
 });
+
+// ---------------- copy-code (per-fence Copy button) ----------------
+exec("window.__clear()");
+exec("window.__setAssistantText(" + JSON.stringify(JSON.stringify(
+  { mid: "m_copy", text: "```c\nint add(int a, int b);\n```\n\n```mermaid\ngraph TD; A-->B;\n```",
+    reasoning: "", meta: "" })) + ")");
+const copyNode = chatEl.querySelector('.msg.assistant[data-mid="m_copy"]');
+const pres = copyNode ? copyNode.querySelectorAll("pre") : [];
+const copyBtn = pres.length > 0 ? pres[0].querySelector(".copy-btn") : null;
+check("code fence has a Copy button", !!copyBtn);
+check("button lives inside its fence (positioned top-right via CSS)",
+  !!copyBtn && copyBtn.parentElement === pres[0]);
+check("the mermaid fence was replaced by the diagram pass (no button for it)",
+  pres.length === 1 && copyNode.querySelectorAll(".copy-btn").length === 1);
+check("button is labelled Copy", !!copyBtn && copyBtn.textContent === "Copy");
+
+// the shim has neither a clipboard API nor execCommand: the copy path must
+// degrade to a report instead of throwing or lying (length only - no content)
+const copyErrBefore = reports.filter(r => r.startsWith("JS ERROR")).length;
+const rcNoApi = ctx.__copyCode(copyBtn);
+check("__copyCode returns true without any clipboard API", rcNoApi === true);
+check("unavailable copy is reported to Java (length only, never the code text)",
+  reports.some(r => r.startsWith("copy unavailable") && r.endsWith(" chars)"))
+    && !reports.some(r => r.includes("int add(int a, int b)")),
+  reports.filter(r => r.startsWith("copy unavailable")).slice(-1)[0] || "");
+
+// execCommand fallback: intercept it and capture the textarea's value
+let execCopied = null;
+ctx.document.execCommand = (cmd) => {
+  if (cmd !== "copy") return false;
+  const ta = bodyEl.children.find(c => c.tagName === "TEXTAREA");
+  execCopied = ta ? ta.value : null;
+  return true;
+};
+const rc = ctx.__copyCode(copyBtn);
+check("__copyCode returns true via the execCommand fallback", rc === true);
+check("RAW code text was copied, not the highlighted markup (trailing \\n included)",
+  execCopied === "int add(int a, int b);\n", JSON.stringify(execCopied));
+check("copy is reported to Java", reports.some(r => r.startsWith("code copied")));
+check("button briefly confirms 'Copied'",
+  copyBtn.textContent === "Copied" && copyBtn.classList.contains("copied"));
+
+// the click listener wired by addCopyButtons drives the same hook
+execCopied = null;
+if (copyBtn._listeners && typeof copyBtn._listeners.click === "function") {
+  copyBtn._listeners.click();
+}
+check("clicking the button copies too (listener wired)",
+  execCopied === "int add(int a, int b);\n");
+check("no JS errors on any copy path",
+  reports.filter(r => r.startsWith("JS ERROR")).length === copyErrBefore);
+
+// with a clipboard API present it is preferred, and the confirmation lands
+// asynchronously (after the writeText promise settles)
+const apiCopied = [];
+ctx.navigator = { clipboard: { writeText: (t) => { apiCopied.push(t); return ctx.Promise.resolve(); } } };
+ctx.__copyCode(copyBtn);
+check("clipboard API is preferred over execCommand",
+  apiCopied.length === 1 && apiCopied[0] === "int add(int a, int b);\n");
+await Promise.resolve();
+check("Copied confirmation shows after the clipboard promise settles",
+  copyBtn.textContent === "Copied");
 
 // ---------------- external links ----------------
 exec("window.__clear()");

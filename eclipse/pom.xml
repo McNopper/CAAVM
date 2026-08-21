@@ -25,9 +25,11 @@
     <module>bundles/com.opencode.ide.client</module>
     <module>bundles/com.opencode.ide.client.tests</module>
     <module>bundles/com.opencode.ide.ui</module>
+    <module>bundles/com.opencode.ide.ui.tests</module>
     <module>bundles/com.opencode.ide.chat</module>
     <module>bundles/com.opencode.ide.chat.tests</module>
     <module>bundles/com.opencode.ide.cdt</module>
+    <module>bundles/com.opencode.ide.cdt.tests</module>
     <module>bundles/com.opencode.ide.git</module>
     <module>bundles/com.opencode.ide.git.tests</module>
     <module>bundles/com.opencode.ide.fleet</module>
@@ -36,8 +38,11 @@
     <module>bundles/com.opencode.ide.tools.tests</module>
     <module>bundles/com.opencode.ide.tasks</module>
     <module>bundles/com.opencode.ide.tasks.tests</module>
+    <module>bundles/com.opencode.ide.board</module>
+    <module>bundles/com.opencode.ide.board.tests</module>
     <module>bundles/com.opencode.ide.mcp</module>
     <module>bundles/com.opencode.ide.mcp.tests</module>
+    <module>mojo/opencode-tasks</module>
     <module>features/com.opencode.ide.feature</module>
     <module>releng/com.opencode.ide.repository</module>
   </modules>

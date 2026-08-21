@@ -1,0 +1,223 @@
+package com.opencode.ide.board.fleet;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
+
+import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.core.OpencodeConnection;
+import com.opencode.ide.fleet.FleetJob;
+import com.opencode.ide.fleet.FleetRunner;
+import com.opencode.ide.fleet.RoleAgents;
+import com.opencode.ide.fleet.SseSessionEvents;
+import com.opencode.ide.fleet.TaskFleet;
+import com.opencode.ide.git.WorktreeManager;
+import com.opencode.ide.tasks.TaskStore;
+
+/**
+ * Production {@link FleetLauncher}: adapts the headless {@link TaskFleet}
+ * engine to the board's one-call seam.
+ *
+ * <p>Process-wide by design: one shared daemon executor and one
+ * {@link TaskFleet} — and therefore one merge-back lock — per store root, so
+ * parallel launches from multiple Board view instances still merge serially.
+ * The executor is never shut down (daemon threads, Eclipse-session lifetime,
+ * mirroring {@link com.opencode.ide.board.model.FleetJobsModel#getDefault()}).
+ * The most recently constructed launcher's client/worktree suppliers feed
+ * fleet creation (the Board view re-constructs the launcher when its inputs
+ * change).</p>
+ *
+ * <p>Fleet cache: entries are keyed by {@code (root, suppliers-generation)}.
+ * Every constructor publishes a new generation, so a per-root fleet built
+ * from old suppliers is never served afterwards — the next launch rebuilds
+ * with the current suppliers (stale-generation entries are pruned on the
+ * next creation for that root). Creation uses one monitor per root
+ * (double-checked get/lock/create), so a launch for root B never waits
+ * behind a seconds-long server spawn for root A.</p>
+ *
+ * <p>Completion is SSE-driven: {@link SseSessionEvents} rides the primary
+ * connection's single {@code /event} stream via {@link OpencodeConnection}
+ * listeners (with a one-poll fallback on stream drop), replacing the 1 Hz
+ * status polling of the default engine path (ROADMAP H3.4).</p>
+ */
+public final class TaskFleetLauncher implements FleetLauncher {
+
+    private static final ExecutorService EXECUTOR = Executors.newCachedThreadPool(task -> {
+        Thread thread = new Thread(task, "board-fleet-launch");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    /** How long a launched agent session may run before the fleet times it out. */
+    private static final Duration LAUNCH_TIMEOUT = Duration.ofMinutes(30);
+
+    private static final Map<CacheKey, TaskFleet> FLEETS_BY_ROOT = new ConcurrentHashMap<>();
+
+    /** One monitor per store root, so creations for different roots never queue behind each other. */
+    private static final ConcurrentHashMap<Path, Object> ROOT_LOCKS = new ConcurrentHashMap<>();
+
+    private static final AtomicLong GENERATION = new AtomicLong();
+
+    /** Suppliers snapshot + its generation, published as one immutable value per construction. */
+    private record SuppliersState(long generation, Suppliers suppliers) {
+    }
+
+    private record CacheKey(Path root, long generation) {
+    }
+
+    private static volatile SuppliersState state = new SuppliersState(0, Suppliers.unset());
+
+    private record Suppliers(Supplier<OpencodeClient> clients, Supplier<WorktreeManager> worktrees) {
+
+        static Suppliers unset() {
+            return new Suppliers(
+                    () -> { throw new IllegalStateException("no TaskFleetLauncher constructed yet"); },
+                    () -> { throw new IllegalStateException("no TaskFleetLauncher constructed yet"); });
+        }
+    }
+
+    private final Supplier<Path> storeRootSupplier;
+
+    /**
+     * @param clientSupplier    supplies the opencode client; may block (spawn) —
+     *                          called on the executor thread only
+     * @param worktreesSupplier supplies the worktree manager (git CLI backed)
+     * @param storeRootSupplier supplies the current task-store root
+     *                          ({@code <repo>/.opencode/tasks}); called at
+     *                          launch time so toolbar changes take effect
+     */
+    public TaskFleetLauncher(Supplier<OpencodeClient> clientSupplier,
+            Supplier<WorktreeManager> worktreesSupplier,
+            Supplier<Path> storeRootSupplier) {
+        state = new SuppliersState(GENERATION.incrementAndGet(),
+                new Suppliers(clientSupplier, worktreesSupplier));
+        this.storeRootSupplier = storeRootSupplier;
+    }
+
+    @Override
+    public FleetJobHandle launch(String project, String ticketId) {
+        Path storeRoot = storeRootSupplier.get();
+        Path repoRoot = repoRootOf(storeRoot);
+        String worktreeGuess = repoRoot == null ? null
+                : com.opencode.ide.git.FleetGit.worktreePath(repoRoot, ticketId).toString();
+        if (repoRoot == null || !Files.isDirectory(repoRoot.resolve(".git"))) {
+            FleetJobHandle failed = new FleetJobHandle(
+                    ticketId, null, worktreeGuess, FleetJobHandle.State.FAILED,
+                    "no git repository at " + repoRoot + " (store root " + storeRoot + ")");
+            FleetJobsModelHolder.model().add(failed);
+            return failed;
+        }
+        FleetJobHandle running = new FleetJobHandle(
+                ticketId, null, worktreeGuess, FleetJobHandle.State.RUNNING, "launching…");
+        FleetJobsModelHolder.model().add(running);
+        Path launchRepoRoot = repoRoot;
+        EXECUTOR.execute(() -> {
+            FleetJobHandle result;
+            try {
+                TaskFleet fleet = fleetFor(storeRoot);
+                result = map(fleet.launch(project, ticketId, launchRepoRoot, LAUNCH_TIMEOUT));
+            } catch (RuntimeException e) {
+                result = new FleetJobHandle(ticketId, null, worktreeGuess,
+                        FleetJobHandle.State.FAILED, String.valueOf(e.getMessage()));
+            } catch (Error e) {
+                // never funnel an Error (OOM & co.) into a UI row — rethrow, the
+                // daemon executor dies with a log, the JVM decides
+                throw e;
+            }
+            FleetJobsModelHolder.model().update(result);
+        });
+        return running;
+    }
+
+    /**
+     * The fleet for {@code storeRoot}, built from the CURRENT suppliers
+     * generation. Per-root monitor (never the map), double-checked: waiting
+     * for root A's spawn does not stall a creation for root B.
+     */
+    private static TaskFleet fleetFor(Path storeRoot) {
+        Path root = storeRoot.toAbsolutePath().normalize();
+        SuppliersState current = state;
+        TaskFleet fleet = FLEETS_BY_ROOT.get(new CacheKey(root, current.generation()));
+        if (fleet != null) {
+            return fleet;
+        }
+        Object lock = ROOT_LOCKS.computeIfAbsent(root, r -> new Object());
+        synchronized (lock) {
+            current = state; // a new launcher may have been constructed while we waited
+            CacheKey key = new CacheKey(root, current.generation());
+            fleet = FLEETS_BY_ROOT.get(key);
+            if (fleet != null) {
+                return fleet;
+            }
+            fleet = createFleet(current.suppliers(), root);
+            FLEETS_BY_ROOT.put(key, fleet);
+            prune(root, key.generation());
+            return fleet;
+        }
+    }
+
+    /** Drops this root's entries from older suppliers generations (lazy eviction). */
+    private static void prune(Path root, long keepGeneration) {
+        for (CacheKey key : FLEETS_BY_ROOT.keySet()) {
+            if (key.root().equals(root) && key.generation() != keepGeneration) {
+                FLEETS_BY_ROOT.remove(key);
+            }
+        }
+    }
+
+    private static TaskFleet createFleet(Suppliers current, Path storeRoot) {
+        OpencodeClient client = current.clients().get();
+        // SSE completion rides the primary connection's single /event stream;
+        // the client doubles as the one-poll fallback when that stream drops.
+        SseSessionEvents events = new SseSessionEvents(primaryEventSubscriber(), client);
+        return new TaskFleet(
+                new FleetRunner(client, current.worktrees().get()),
+                new TaskStore(storeRoot),
+                new RoleAgents(),
+                events);
+    }
+
+    /** Subscribes to the primary connection's SSE fan-out; the handle unsubscribes. */
+    private static SseSessionEvents.Subscriber primaryEventSubscriber() {
+        return listener -> {
+            OpencodeConnection connection = OpencodeConnection.getInstance();
+            com.opencode.ide.client.OpencodeEventListener adapter = listener::accept;
+            connection.addEventListener(adapter);
+            return () -> connection.removeEventListener(adapter);
+        };
+    }
+
+    private static FleetJobHandle map(FleetJob job) {
+        return new FleetJobHandle(job.taskId(), job.sessionId(), job.worktree() == null ? null
+                : job.worktree().toString(), FleetJobHandle.State.valueOf(job.state().name()),
+                job.detail());
+    }
+
+    private static Path repoRootOf(Path storeRoot) {
+        if (storeRoot == null) {
+            return null;
+        }
+        Path opencode = storeRoot.getParent();
+        return opencode == null ? null : opencode.getParent();
+    }
+
+    /** Test seam: clear the process-wide fleet cache, root locks and supplier state (isolates launcher tests). */
+    public static void resetForTests() {
+        FLEETS_BY_ROOT.clear();
+        ROOT_LOCKS.clear();
+        state = new SuppliersState(0, Suppliers.unset());
+    }
+
+    /** Indirection so tests can substitute the observed registry if ever needed. */
+    static final class FleetJobsModelHolder {
+        static com.opencode.ide.board.model.FleetJobsModel model() {
+            return com.opencode.ide.board.model.FleetJobsModel.getDefault();
+        }
+    }
+}

@@ -1,6 +1,7 @@
 package com.opencode.ide.chat.internal;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.google.gson.Gson;
@@ -39,14 +40,28 @@ public final class ChatScripts {
         return call("__appendDelta", Map.of("mid", nullToEmpty(messageId), "text", nullToEmpty(text)));
     }
 
-    /** {@code window.__setAssistantText("{...}")} - authoritative final render. */
-    public static String setAssistantText(String messageId, String text, String reasoning, String meta) {
-        Map<String, String> payload = new LinkedHashMap<>();
+    /**
+     * {@code window.__setAssistantText("{...}")} - authoritative final render,
+     * including the compact {@code tool} lines ({@code tools}: array of
+     * {@code {name, state}}, rendered by the page above the body).
+     */
+    public static String setAssistantText(String messageId, String text, String reasoning, String meta,
+            List<ChatSessionController.ToolLine> tools) {
+        Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("mid", nullToEmpty(messageId));
         payload.put("text", nullToEmpty(text));
         payload.put("reasoning", nullToEmpty(reasoning));
         payload.put("meta", nullToEmpty(meta));
+        payload.put("tools", tools == null ? List.of() : tools);
         return call("__setAssistantText", payload);
+    }
+
+    /**
+     * {@code window.__stopStream("{...}")} - removes the streaming cursor from a
+     * bubble (send finished, failed or aborted; harmless when no cursor exists).
+     */
+    public static String stopStream(String messageId) {
+        return call("__stopStream", Map.of("mid", nullToEmpty(messageId)));
     }
 
     /** {@code window.__setMessages("[...]")} - replaces the transcript (history load). */

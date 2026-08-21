@@ -24,51 +24,65 @@ reviewed decision**, not an accident:
    extracted when a second implementation actually arrives (rule: second implementation justifies
    the abstraction; until then we document, not speculative-build).
 
-## Current state (after migrations M1–M3, landed 2026-08-15)
+## Module organization — the three tiers (verified against manifests/poms 2026-08-20)
 
-| Module | Eclipse-free? | Non-Java assets | Language pack | Agent backend | Verdict |
-|---|---|---|---|---|---|
-| `com.opencode.ide.client` (+ tests) | ✅ **enforced by build** (pwsh scan fails the build on `org.eclipse.`/`org.osgi.` imports) | — | neutral | opencode (HTTP+SSE, DTOs, ChatRequests/McpRequests, server launcher; hardened error semantics + URL validation) | M1 done |
-| `com.opencode.ide.core` (+ tests) | ❌ (by design — the **Eclipse adapter**): preferences, activator + `ClientLog` bridge, `ProjectContext` service tracking, `OpencodeConnection` service, **MCP registration component** | — | neutral | — | M1 done |
-| `com.opencode.ide.tools` (+ tests) | ✅ enforced by build | — | SPI (`ToolProvider`, `McpDispatcher`) + built-in C++ pack (`tools.cpp`) | neutral | M3 done |
-| `com.opencode.ide.tasks` (+ tests) | ✅ enforced by build | — | — (cross-cutting domain pack) | neutral | H1 done |
-| `com.opencode.ide.mcp` (+ tests) | ✅ mostly (OSGi DS lifecycle only; publishes `McpInfo` as a service) | — | — (delegates to tools + tasks packs) | neutral | M3 done |
-| `components/chat-web` | n/a (non-Java) | ✅ chat.html, chat.js, markdown-it, hljs, KaTeX, mermaid + checks (43 renderer / 54 bridge / **8 mermaid in real headless Edge**) + standalone README | neutral | renders opencode data only | M2 done |
-| `com.opencode.ide.chat` | ❌ (by design — Eclipse host for chat-web: `ChatPage` + `ChatSessionController`, SWT-free) | consumes chat-web at build time (resources-plugin copy → jar `web/`) | neutral | renders opencode data | M2 done |
-| `com.opencode.ide.git` | ✅ yes (zero Eclipse/OSGi imports) | — | neutral | neutral | good |
-| `com.opencode.ide.fleet` (+ tests) | ✅ enforced by build | — | neutral | **the fleet engine**: `FleetRunner` drives client + git worktrees headless (submit → poll → mergeBack) | good (Phase 15 engine) |
-| `com.opencode.ide.ui` / `.cdt` | ❌ (by design — Eclipse layer; ui gained `ViewLoadSupport` + default-scheme key bindings) | — | cdt: C++ bridge | neutral | good |
+Every module sits in exactly one tier. **Tier 1** is plain Java, build-enforced Eclipse/OSGi-free
+(pwsh import ban in each pom, unconditional on every OS, `-DskipEclipseBan=true` skips) — usable
+as plain libraries (the mojo and the stdio launcher prove it). **Tier 2** is the Eclipse harness.
+**Tier 3** carries the C++-development specifics; everything else is language-agnostic behind
+the `ToolProvider` SPI.
 
-## Target layout — now the actual layout (M1–M3 landed)
+### Tier 1 — reusable plain Java (Eclipse-free, build-enforced)
+
+| Module | Depends on | What it is |
+|---|---|---|
+| `com.opencode.ide.client` (+ tests) | gson | opencode REST/SSE client, DTOs, `ChatRequests`/`McpRequests`, `OpencodeEventStream`, server launcher; hardened error semantics |
+| `com.opencode.ide.tools` (+ tests) | gson | `ToolProvider` SPI + `McpDispatcher` (JSON-RPC) — language-agnostic; the C++ pack lives beside it (tier 3) |
+| `com.opencode.ide.tasks` (+ tests) | tools, gson | the Markdown task store (`.opencode/tasks/`), the V-pipeline (`VStages`, advance/sendBack), the `task_*` tool pack, `TasksStdioMain` (stdio transport) |
+| `com.opencode.ide.git` (+ tests) | — | `WorktreeManager` + `FleetGit` conventions (branch/worktree naming) over the git CLI |
+| `com.opencode.ide.fleet` (+ tests) | client, git, tasks | the fleet engine: `FleetRunner` (submit → await → mergeBack), `TaskFleet` (V-pipeline launch loop), `RoleAgents` dispatch, `SelfClaimPrompt`, telemetry |
+| `mojo/opencode-tasks` (plain maven-plugin, not OSGi) | tasks (plain jar), gson, maven-api | `opencode-tasks:sync` / `:plan` over the same store — Maven plans, CMake builds |
+
+### Tier 2 — the Eclipse harness (OSGi bundles, thin adapters + UI)
+
+| Module | Depends on | What it is |
+|---|---|---|
+| `com.opencode.ide.core` (+ tests) | client, **mcp**, equinox.security, eclipse runtime | the Eclipse adapter: preferences (secure remote credentials), `OpencodeConnection` + `ConnectionsManager` (plural), `ClientLog`/`ProjectContext` service glue, MCP registration, tasksRoot bridge into the endpoint |
+| `com.opencode.ide.mcp` (+ tests) | tools, **tasks**, gson | the `eclipse-build` MCP endpoint (Streamable HTTP, 127.0.0.1) + DS lifecycle only; service-driven activation (activates when core binds `McpInfo`) |
+| `com.opencode.ide.ui` (+ tests) | client, core, workbench | Server (multi-root, virtualized, MCP/skills/sessions) + Providers + Session-details views, perspective, connection preference page; `ViewLoadSupport` |
+| `com.opencode.ide.chat` (+ tests) | client, core, workbench, gson | the Browser host for `components/chat-web` (`ChatPage` + SWT-free `ChatSessionController` + embedded web server); does NOT depend on ui |
+| `com.opencode.ide.board` (+ tests) | client, core, tasks, fleet, git, gson, workbench | the PM surface: Board (flat + V-pipeline layouts, stage filter, blocked rendering) + Fleet views; SWT-free model unit-tested |
+| `com.opencode.ide.cdt` (+ tests) | core, CDT bundles | the CDT bridge (tier 3) |
+
+### Tier 3 — C++-development specifics
+
+| Module / package | What it is |
+|---|---|
+| `tools` bundle → `tools.cpp` package | `CppToolProvider`: toolchain detection (MSVC via vswhere, MSYS2 envs), cmake configure/build, ctest, run, gdb-batch, clang-tidy/cppcheck, clang-format — behind the `ToolProvider` SPI; extracted into its own bundle when a second language pack lands |
+| `com.opencode.ide.cdt` | `CdtProjectContext` (active `ICProject` → spawn cwd) + `DiagnosticsMarkers`/`MarkerApplier` |
+
+**Verified dependency graph (Require-Bundle / maven edges, no cycles):**
 
 ```
-┌────────────────────────────── non-Eclipse, reusable ──────────────────────────────┐
-│  com.opencode.ide.client     opencode REST/SSE client, DTOs, ChatRequests/        │
-│  (OSGi bundle, pure Java)    McpRequests, server launcher — Eclipse imports       │
-│                              banned at build time; usable as a plain library      │
-│  com.opencode.ide.tools      ToolProvider SPI + JSON-RPC dispatch + the built-in  │
-│  (OSGi bundle, pure Java)    C++ pack (tools.cpp) — Eclipse imports banned        │
-│  com.opencode.ide.tasks      The task store (.opencode/tasks/<project>/: one md    │
-│  (OSGi bundle, pure Java)    file per ticket) + the task_* tool pack replacing     │
-│                              the retired Python pm MCP server; TasksStdioMain is   │
-│                              the stdio transport (eclipse/tasks-tools.ps1)        │
-│  com.opencode.ide.fleet      Headless fleet engine: FleetRunner drives the client │
-│  (OSGi bundle, pure Java)    + git worktrees (submit → poll → mergeBack) — the    │
-│                              layer the future Fleet view/scheduler will call     │
-│  components/chat-web         the web renderer as a standalone component: web      │
-│  (non-Java, no OSGi)         assets + checks + README; hostable in any host       │
-└────────────────────────────────────────────────────────────────────────────────────┘
-┌──────────────────── Eclipse layer (thin adapters + UI) ───────────────────────────┐
-│  com.opencode.ide.core    Eclipse adapter: preferences (→ISecurePreferences       │
-│  (backlog)), activator + ClientLog bridge, ProjectContext service tracking,       │
-│  OpencodeConnection; depends on client                                            │
-│  com.opencode.ide.chat    Eclipse host for chat-web: ChatPage (Browser wiring)    │
-│  + ChatSessionController (SWT-free); consumes the component at build time         │
-│  com.opencode.ide.mcp     MCP HTTP endpoint + DS lifecycle only; depends on tools │
-│  com.opencode.ide.ui/.cdt views, perspective, CDT adapter                         │
-└────────────────────────────────────────────────────────────────────────────────────┘
-Language packs (axis 3):  tools.cpp.CppToolProvider (built-in) · future packs = new
-                          ToolProvider impls (own bundle, depend on tools only)
+client → gson
+tools  → gson
+tasks  → tools, gson
+git    → (none)
+fleet  → client, git, tasks
+mcp    → tools, tasks, gson
+core   → client, mcp, equinox.security, eclipse.core.runtime
+ui     → client, core, {workbench}
+chat   → client, core, {workbench}, gson        ← no ui edge
+board  → client, core, tasks, fleet, git, gson, {workbench}
+cdt    → core, {cdt.core, resources, ui, ui.ide}
+mojo   → tasks (plain jar), gson, maven-api (provided)
+```
+
+Cross-tier rules (review checklist): tier-2/3 may depend on tier 1, never the reverse;
+`x-friends` on `internal` packages only ever names `.tests` fragments; language-specific
+logic stays in `tools.cpp`/cdt behind the SPI. The task store's single root is bridged from
+core's preference into the endpoint (`opencode.tasks.root`), so Board, fleet and in-session
+`task_*` tools always see one store.
 Agent backends (axis 4):  opencode HttpOpencodeClient (today) · M4 below
 ```
 
@@ -105,16 +119,19 @@ view renders `thinking…` / `tool: <name> — <file>` labels and the "Active fi
 ## The web bridge contract (chat-web's public API)
 
 The renderer is hostable anywhere that can (a) serve static files over HTTP and (b) call JS with
-string arguments. Contract (enforced by `bridge-check.mjs`, 54 checks):
+string arguments. Contract (enforced by `bridge-check.mjs`, 87 checks):
 
 - **Host → page** (via `ChatScripts`; payloads are JSON *string literals* — objects tolerated;
   every entry point is guarded, returns `true`/`false`, reports errors via
   `JS ERROR in <fn>: …` so nothing fails silently the way `Browser.execute()` does):
   `__setTheme(theme)` and `__setNotice(text)` take **plain strings**; data calls are
   `__appendUser({text})`, `__startAssistant({mid})`,
-  `__setAssistantText({mid, text, reasoning?, meta?})`,
+  `__setAssistantText({mid, text, reasoning?, meta?, tools?})` (`tools` = optional
+  `[{name, state}]` rendering as compact `tool: name — state` lines),
   `__appendDelta({mid, text})` (raw text stream + cursor, no markdown),
-  `__setMessages([…])` (history), `__clear()`.
+  `__setMessages([…])` (history, same per-entry shape incl. `tools`), `__clear()`,
+  `__stopStream({mid})` (removes the streaming cursor when a send settles/fails/aborts —
+  idempotent, keeps the streamed text).
   (`__linkClick(event)` exists but is the page's internal test-exposed click interceptor.)
 - **Page → host:** `__javaReport(type, detail)` — `page-ready` flush signal, render
   confirmations (`user/assistant bubble rendered…`, `history rendered (N entries)`,
@@ -127,7 +144,7 @@ string arguments. Contract (enforced by `bridge-check.mjs`, 54 checks):
   visible source, not a gap), highlight.js for code fences with the `#hljs-light`/`#hljs-dark`
   theme pair toggled by `__setTheme` (which also resets mermaid for themed re-init), markdown
   `html:false` + mermaid `securityLevel:strict` (XSS hardening), single scrolling container.
-- **Checks:** `components/chat-web` runs `renderer-check.mjs` (43) + `bridge-check.mjs` (54) +
+- **Checks:** `components/chat-web` runs `renderer-check.mjs` (50) + `bridge-check.mjs` (87) +
   `mermaid-check.mjs` (8 — drives the real page in **headless Microsoft Edge** via
   `puppeteer-core`: diagrams must render to SVG, broken sources degrade visibly, no silent drops;
   SKIPs when Edge/puppeteer-core are absent) — all wired into the chat bundle's `mvn verify`

@@ -30,12 +30,26 @@
             name="Session"
             optional="true"/>
     </command>
+    <command
+          id="com.opencode.ide.chat.newChat"
+          name="New Chat"
+          description="Open a new chat window with a fresh session"/>
+    <command
+          id="com.opencode.ide.chat.abort"
+          name="Abort Chat Reply"
+          description="Abort the reply currently being generated in the active chat view"/>
   </extension>
 
   <extension point="org.eclipse.ui.handlers">
     <handler
           commandId="com.opencode.ide.chat.openChat"
           class="com.opencode.ide.chat.handlers.OpenChatHandler"/>
+    <handler
+          commandId="com.opencode.ide.chat.newChat"
+          class="com.opencode.ide.chat.handlers.NewChatHandler"/>
+    <handler
+          commandId="com.opencode.ide.chat.abort"
+          class="com.opencode.ide.chat.handlers.AbortChatHandler"/>
   </extension>
 
   <extension point="org.eclipse.ui.bindings">
@@ -43,6 +57,16 @@
           commandId="com.opencode.ide.chat.openChat"
           schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
           sequence="CTRL+ALT+SHIFT+C"/>
+    <key
+          commandId="com.opencode.ide.chat.newChat"
+          contextId="org.eclipse.ui.contexts.window"
+          schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+          sequence="CTRL+ALT+SHIFT+N"/>
+    <key
+          commandId="com.opencode.ide.chat.abort"
+          contextId="org.eclipse.ui.contexts.window"
+          schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+          sequence="CTRL+ALT+SHIFT+A"/>
   </extension>
 
 </plugin>

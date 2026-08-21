@@ -23,6 +23,13 @@
           icon="icons/providers.png"
           category="com.opencode.ide.ui"
           class="com.opencode.ide.ui.views.ProvidersView"/>
+    <view
+          id="com.opencode.ide.ui.views.SessionDetailsView"
+          name="Session Details"
+          icon="icons/agent.png"
+          category="com.opencode.ide.ui"
+          allowMultiple="true"
+          class="com.opencode.ide.ui.views.SessionDetailsView"/>
   </extension>
 
   <extension point="org.eclipse.ui.preferencePages">
