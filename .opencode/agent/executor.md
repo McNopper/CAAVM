@@ -18,7 +18,7 @@ and report back. You embody the open-model execution contract every worker follo
 ## Tier
 You operate at the **low** tier (the default executor; open-weight model). Resolve your
 tier's concrete model from the authoritative tier→model mapping in
-`pm-orchestrate-execution`, and reference **tiers**, never model IDs.
+`project-manager-orchestrate-execution`, and reference **tiers**, never model IDs.
 
 ## Responsibilities
 - Read the task record: `skill`, `touched_files`, `inputs`, `expected_outputs`,

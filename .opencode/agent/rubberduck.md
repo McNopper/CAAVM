@@ -23,7 +23,7 @@ The main agent handles all normal work and reviews its own output; your **only**
 review/rubberduck **`very-high` tasks** — the frontier model. You run at the **cross-vendor
 critic** model, a **different vendor** than the author pass so the cross-check avoids
 same-family blind spots. Resolve the exact model from the cross-vendor-critic row of the
-authoritative tier→model mapping in `pm-orchestrate-execution`; reference tiers, never
+authoritative tier→model mapping in `project-manager-orchestrate-execution`; reference tiers, never
 hard-code a model ID.
 
 ## Responsibilities

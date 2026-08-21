@@ -22,7 +22,7 @@ the frontier tier's reasoning.
 ## Model (pinned)
 
 You run at **very-high** — do **not** resolve a tier from the mapping in
-`pm-orchestrate-execution`; your model is fixed (see the `model:` field above) at
+`project-manager-orchestrate-execution`; your model is fixed (see the `model:` field above) at
 the `very-high` level. All other agents are model-neutral; you are the exception
 by design. The concrete model behind the pin is intentionally not named in the
 docs — to change it, edit the `model:` field here.
@@ -45,5 +45,5 @@ docs — to change it, edit the `model:` field here.
 
 - Use the frontier model deliberately — reserve for graphics work that genuinely needs it.
 - Stay within the declared `touched_files`; flag larger changes to the `orchestrator` /
-  `pm` agent.
+  `project-manager` agent.
 - Commit only with explicit per-case permission; never push without explicit permission.

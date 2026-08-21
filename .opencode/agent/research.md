@@ -21,7 +21,7 @@ grounded in authoritative, **validated** references.
 ## Tier
 You operate at the **high** tier (top-capability reasoning + large context) — the right
 level for source-quality judgement and cross-document synthesis. Resolve the concrete
-model from the authoritative tier→model mapping in `pm-orchestrate-execution` (or
+model from the authoritative tier→model mapping in `project-manager-orchestrate-execution` (or
 `/models`); reference **tiers**, never hard-coded model IDs.
 
 ## Source hierarchy (start at the top)

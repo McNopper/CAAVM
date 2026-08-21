@@ -3,7 +3,7 @@
 ## About this document
 - **Kind:** `doc` / reference (part of `.opencode/docs/`).
 - **Read by:** agents and maintainers; **written by:** maintainers.
-- **Related:** complements `domains.md`; the ticket/artifact rules are enforced by the `task_*` MCP tools (the `tasks` pack of the Eclipse harness's `eclipse-build` endpoint, also served over stdio via `eclipse/tasks-tools.ps1`) and the `pm-create-ticket` skill.
+- **Related:** complements `domains.md`; the ticket/artifact rules are enforced by the `task_*` MCP tools (the `tasks` pack of the Eclipse harness's `eclipse-build` endpoint, also served over stdio via `eclipse/tasks-tools.ps1`) and the `project-manager-create-ticket` skill.
 
 The shared, durable agreements every skill and agent honors. Change these centrally and
 update all references.
@@ -21,9 +21,10 @@ A ticket is the **hand-off unit**. Its authoritative shape (per project):
 | `status` | enum | `product-backlog` → `sprint-backlog` → `in-progress` → `in-review` → `done` |
 | `blocked` + `blocker` | bool + string | **orthogonal** flag, any active state |
 | `sprint` | `S-NN` / null | set by `task_plan_sprint`; null in backlog |
-| `story_points` | int | relative size; `pm-estimate-costs` can later feed a `cost` field |
+| `story_points` | int | relative size; `project-manager-estimate-costs` can later feed a `cost` field |
 | `priority` | `low`/`medium`/`high`/`critical` | drives self-claim order |
 | `role` | enum (extensible) | `architect`/`developer`/`tester`/`pm`/`cpp-engineer`/`graphics-engineer` → who claims it |
+| `stage` | enum/null | V pipeline stage (canonical `VStages` order): `requirements`, `system`, `architecture`, `design`, `implementation`, `test-implementation`, `test-design`, `test-architecture`, `test-system`, `test-requirements`; `null` = legacy/untracked. Set at creation for definition work; verification tickets carry their test stage. `task_advance` moves a finished ticket to the next stage's backlog (role follows the new stage); `task_send_back` returns it to the previous stage, blocked with the reason. |
 | `assignee` | string | set by `task_claim` |
 | `acceptance_criteria` | string[] | GIVEN/WHEN/THEN; verification must satisfy all |
 | `labels` | string[] | free tags |
@@ -93,7 +94,7 @@ to `in-review`, so the next agent needs no questions.
 | `architect` | `software-system`, `software-architecture` | `test-software-system`, `test-software-architecture` |
 | `developer` | `software-requirements`/`design`/`implementation` | matching `test-software-*` |
 | `tester` | `test-software-*` | (itself) |
-| `pm` | `pm-*` skills | — |
+| `pm` | `project-manager-*` skills | — |
 | `cpp-engineer` | `cpp-tools` agent | `cpp-tools` agent |
 | `graphics-engineer` | `mcp.graphics` (+ `graphics-expert` for `very-high` work) | `graphics-render-comparison` |
 
@@ -101,6 +102,57 @@ to `in-review`, so the next agent needs no questions.
 
 Agents/docs reference **tiers**, never hard-coded model IDs (except `graphics-expert`, which
 is pinned to the `very-high` model). The authoritative tier→model mapping lives in
-`pm-orchestrate-execution`. Tiers: `very-low`, `low` (default executor), `mid`, `high`
+`project-manager-orchestrate-execution`. Tiers: `very-low`, `low` (default executor), `mid`, `high`
 (plan/review), `very-high` (run twice & reconcile). Pick the lowest tier that satisfies the
 task; escalate, never de-escalate.
+# Domains
+
+## About this document
+- **Kind:** `doc` / reference (part of `.opencode/docs/`).
+- **Read by:** agents and maintainers; **written by:** maintainers.
+- **Related:** complements `contracts.md`; the dispatch map is mirrored in `project-manager-orchestrate-execution`.
+
+Hephaestus organizes everything by **domain**, encoded in skill/agent **names**, not in
+folder trees. opencode discovers every `SKILL.md` under `.opencode/skills/*/` and every
+agent under `.opencode/agent/*.md` flat. The domain is the `<domain>-` prefix of the name.
+
+## Naming convention
+
+`<domain>-<descriptor>`, lowercase, dash-separated. A skill's front-matter `name:` MUST
+match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+)*$`.
+
+## Domain prefixes
+
+| Prefix | Domain | Carries | Examples |
+|---|---|---|---|
+| `software-` | Definition (what / how) | the left side of the work | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
+| `test-software-` | Verification | the right side, per level | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
+| `pm-` | Project management | tickets, sprints, routing, costing (estimates + live actuals), traceability, doc standards | `project-manager-operating-model`, `project-manager-orchestrate-execution`, `project-manager-route-request`, `project-manager-audit-traceability`, `project-manager-estimate-costs`, `project-manager-gather-intelligence`, `project-manager-create-ticket`, `project-manager-doc-about` |
+| `cpp-` | C++ execution utility | methodology for the `cpp-tools` agent | `cpp-tools` |
+| `graphics-` | Graphics utility (thin) | methodology; heavy work is `mcp.graphics` | `graphics-render-comparison` |
+| `code-` | Code analysis | package/namespace dependency map; emits Mermaid block diagram; third-party license audit → compatibility table + remediation | `code-dependency`, `code-licenses` |
+
+## Coordination agents (unprefixed) and domain agents (prefixed)
+
+Coordination agents are unprefixed: `orchestrator`, `manifest-author`, `executor`, `reviewer`,
+`rubberduck`, `research`, `project-manager`. Domain agents keep their prefix: `cpp-tools`, `graphics-expert`.
+All are model-neutral (reference a tier) **except** `graphics-expert`, which is pinned to
+the `very-high` model.
+
+## Why names, not folders
+
+- Skills auto-load by directory; adding a subfolder doesn't change discovery but does
+  make cross-references brittle. Flat + domain-in-name keeps everything one glob away.
+- The domain prefix doubles as a dispatch hint: a ticket `role` maps to a prefix
+  (`developer` → `software-*`, `tester` → `test-software-*`, `cpp-engineer` → `cpp-tools`,
+  `graphics-engineer` → `mcp.graphics` + `graphics-expert`, `architect` → `software-system`
+  / `software-architecture`, `pm` → `project-manager-*`). A staged ticket resolves through the chain
+  `stage` → `role` → skill (the `VStages` mapping in the tasks bundle; the fleet dispatches
+  by stage role):
+
+| stage | role | skill |
+|---|---|---|
+| `requirements` | `pm` | `software-requirements` |
+| `system`, `architecture` | `architect` | `software-system`, `software-architecture` |
+| `design`, `implementation` | `developer` | `software-design`, `software-implementation` |
+| `test-implementation` … `test-requirements` | `tester` | matching `test-software-*` |

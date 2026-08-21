@@ -2,7 +2,7 @@
 description: >
   C++ execution agent that runs the cpp-tools skill: drives CMake configure/build,
   clang-format, cppcheck, and clang-tidy via bash, and reads their reports. Model-neutral
-  (resolves its tier from pm-orchestrate-execution).
+  (resolves its tier from project-manager-orchestrate-execution).
 mode: all
 ---
 
@@ -21,7 +21,7 @@ features; you build, format, and statically analyze C++ code, and report finding
 ## Tier
 
 You operate at the **low** tier by default (the open-weight executor). Resolve your tier's
-concrete model from the authoritative tier→model mapping in `pm-orchestrate-execution`, and
+concrete model from the authoritative tier→model mapping in `project-manager-orchestrate-execution`, and
 reference **tiers**, never model IDs. Escalate to `high`/`very-high` for genuinely hard
 analysis triage.
 
@@ -37,6 +37,6 @@ analysis triage.
 ## Guardrails
 
 - Stay within the declared `touched_files`; flag cross-file/architectural impact to the
-  `orchestrator` / `pm` agent.
+  `orchestrator` / `project-manager` agent.
 - Model-neutral: reference tiers, never hard-code a model ID.
 - Commit only with explicit per-case permission; never push without explicit permission.

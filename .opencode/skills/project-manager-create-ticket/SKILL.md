@@ -1,9 +1,9 @@
 ---
-name: pm-create-ticket
+name: project-manager-create-ticket
 description: >
   Use this skill as the template/guide for writing a correct Hephaestus ticket:
   choosing the right role, writing concrete acceptance criteria, sizing story
-  points, and linking epics for traceability. Invoked by the pm agent, the
+  points, and linking epics for traceability. Invoked by the project-manager agent, the
   manifest-author, or any worker that opens a ticket via task_create.
 ---
 
@@ -12,7 +12,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
+- **Related:** part of the project-manager-* domain set; standalone (no lifecycle pair).
 
 You are the **ticket authoring guide** for Hephaestus. A good ticket is
 self-contained, verifiable, and traceable. Use it whenever you create a ticket
@@ -33,7 +33,7 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | `type` | `story` (user value), `task` (internal), `bug`, `spike` (research). |
 | `role` | The **discipline that owns it** — see the role map below. This decides who claims it. |
 | `priority` | `low`/`medium`/`high`/`critical`; drives claim order within a sprint. |
-| `story_points` | Relative size (Fibonacci-ish: 1/2/3/5/8/13). Estimate, don't overthink; later `pm-estimate-costs` can feed a `cost` field. |
+| `story_points` | Relative size (Fibonacci-ish: 1/2/3/5/8/13). Estimate, don't overthink; later `project-manager-estimate-costs` can feed a `cost` field. |
 | `acceptance_criteria` | Concrete, checkable bullets ("Given … When … Then …"). Verification passes only when all are met. |
 | `labels` | Free tags for filtering (e.g. `vulkan`, `regression`). |
 | `epic` | Parent ticket id for traceability (definition ticket id on a verification ticket, or vice-versa). Optional but strongly recommended for linking. |
@@ -46,27 +46,27 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | `architect` | system / architecture structure | `software-system`, `software-architecture` | `test-software-architecture`, `test-software-system` |
 | `developer` | requirements / design / implementation | `software-*` definition skills | matching `test-software-*` |
 | `tester` | verification tickets | `test-software-*` | (itself) |
-| `pm` | estimation / traceability / ops | `pm-estimate-costs`, `pm-audit-traceability`, `pm-orchestrate-execution` | — |
+| `pm` | estimation / traceability / ops | `project-manager-estimate-costs`, `project-manager-audit-traceability`, `project-manager-orchestrate-execution` | — |
 | `cpp-engineer` | C++ build / format / static analysis | `cpp-tools` agent | `cpp-tools` agent |
 | `graphics-engineer` | render capture / compare | `mcp.graphics` tools (+ `graphics-expert`) | `graphics-render-comparison` |
 
 The `role` is **extensible** — it is an open, non-empty string, so you can mint a
 new discipline on the spot (the task store accepts any non-empty value; it does
 not reject unknown roles). The trade-off: keep the claim routing in
-`pm-orchestrate-execution` (the role → skill/agent map) in sync whenever you
+`project-manager-orchestrate-execution` (the role → skill/agent map) in sync whenever you
 introduce one, or a worker claiming by that role won't find its skill. Prefer a
 role from the known set above when one fits.
 
 ## Traceability by convention
 
 - A verification ticket sets `epic` = its definition ticket's id (`FR-001`,
-  `SW-002`, `ARCH-003`, …). The `pm-audit-traceability` matrix then shows the link.
+  `SW-002`, `ARCH-003`, …). The `project-manager-audit-traceability` matrix then shows the link.
 - Keep stable prefixes per artifact kind: `FR-` requirements, `AC-` acceptance,
   `SW-` system, `ARCH-` architecture, `DS-` design, `UT-` unit, `CT-` component,
   `LT-` library, `IT-` integration, `T-` generic. Pass `id_prefix` to
   `task_create` to mint the right id.
 
-## Definition of Done (matches `pm-operating-model`)
+## Definition of Done (matches `project-manager-operating-model`)
 
 A ticket becomes `done` only when: implementation complete, its verification passed
 (the matching `test-software-*` for `tester`, relevant tests for `developer`),

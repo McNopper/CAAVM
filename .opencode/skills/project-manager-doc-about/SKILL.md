@@ -1,5 +1,5 @@
 ---
-name: pm-doc-about
+name: project-manager-doc-about
 description: >
   Use this skill as the standard for making every Markdown document in this repo
   self-explaining: a brief "About this document" section near the top that states what
@@ -33,7 +33,7 @@ the rule applies to any `*.md` file, not just skills or agents.
 This skill does **not** require tickets, sprints, or the task store (`task_*` tools). It is a plain
 authoring standard you (or any agent) can apply to **any** Markdown file:
 
-- A **human** can invoke `pm-doc-about` directly to write a standalone document (a spec,
+- A **human** can invoke `project-manager-doc-about` directly to write a standalone document (a spec,
   a design note, meeting minutes) and just fill in the `About` section — no PM workflow,
   no ticket.
 - An **agent** can use it the same way, or as part of a PM-driven task. Both are fine.

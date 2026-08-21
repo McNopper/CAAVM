@@ -1,11 +1,11 @@
 ---
-name: pm-operating-model
+name: project-manager-operating-model
 description: >
   Use this skill as the operating model for the project-management (PM) agent:
   it runs a concrete, Scrum-like workflow over tickets and sprints managed by
   the task store (`task_*` tools). It owns the Scrum events (planning / daily / review /
   retro / backlog refinement), the bubble-up-to-escalation loop, and the
-  Definition-of-Done gate. Invoked by the pm agent.
+  Definition-of-Done gate. Invoked by the project-manager agent.
 ---
 
 # PM Operating Model (Scrum-like)
@@ -13,7 +13,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
+- **Related:** part of the project-manager-* domain set; standalone (no lifecycle pair).
 
 You are the **PM agent** — the Scrum Master and facilitator for this repo's
 agentic workflow, plus the proxy for the human as Product Owner. You operate
@@ -129,7 +129,7 @@ amend the sprint/backlog rather than restarting.
   cppcheck / clang-tidy + build/reports readers).
 - **Graphics capture / compare** -> the `mcp.graphics` tools
   (`graphics_screenshot`, `graphics_renderdoc_*`, `graphics_compare_renders`).
-- **Cost / estimation** -> `pm-estimate-costs` (model/token cost; can feed a
+- **Cost / estimation** -> `project-manager-estimate-costs` (model/token cost; can feed a
   future ticket `cost` field).
-- **Traceability** -> `pm-audit-traceability`.
-- **Request routing** -> `pm-route-request` when the next step is ambiguous.
+- **Traceability** -> `project-manager-audit-traceability`.
+- **Request routing** -> `project-manager-route-request` when the next step is ambiguous.

@@ -1,5 +1,5 @@
 ---
-name: pm-route-request
+name: project-manager-route-request
 description: >
   Use this skill on demand to route an ambiguous software-engineering request to
   the correct Hephaestus skill or agent, clarify boundaries (unit / component /
@@ -12,7 +12,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
+- **Related:** part of the project-manager-* domain set; standalone (no lifecycle pair).
 
 You are a pragmatic workflow router for the Hephaestus skill set.
 
@@ -61,10 +61,10 @@ to the correct skill/agent that owns execution.
 | Verifying requirements from the user's view | `test-software-requirements` |
 | C++ configure / build / verify / analysis | `cpp-tools` agent |
 | Window screenshot / RenderDoc capture / render compare | `mcp.graphics` tools |
-| Estimating cost of a plan / manifest | `pm-estimate-costs` |
-| Traceability across definition->verification | `pm-audit-traceability` |
+| Estimating cost of a plan / manifest | `project-manager-estimate-costs` |
+| Traceability across definition->verification | `project-manager-audit-traceability` |
 | Third-party license audit / compatibility with the project license | `code-licenses` |
-| Sprint / ticket / backlog workflow | `pm-operating-model` + `pm` agent |
+| Sprint / ticket / backlog workflow | `project-manager-operating-model` + `project-manager` agent |
 
 ## Default Output
 
@@ -89,5 +89,5 @@ to the correct skill/agent that owns execution.
 
 ## Notes / Hand Off
 
-- If traceability across phases is unclear, hand off to `pm-audit-traceability`.
+- If traceability across phases is unclear, hand off to `project-manager-audit-traceability`.
 - For C++ work in this repo, route to `cpp-tools` as needed.

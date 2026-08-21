@@ -75,6 +75,46 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
+## Provider logos (trademark assets, vendored)
+
+- **What:** low-resolution provider identification logos used by the Eclipse
+  Providers view (`eclipse/bundles/com.opencode.ide.ui`, see
+  `icons/providers/` and `ProviderLogos.java`).
+- **Source:** Artificial Analysis, URL pattern
+  `https://artificialanalysis.ai/img/logos/<slug>_small.svg`.
+- **Retrieved:** 2026-08-18 (via `eclipse/bundles/com.opencode.ide.ui/fetch-logos.ps1`,
+  which also rasterizes each SVG to `<slug>_16.png` / `<slug>_32.png` with cairosvg).
+- **License status:** the logos are **trademarks of their respective owners**
+  (see table below) and are **NOT covered by this repository's MIT license**
+  (see [`LICENSE`](LICENSE)). They are vendored offline at low resolution solely
+  to identify the corresponding AI provider in the UI (nominative fair use);
+  no endorsement is implied. If you are a trademark owner and object to this
+  use, open an issue and the asset will be removed.
+
+| File(s) under `icons/providers/` | Provider | Trademark owner |
+|---|---|---|
+| `alibaba.*` | Alibaba (Qwen) | Alibaba Group Holding Limited |
+| `anthropic.*` | Anthropic | Anthropic PBC |
+| `aws.*` | Amazon Web Services | Amazon.com, Inc. |
+| `baidu.*` | Baidu (ERNIE) | Baidu, Inc. |
+| `bytedance.*` | ByteDance (Doubao) | ByteDance, Ltd. |
+| `cohere.*` | Cohere | Cohere, Inc. |
+| `deepseek.*` | DeepSeek | Hangzhou DeepSeek Artificial Intelligence Basic Technology Research Co., Ltd. |
+| `github.*` | GitHub Copilot | GitHub, Inc. |
+| `google.*` | Google (Gemini) | Google LLC |
+| `meta.*` | Meta (Llama) | Meta Platforms, Inc. |
+| `microsoft.*` | Microsoft (Azure) | Microsoft Corporation |
+| `minimax.*` | MiniMax | Shanghai MiniMax Artificial Intelligence Co., Ltd. |
+| `nvidia.*` | NVIDIA (NIM) | NVIDIA Corporation |
+| `openai.*` | OpenAI | OpenAI, LLC (OpenAI OpCo, LLC) |
+| `openrouter.*` | OpenRouter | OpenRouter Inc. |
+| `zai.*` | Z.AI (GLM) | Zhipu AI Inc. (Z.AI) |
+
+Artificial Analysis itself is © V7 Labs (artificialanalysis.ai); the hosting
+site claims no ownership of the provider logos listed above.
+
+---
+
 ## Not redistributed (no attribution obligation for this template)
 
 The following third-party components are **not** redistributed with Hephaestus,

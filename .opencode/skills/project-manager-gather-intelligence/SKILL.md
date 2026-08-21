@@ -1,10 +1,10 @@
 ---
-name: pm-gather-intelligence
+name: project-manager-gather-intelligence
 description: >
   Use this skill on demand to gather LIVE intelligence from running opencode servers:
   pull per-session tokens, cost, duration, agent and model over the REST API, aggregate
   them per agent/model/ticket, record the actuals on the matching tickets in the task
-  store, and emit a measured cost baseline that calibrates pm-estimate-costs. Read-only
+  store, and emit a measured cost baseline that calibrates project-manager-estimate-costs. Read-only
   against the server; the tickets are the accumulation point. opencode workflow utility.
 ---
 
@@ -13,7 +13,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the `pm-*` domain set; the measured counterpart of `pm-estimate-costs`
+- **Related:** part of the `pm-*` domain set; the measured counterpart of `project-manager-estimate-costs`
   (a-priori estimates) and the data source for its calibration; works with the task store
   (`task_*` tools). Market-side model intelligence (intelligence index, cost per task,
   context windows) comes from `research-artificial-analysis-models` — together the three
@@ -21,7 +21,7 @@ description: >
 
 ## Purpose
 
-`pm-estimate-costs` prices a plan **before** it runs, from scope guesses. This skill closes
+`project-manager-estimate-costs` prices a plan **before** it runs, from scope guesses. This skill closes
 the loop with **actuals**: what did the agents really spend? The accumulated actuals become
 the measured baseline per role/task-type so future estimates stop guessing.
 
@@ -78,7 +78,7 @@ asks "what did this cost so far?". Never runs automatically.
    `.opencode/tasks/<project>/_reports/cost-baseline-<date>.md`) and attach it:
    `task_add_artifact(project, ticket_id="EP-…|none", kind="path", ref="<report>")`
    when a sprint/epic owns the batch, else just report in-channel.
-6. **Calibrate** — hand the measured numbers to `pm-estimate-costs`: per-tier actuals
+6. **Calibrate** — hand the measured numbers to `project-manager-estimate-costs`: per-tier actuals
    replace rate-card guesses for the workload classes that have ≥3 samples. Flag the rest
    as still-guessed. Recommend de-escalations where a lower tier consistently sufficed.
    If the rate card itself is stale (prices drifted from the market), refresh it via
@@ -94,7 +94,7 @@ asks "what did this cost so far?". Never runs automatically.
 
 ## Hand-off map
 
-- Estimate needed before a run → `pm-estimate-costs` (this skill feeds it).
-- Sprint close / review numbers → the `pm` agent consumes the report.
+- Estimate needed before a run → `project-manager-estimate-costs` (this skill feeds it).
+- Sprint close / review numbers → the `project-manager` agent consumes the report.
 - Fleet telemetry automation (FleetRunner recording actuals on mergeBack) → ROADMAP
   "Standing"; until then this skill is the manual path.

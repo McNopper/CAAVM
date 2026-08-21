@@ -3,7 +3,7 @@
 ## About this document
 - **Kind:** `doc` / repo-level workflow convention (auto-loaded by opencode from the git root).
 - **Read by:** any agent operating in this repo; **written by:** maintainers.
-- **Related:** pairs with `README.md`; tiers and selection rules live in the `pm-orchestrate-execution` skill, concrete models in `opencode.json` and per-agent overrides.
+- **Related:** pairs with `README.md`; tiers and selection rules live in the `project-manager-orchestrate-execution` skill, concrete models in `opencode.json` and per-agent overrides.
 
 Repository-level conventions for agentic work in this repository. Hephaestus is an
 **opencode-native**, **domain-organized** system: skills and agents are flat under
@@ -14,7 +14,7 @@ first-class agents / MCP tools.
 
 ## Two scopes
 
-- **A whole initiative / project** → the **PM agent** (`pm`) runs the Scrum workflow
+- **A whole initiative / project** → the **PM agent** (`project-manager`) runs the Scrum workflow
   over tickets in the task store (one subdirectory per project; multiple projects
   coexist). The human is Product Owner: writes the brief/goal, prioritizes the backlog,
   accepts at Sprint Review. Issues bubble up to the PM and only human-worthy ones are
@@ -26,7 +26,7 @@ first-class agents / MCP tools.
 > **The PM/ticket system is optional.** Every skill and agent can be used **directly** by a
 > human (or by another agent) with no ticket, sprint, or task store involved — for
 > ad-hoc work, just invoke the skill or `/agents` you need. Use the PM system only when you
-> want tracked, multi-agent, sprint-based execution. Likewise, `pm-doc-about` (and any
+> want tracked, multi-agent, sprint-based execution. Likewise, `project-manager-doc-about` (and any
 > skill) works standalone, independent of PM.
 
 ## Skills are discovered flat by domain
@@ -38,13 +38,13 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 |---|---|---|
 | `software-` | Definition (what/how) | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
 | `test-software-` | Verification of a definition level | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
-| `pm-` | Project management | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-create-ticket`, `pm-doc-about` |
+| `project-manager-` | Project management | `project-manager-operating-model`, `project-manager-orchestrate-execution`, `project-manager-route-request`, `project-manager-audit-traceability`, `project-manager-estimate-costs`, `project-manager-create-ticket`, `project-manager-doc-about` |
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 | `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-author`,
-`executor`, `reviewer`, `rubberduck`, `research`, `pm`); domain agents keep their prefix
+`executor`, `reviewer`, `rubberduck`, `research`, `project-manager`); domain agents keep their prefix
 (`cpp-tools`, `graphics-expert`).
 
 ## The ticket / sprint workflow (the PM)
@@ -57,8 +57,9 @@ configured in `opencode.json`) for TUI-only sessions. States:
 
 ```
 product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
-   (incomplete on sprint close ──────────────────────────────────────────────────────┘)
+   (incomplete on sprint close ──────────────────────────────────────────────────────────────┘)
 blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
+stage = optional V-pipeline field: task_advance -> next stage's backlog; task_send_back -> previous stage (blocked + reason)
 ```
 
 - A worker **self-claims** by role: `task_claim(role=…)` atomically finds the next
@@ -69,11 +70,11 @@ blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
   `task_add_artifact(kind=file|git|path|url|doc, ref=…)` **before** moving to `in-review` —
   the ticket is the hand-off contract.
 - Review/verification failure sends the ticket back to `in-progress` (rework loop).
-- See `pm-operating-model` for Scrum events, the Definition of Done, and the
-  bubble-up → escalation rule; `pm-create-ticket` for how to fill a ticket; `pm-route-request`
-  when the next step is ambiguous; `pm-audit-traceability` for the definition→verification matrix.
+- See `project-manager-operating-model` for Scrum events, the Definition of Done, and the
+  bubble-up → escalation rule; `project-manager-create-ticket` for how to fill a ticket; `project-manager-route-request`
+  when the next step is ambiguous; `project-manager-audit-traceability` for the definition→verification matrix.
 
-## Canonical composition hierarchy (no V-model framing)
+## Canonical composition hierarchy & the V pipeline
 
 The dividing line is **reuse scope** (static-vs-shared linkage is a build decision):
 
@@ -89,6 +90,25 @@ Verification maps by level: `test-software-implementation` (unit) ↔ `software-
 ↔ `software-architecture`, `test-software-system` (integration) ↔ `software-system`,
 `test-software-requirements` (acceptance) ↔ `software-requirements`.
 
+The V-model is used as an **async pipeline**, not a phase gate: stages run **concurrently**,
+each finished stage's ticket feeds the next stage's backlog, and a stage that cannot proceed
+sends the ticket back with a reason. There are **no phase gates and no ordering enforcement**
+— the ticket's `stage` field (nullable; `VStages` in the tasks bundle is canonical) only
+steers dispatch (stage → role → skill) and the prompt the fleet gives the worker:
+
+| Stage | Role | Skill |
+|---|---|---|
+| `requirements` | pm | `software-requirements` |
+| `system` | architect | `software-system` |
+| `architecture` | architect | `software-architecture` |
+| `design` | developer | `software-design` |
+| `implementation` | developer | `software-implementation` |
+| `test-implementation` | tester | `test-software-implementation` |
+| `test-design` | tester | `test-software-design` |
+| `test-architecture` | tester | `test-software-architecture` |
+| `test-system` | tester | `test-software-system` |
+| `test-requirements` | tester | `test-software-requirements` |
+
 ## C++ and graphics are tools, not a separate lifecycle
 
 - **C++**: the `cpp-tools` **agent** runs CMake configure/build, clang-format, cppcheck,
@@ -102,7 +122,8 @@ Verification maps by level: `test-software-implementation` (unit) ↔ `software-
 
 ## eclipse/ — the IDE harness
 
-The Eclipse plugin (`eclipse/`) is the **agentic harness**: chat plus Server/Providers/Board
+The Eclipse plugin (`eclipse/`) is the **agentic harness**: chat plus Server (agents/sessions/MCP
+servers/skills)/Providers/Board
 views, the MCP build-tools endpoint `eclipse-build`, a git-worktree agent fleet, and the
 headless FleetRunner. It is a Maven/Tycho reactor — **Maven plans, CMake builds**.
 
@@ -116,7 +137,7 @@ Agents and docs reference **tiers**, never hard-coded model IDs. The concrete
 model for each tier is configured in `opencode.json` (the default `model`) and
 in any per-agent override (only `graphics-expert` overrides, pinning to
 `very-high`); resolve through `/models`. Tiers and their selection rules are
-defined in `pm-orchestrate-execution`.
+defined in `project-manager-orchestrate-execution`.
 
 | Tier | Selection rule |
 |---|---|
@@ -137,7 +158,7 @@ Lean, flat, model-neutral (except `graphics-expert`):
   `manifest-author` (high-tier plan + execution manifest), `executor` (open-tier task execution;
   records artifacts), `reviewer` (high-tier final review; edit-denied), `rubberduck`
   (cross-vendor critic; edit-denied), `research` (authoritative-source investigation;
-  validated synthesis), `pm` (Scrum Master + PO proxy; always present).
+  validated synthesis), `project-manager` (Scrum Master + PO proxy; always present).
 - **Domain agents:** `cpp-tools` (C++ execution), `graphics-expert` (very-high; graphics).
 
 ## opencode feature usage (recommended)

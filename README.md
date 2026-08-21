@@ -22,9 +22,9 @@ Three ideas hold it together:
 
 - **Domains in names, not folders.** opencode discovers every `SKILL.md` under
   `.opencode/skills/*/`. Naming convention `<domain>-<descriptor>`
-  (`software-`, `test-software-`, `pm-`, `cpp-`, `graphics-`); coordination agents are
+  (`software-`, `test-software-`, `project-manager-`, `cpp-`, `graphics-`); coordination agents are
   unprefixed.
-- **A concrete PM, not a metaphor.** The `pm` agent runs Scrum over tickets in the
+- **A concrete PM, not a metaphor.** The `project-manager` agent runs Scrum over tickets in the
   task store. Tickets carry a `role` (discipline), and workers **self-claim** by role
   (`task_claim`). Multiple independent **projects** coexist as subdirectories of the
   store. The store is version-controlled Markdown — the seam the Maven mojos
@@ -36,7 +36,7 @@ Three ideas hold it together:
 > **The PM/ticket system is optional.** Any skill or agent can be used **directly** by a
 > human (or another agent) with no ticket or sprint — just invoke the skill or pick an
 > agent with `/agents`. The PM system is there when you want tracked, multi-agent, sprint
-> execution; skip it for ad-hoc work. Skills like `pm-doc-about` also work standalone,
+> execution; skip it for ad-hoc work. Skills like `project-manager-doc-about` also work standalone,
 > independent of PM.
 
 ## Layout
@@ -51,7 +51,7 @@ Three ideas hold it together:
 | `.opencode/tasks/` | the **task store** — one Markdown file per ticket per project (`<project>/T-NNN.md` + `_meta.json` sidecar), version-controlled. |
 | `mcp/graphics/` | the graphics MCP server (captures, comparisons). |
 | `cpp/` | standalone AI-first C++23 build skeleton (its own `AGENTS.md`). |
-| `eclipse/` | the Eclipse plugin — the agentic IDE harness (chat, Server/Providers views, the `eclipse-build` MCP endpoint serving the C++ **and** `task_*` tool packs, git-worktree fleet, `tasks-tools.ps1` stdio launcher; Maven/Tycho reactor). |
+| `eclipse/` | the Eclipse plugin — the agentic IDE harness (chat, Server view incl. **MCP servers + Skills**, Providers view with logos, the **PM Board + Fleet views**, the `eclipse-build` MCP endpoint serving the C++ **and** `task_*` tool packs, git-worktree fleet incl. the task-driven `TaskFleet`, the `opencode-tasks` Maven plugin (`:sync`/`:plan` over the task store), `tasks-tools.ps1` stdio launcher; Maven/Tycho reactor). |
 
 ## Skills (flat, by domain)
 
@@ -59,7 +59,7 @@ Three ideas hold it together:
 |---|---|
 | `software-` (definition) | `software-requirements`, `software-system`, `software-architecture`, `software-design`, `software-implementation` |
 | `test-software-` (verification) | `test-software-implementation`, `-design`, `-architecture`, `-system`, `-requirements` |
-| `pm-` (project management) | `pm-operating-model`, `pm-orchestrate-execution`, `pm-route-request`, `pm-audit-traceability`, `pm-estimate-costs`, `pm-gather-intelligence`, `pm-create-ticket`, `pm-doc-about` |
+| `project-manager-` (project management) | `project-manager-operating-model`, `project-manager-orchestrate-execution`, `project-manager-route-request`, `project-manager-audit-traceability`, `project-manager-estimate-costs`, `project-manager-gather-intelligence`, `project-manager-create-ticket`, `project-manager-doc-about` |
 | `cpp-` (C++ utility) | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` (graphics utility) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 | `code-` (code analysis) | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
@@ -108,8 +108,14 @@ Key rules:
 - **Bubble-up → escalation.** A blocked worker sets `blocked` + a `blocker`; the PM resolves
   internally or escalates only human-worthy decisions.
 
-See `pm-operating-model` (Scrum events, DoD, escalation), `pm-create-ticket` (how to fill
-a ticket), `pm-route-request` (ambiguous next step), `pm-audit-traceability` (matrix).
+**V pipeline (optional, per ticket).** A ticket may carry a `stage` — the 10 canonical stages
+`requirements` … `test-requirements` (definition down the left leg, verification up the right).
+Stages run **concurrently** (no phase gates): each finished stage feeds the next stage's backlog
+via `task_advance` (which re-derives role/skill from the new stage); a stage that cannot proceed
+calls `task_send_back` with a reason. The Board view has a Pipeline mode for stage-ordered columns.
+
+See `project-manager-operating-model` (Scrum events, DoD, escalation), `project-manager-create-ticket` (how to fill
+a ticket), `project-manager-route-request` (ambiguous next step), `project-manager-audit-traceability` (matrix).
 
 ## Agents (lean, flat, model-neutral except one)
 
@@ -121,7 +127,7 @@ a ticket), `pm-route-request` (ambiguous next step), `pm-audit-traceability` (ma
 | `reviewer` | high-tier final review (edit-denied) | tier (`high`) |
 | `rubberduck` | cross-vendor critic (edit-denied) | tier (different vendor) |
 | `research` | authoritative-source investigation; validated synthesis | tier (`high`) |
-| `pm` | Scrum Master + PO proxy; always present | tier (`high`) |
+| `project-manager` | Scrum Master + PO proxy; always present | tier (`high`) |
 | `cpp-tools` | C++ build/format/static-analysis via bash | tier (`low`) |
 | `graphics-expert` | frontier graphics work; drives `mcp.graphics` | **pinned `very-high`** |
 
@@ -151,12 +157,12 @@ and in any per-agent override (only `graphics-expert` overrides, pinning to
 
 ## Recommended opencode workflow
 
-1. **Frame the project:** the human writes the brief/goal; the `pm` agent creates tickets
+1. **Frame the project:** the human writes the brief/goal; the `project-manager` agent creates tickets
    (`task_create`) in `product-backlog`.
 2. **Sprint planning:** `task_plan_sprint` commits tickets to a sprint (`sprint-backlog`).
 3. **Execute:** workers `task_claim(role=…)`, use the matching `software-*` /
    `test-software-*` skill, record artifacts, and move tickets to `in-review`.
-4. **Review & accept:** `reviewer` / test skills verify; the `pm` agent accepts → `done`.
+4. **Review & accept:** `reviewer` / test skills verify; the `project-manager` agent accepts → `done`.
 5. **Iterate:** defects rework; `task_close_sprint` returns unfinished tickets to the backlog.
 
 Use **Plan mode** (`Tab`) for multi-file changes; `/agents` to pick an agent; `/models` to

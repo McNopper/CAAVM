@@ -13,7 +13,7 @@ description: >
 - **Kind:** `skill` (reusable live leaderboard research capability)
 - **Read by:** agents answering model-selection and cost-comparison requests; **written by:** maintainers
 - **Related:** standalone research utility; the market side of the cost loop —
-  `pm-estimate-costs` consumes these rates for a-priori estimates, `pm-gather-intelligence`
+  `project-manager-estimate-costs` consumes these rates for a-priori estimates, `project-manager-gather-intelligence`
   measures what runs actually spent.
 
 Use this skill to produce a current, reproducible comparison from the Artificial Analysis model leaderboard.

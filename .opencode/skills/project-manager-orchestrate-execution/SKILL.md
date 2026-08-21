@@ -1,10 +1,10 @@
 ---
-name: pm-orchestrate-execution
+name: project-manager-orchestrate-execution
 description: >
   Use this skill on demand to plan and orchestrate execution of a Hephaestus
   plan: decompose into tickets, map work to disciplines, drive the agile loop
   (sprint-backlog -> in-progress -> in-review -> done with rework), and bubble
-  up blockers to the human. opencode workflow utility; pairs with the pm agent
+  up blockers to the human. opencode workflow utility; pairs with the project-manager agent
   and the task store (`task_*` tools).
 ---
 
@@ -25,7 +25,7 @@ and to keep that execution loop spinning until the work is done.
 
 This is a **standalone, on-demand** workflow utility. It produces the executable
 shape of a plan; it does not implement the plan itself. It works in lockstep
-with the `pm` agent and the task store (`task_*` tools).
+with the `project-manager` agent and the task store (`task_*` tools).
 
 ## Model tiers (selection rules — model-neutral)
 
@@ -97,8 +97,8 @@ For each plan item, emit tickets with `role` set so the right agent claims them:
 | Library test | tester | `test-software-architecture` |
 | Component test | tester | `test-software-design` |
 | Unit test | tester | `test-software-implementation` |
-| Estimation | pm | `pm-estimate-costs` |
-| Traceability | pm | `pm-audit-traceability` |
+| Estimation | pm | `project-manager-estimate-costs` |
+| Traceability | pm | `project-manager-audit-traceability` |
 
 ## The agile loop (per ticket)
 
@@ -141,5 +141,5 @@ When an agent cannot proceed:
 
 ## Notes / Hand Off
 
-- Use `pm-operating-model` for the running Scrum events and DoD.
-- Use `pm-route-request` when the next step is ambiguous.
+- Use `project-manager-operating-model` for the running Scrum events and DoD.
+- Use `project-manager-route-request` when the next step is ambiguous.

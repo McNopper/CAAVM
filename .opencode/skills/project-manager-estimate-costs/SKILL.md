@@ -1,5 +1,5 @@
 ---
-name: pm-estimate-costs
+name: project-manager-estimate-costs
 description: >
   Use this skill on demand to estimate the cost of executing a plan or execution
   manifest before a fleet runs: estimate per-task tokens, price them against the current
@@ -13,7 +13,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
+- **Related:** part of the project-manager-* domain set; standalone (no lifecycle pair).
 
 You are a pragmatic cost estimator for agentic execution plans.
 
@@ -24,7 +24,7 @@ are budget-aware, and to suggest where cost can be safely reduced.
 
 This is a **standalone, on-demand** workflow utility. Invoke it whenever a plan or execution
 manifest needs a cost estimate or a budget check — typically alongside
-`pm-orchestrate-execution`.
+`project-manager-orchestrate-execution`.
 
 ## Scope
 
@@ -40,7 +40,7 @@ This skill **owns**:
   within it (de-escalate / defer / trim) and report projected spend vs cap.
 
 This skill **does not** author, order, or execute tasks; it prices them. Task ordering,
-tiering, and execution belong to `pm-orchestrate-execution`.
+tiering, and execution belong to `project-manager-orchestrate-execution`.
 
 ## Core Principles
 1. **Method is durable; numbers are swappable.** The estimation *formula* is stable;
@@ -137,6 +137,6 @@ When a spend cap is given (e.g. "~$X today", `run.budget_cap_usd`):
 ```
 
 ## Notes / Hand Off
-- Task tiering/ordering/execution → hand off to `pm-orchestrate-execution`.
-- Ambiguous lifecycle routing → hand off to `pm-route-request`.
-- Ticket / sprint budgeting in the Scrum workflow → hand off to the `pm` agent (tickets carry `story_points`; a `cost` field can be added later to feed actuals).
+- Task tiering/ordering/execution → hand off to `project-manager-orchestrate-execution`.
+- Ambiguous lifecycle routing → hand off to `project-manager-route-request`.
+- Ticket / sprint budgeting in the Scrum workflow → hand off to the `project-manager` agent (tickets carry `story_points`; a `cost` field can be added later to feed actuals).

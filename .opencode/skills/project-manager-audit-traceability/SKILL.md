@@ -1,5 +1,5 @@
 ---
-name: pm-audit-traceability
+name: project-manager-audit-traceability
 description: >
   Use this skill on demand to build or audit traceability across the Hephaestus
   workflow: definition artifacts (requirements/system/architecture/design/implementation)
@@ -12,7 +12,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the pm-* domain set; standalone (no lifecycle pair).
+- **Related:** part of the project-manager-* domain set; standalone (no lifecycle pair).
 
 You are a pragmatic traceability auditor for Hephaestus lifecycle artifacts.
 
@@ -62,7 +62,7 @@ hands off to the owning skill for fixes.
 
 ## Notes / Hand Off
 
-- Boundary mistakes should hand off to `pm-route-request`.
+- Boundary mistakes should hand off to `project-manager-route-request`.
 - C++ lifecycle execution details should hand off to `cpp-tools`.
 - Each gap names the owning skill (e.g. `software-requirements`, `test-software-requirements`)
   that should close it.
