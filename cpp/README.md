@@ -19,7 +19,7 @@ subjective style gates.
 ```
 cpp/
 ├── CMakeLists.txt          # build + analysis wiring
-├── CMakePresets.json       # default / release / analysis presets (Ninja)
+├── CMakePresets.json       # environment-conditional presets (Windows: default/release/clang64/mingw64/windows/analysis; Linux+WSL: linux)
 ├── AGENTS.md               # canonical command manifest for agents
 ├── .clang-format           # formatting rules
 ├── .clang-tidy             # high-signal, low-friction check set
@@ -40,14 +40,25 @@ cpp/
 ## Quick start
 
 ```bash
+cmake --list-presets                        # shows exactly what THIS environment can build
 cmake --preset default                       # configure (Debug + analysis)
 cmake --build build --target verify          # fast: build + test + analysis status
 cmake --build build --target verify-full     # full: verify + format + static analysis + docs
 
-# Windows host without Clang/Ninja — MSVC via the Visual Studio generator:
+# MSYS2 toolchains (run from the matching shell so clang/gcc+ninja are on PATH):
+cmake --preset clang64 && cmake --build build-clang64   # CLANG64: full analysis gate
+cmake --preset mingw64 && cmake --build build-mingw64   # MINGW64: gcc build
+
+# Windows host without Clang/Ninja - MSVC via the Visual Studio generator:
 cmake --preset windows                       # analysis is skipped for this toolchain
 cmake --build build-windows --target verify
+
+# Linux / WSL (from inside the distro; the Windows presets hide automatically):
+cmake --preset linux && cmake --build build-linux && ctest --preset linux
 ```
+
+Every preset has its own `build*` directory, so all toolchains can be
+configured **in parallel** on the same checkout without clobbering each other.
 
 See **[AGENTS.md](AGENTS.md)** for the full command manifest and the locations
 of every machine-readable report.

@@ -131,6 +131,18 @@ Apply these to every change so the plugin stays consistent:
 
 ## Build
 
+**Fresh-machine checklist** (everything below is auto-resolved or overridable —
+nothing in the repo pins an install path):
+
+1. JDK 17+ (the `build.ps1` wrapper auto-detects one via the registry and
+   common install dirs; a broken `JAVA_HOME` is tolerated) — Java 21 used in CI.
+2. **Node.js on PATH** for the web renderer/bridge checks (or pass
+   `-DskipNodeChecks=true`).
+3. An Eclipse CDT install for deploying (default `C:\eclipse-cpp`; override
+   with `-EclipseRoot` / `ECLIPSE_HOME`).
+4. Optional, only for `cpp/` toolchain presets: LLVM clang + Ninja (default),
+   MSYS2 `clang64`/`mingw64` shells, Visual Studio, or WSL (`cmake`+`ninja`+`gcc`).
+
 Requirements: a JDK 17+ on the machine (the `build.ps1` wrapper auto-detects one;
 the system `JAVA_HOME` does not have to be valid) and **Node.js on PATH** for the web
 renderer/bridge checks (or pass `-DskipNodeChecks=true`).

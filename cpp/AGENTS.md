@@ -13,6 +13,13 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 - **Recommended:** Ninja generator + a Clang- or GNU-compatible compiler.
   This unlocks the full static-analysis stack (clang-tidy, cppcheck) which is
   driven by the exported `compile_commands.json`.
+- **Presets are environment-conditional** (`${hostSystemName}`): Windows shows
+  `default` (native LLVM), `clang64` (MSYS2 CLANG64 shell), `mingw64` (MSYS2
+  MINGW64 shell), `windows` (MSVC/VS generator), `release`, `analysis`; a
+  Linux host (including WSL) shows only `linux`. `cmake --list-presets` lists
+  exactly what the current environment can build. Each preset has its own
+  `build*` directory, so all toolchains can be configured **in parallel**
+  without clobbering each other.
 - **Any other toolchain still builds.** With MSVC or a non-compile-database
   generator the project configures and builds normally; the Clang-based
   analysis is simply skipped (CMake prints a status line saying so). Do not
@@ -22,12 +29,19 @@ Run everything from this directory (the one containing `CMakeLists.txt`).
 
 | Goal | Command |
 |------|---------|
+| List presets for this environment | `cmake --list-presets` |
 | Configure (Debug + analysis) | `cmake --preset default` |
 | Configure (Release)          | `cmake --preset release` |
+| Configure (MSYS2 CLANG64)    | `cmake --preset clang64` (from a CLANG64 shell) |
+| Configure (MSYS2 MINGW64)    | `cmake --preset mingw64` (from a MINGW64 shell) |
 | Configure (Windows/MSVC)     | `cmake --preset windows` |
+| Configure (Linux / WSL)      | `cmake --preset linux` (from inside the distro) |
 | Build (Debug)                | `cmake --build build` |
 | Build (Release)              | `cmake --build build-release` |
+| Build (clang64)              | `cmake --build build-clang64` |
+| Build (mingw64)              | `cmake --build build-mingw64` |
 | Build (Windows/MSVC)         | `cmake --build build-windows` |
+| Build (Linux/WSL)            | `cmake --build build-linux` |
 | Run tests                    | `ctest --preset default` |
 | **Verify (fast default)**    | `cmake --build build --target verify` |
 | **Verify (full strict)**     | `cmake --build build --target verify-full` |

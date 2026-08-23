@@ -325,6 +325,24 @@ window.__setTheme = guard("__setTheme", function (theme) {
   return true;
 });
 
+// ---- doc mode ---------------------------------------------------------------
+// Read-only document mode for embedders that reuse this page as a markdown
+// renderer (e.g. the Board's ticket details): drops the chat-bubble width cap
+// so full-width content (mermaid architecture diagrams) fits. Applied
+// automatically when the page is loaded with ?doc=1, or on demand from Java.
+window.__setDocMode = guard("__setDocMode", function (on) {
+  document.body.classList.toggle("doc", !!on);
+  report("doc mode: " + (on ? "on" : "off"));
+  return true;
+});
+try {
+  if (typeof location !== "undefined" && /(?:[?&])doc=1(?:&|$)/.test(location.search || "")) {
+    document.body.classList.add("doc");
+  }
+} catch (e) {
+  // location unavailable (embedded shims): __setDocMode still works
+}
+
 window.__clear = guard("__clear", function () {
   chatEl.innerHTML = "";
   return true;

@@ -1,7 +1,6 @@
 package com.opencode.ide.board.views;
 
 import java.nio.file.Path;
-import java.util.List;
 
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -10,7 +9,6 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.dnd.Clipboard;
 import org.eclipse.swt.dnd.TextTransfer;
 import org.eclipse.swt.dnd.Transfer;
-import org.eclipse.swt.custom.ScrolledComposite;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Point;
@@ -26,19 +24,25 @@ import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 
+import com.opencode.ide.board.model.TicketMarkdown;
+import com.opencode.ide.chat.MarkdownPage;
 import com.opencode.ide.tasks.Task;
 
 /**
- * Read-only ticket details (SWT widgets only, no browser): metadata line,
- * description, acceptance-criteria checklist, todos, artifacts with an
- * {@code Open} action, and recent comments.
+ * Read-only ticket details. The ticket renders as ONE markdown document in the
+ * chat web component ({@link MarkdownPage}, doc mode) — the same pipeline as
+ * the chat, so tables, math and mermaid architecture diagrams stored in
+ * tickets render as diagrams. A plain-SWT fallback path covers machines
+ * without WebView2. The SWT artifact table + Open button stay: artifact
+ * opening goes through {@code ArtifactResolver} (repo confinement), which a
+ * rendered link would bypass.
  */
 final class TicketDetailsDialog extends Dialog {
 
-    private static final int RECENT_COMMENTS = 5;
-
     private final Task task;
     private final Path repoRoot;
+    private MarkdownPage page;
+    private Table artifacts;
 
     TicketDetailsDialog(Shell parentShell, Task task, Path repoRoot) {
         super(parentShell);
@@ -59,40 +63,36 @@ final class TicketDetailsDialog extends Dialog {
 
     @Override
     protected Point getInitialSize() {
-        return new Point(760, 640);
+        return new Point(900, 700);
     }
 
     @Override
     protected Control createDialogArea(Composite parent) {
         Composite body = (Composite) super.createDialogArea(parent);
         body.setLayoutData(new GridData(GridData.FILL_BOTH));
+        GridLayout layout = (GridLayout) body.getLayout();
+        layout.numColumns = 1;
 
-        ScrolledComposite scroll = new ScrolledComposite(body, SWT.V_SCROLL | SWT.H_SCROLL);
-        scroll.setExpandHorizontal(true);
-        scroll.setExpandVertical(true);
-        scroll.setLayoutData(new GridData(GridData.FILL_BOTH));
+        Label meta = new Label(body, SWT.WRAP);
+        meta.setText(metaLine());
+        meta.setFont(JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT));
+        meta.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        Composite inner = new Composite(scroll, SWT.NONE);
-        GridLayout layout = new GridLayout(1, false);
-        layout.marginHeight = 0;
-        inner.setLayout(layout);
-
-        section(inner, metaLine());
-        wrapText(inner, description());
-
-        section(inner, "Acceptance criteria");
-        checklist(inner, task.acceptanceCriteria, false);
-
-        section(inner, "Todos");
-        Table todos = checklist(inner,
-                task.todos.stream().map(t -> t.text() == null ? "" : t.text()).toList(), true);
-        for (int i = 0; i < task.todos.size(); i++) {
-            todos.getItem(i).setChecked(task.todos.get(i).done());
+        page = MarkdownPage.create(body);
+        if (page != null) {
+            page.load();
+            page.setDocument(TicketMarkdown.document(task));
+        } else {
+            fallbackDocument(body); // no WebView2: plain text, still readable
         }
 
-        section(inner, "Artifacts");
-        Table artifacts = artifacts(inner);
-        Button open = new Button(inner, SWT.PUSH);
+        Label artifactsTitle = new Label(body, SWT.NONE);
+        artifactsTitle.setText("Artifacts");
+        artifactsTitle.setFont(JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT));
+        artifactsTitle.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, false, false));
+
+        artifacts = artifacts(body);
+        Button open = new Button(body, SWT.PUSH);
         open.setText("Open artifact");
         open.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         open.addSelectionListener(new SelectionAdapter() {
@@ -106,13 +106,26 @@ final class TicketDetailsDialog extends Dialog {
                 }
             }
         });
-
-        section(inner, "Comments");
-        wrapText(inner, comments());
-
-        scroll.setContent(inner);
-        scroll.setMinSize(inner.computeSize(SWT.DEFAULT, SWT.DEFAULT));
         return body;
+    }
+
+    @Override
+    protected void createButtonsForButtonBar(Composite parent) {
+        // the embedded browser swallows ESC, so an explicit Close button is required
+        createButton(parent, OK, "Close", true);
+    }
+
+    @Override
+    public boolean close() {
+        if (page != null) {
+            try {
+                page.dispose();
+            } catch (Throwable ignored) {
+                // best-effort during close
+            }
+            page = null;
+        }
+        return super.close();
     }
 
     private String metaLine() {
@@ -134,27 +147,12 @@ final class TicketDetailsDialog extends Dialog {
         return sb.toString();
     }
 
-    private String description() {
-        String text = task.description;
-        return text == null || text.isBlank() ? "(no description)" : text;
-    }
-
-    private String comments() {
-        if (task.comments.isEmpty()) {
-            return "(no comments)";
-        }
-        StringBuilder sb = new StringBuilder();
-        int from = Math.max(0, task.comments.size() - RECENT_COMMENTS);
-        for (int i = task.comments.size() - 1; i >= from; i--) {
-            Task.Comment c = task.comments.get(i);
-            if (sb.length() > 0) {
-                sb.append('\n');
-            }
-            sb.append('[').append(Task.formatTs(c.ts())).append("] ")
-                    .append(c.by() == null ? "?" : c.by()).append(": ")
-                    .append(safe(c.text()));
-        }
-        return sb.toString();
+    /** Plain-SWT fallback when no embedded browser is available. */
+    private void fallbackDocument(Composite parent) {
+        Text text = new Text(parent, SWT.READ_ONLY | SWT.MULTI | SWT.WRAP | SWT.BORDER | SWT.V_SCROLL);
+        text.setText(TicketMarkdown.document(task));
+        text.setBackground(text.getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
+        text.setLayoutData(new GridData(GridData.FILL, GridData.FILL, true, true));
     }
 
     private void openArtifact(Task.Artifact artifact) {
@@ -187,36 +185,6 @@ final class TicketDetailsDialog extends Dialog {
         } finally {
             clipboard.dispose();
         }
-    }
-
-    private Label section(Composite parent, String title) {
-        Label label = new Label(parent, SWT.NONE);
-        label.setText(title);
-        label.setFont(JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT));
-        label.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, false, false));
-        return label;
-    }
-
-    private Text wrapText(Composite parent, String content) {
-        Text text = new Text(parent, SWT.READ_ONLY | SWT.MULTI | SWT.WRAP | SWT.BORDER);
-        text.setText(content);
-        text.setBackground(text.getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
-        text.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        return text;
-    }
-
-    private Table checklist(Composite parent, List<String> items, boolean emptyAsNone) {
-        Table table = new Table(parent, SWT.CHECK | SWT.BORDER | SWT.V_SCROLL);
-        GridData data = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        data.heightHint = 60;
-        table.setLayoutData(data);
-        if (items.isEmpty() && emptyAsNone) {
-            new TableItem(table, SWT.NONE).setText("(none)");
-        }
-        for (String item : items) {
-            new TableItem(table, SWT.NONE).setText(item == null ? "" : item);
-        }
-        return table;
     }
 
     private Table artifacts(Composite parent) {

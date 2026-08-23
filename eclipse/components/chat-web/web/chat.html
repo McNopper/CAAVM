@@ -45,6 +45,9 @@
   }
   .msg.user .bubble { background: var(--bubble-user-bg); color: var(--bubble-user-fg); }
   .msg.assistant .bubble { background: var(--bubble-ai-bg); border: 1px solid var(--border); flex: 1; }
+  /* doc mode (?doc=1): the page doubles as a read-only document renderer
+     (ticket details) - full width so mermaid diagrams are not squeezed */
+  .doc .bubble { max-width: 100%; }
   .bubble p { margin: 0.35em 0; }
   .bubble pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
                 padding: 8px; overflow-x: auto; position: relative; }
