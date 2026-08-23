@@ -731,12 +731,12 @@ public class ServerView extends ViewPart implements Refreshable {
             return UiActivator.image(UiActivator.ICON_CATEGORY);
         }
         if (element instanceof Session s) {
-            // busy/thinking sessions get a distinct (orange) icon so changes are visible at a glance
+            // busy/thinking sessions get a distinct (orange) bubble so changes are visible at a glance
             ServerNode node = ownerOf(s);
             boolean active = ServerLabels.isBusy(node == null ? null : node.statuses, s)
                     || (node != null && node.activity.containsKey(s.id()))
                     || ServerLabels.sessionActive(tracker.snapshot(), s.id());
-            return UiActivator.image(active ? UiActivator.ICON_AGENT_BUSY : UiActivator.ICON_AGENT);
+            return UiActivator.image(active ? UiActivator.ICON_SESSION_BUSY : UiActivator.ICON_SESSION);
         }
         if (element instanceof Agent) {
             return UiActivator.image(UiActivator.ICON_AGENT);
