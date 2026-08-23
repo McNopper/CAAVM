@@ -5,8 +5,8 @@ import org.eclipse.ui.IPerspectiveFactory;
 
 /**
  * The "OpenCode" perspective: Server view to the left (per-server explorer with
- * agents + running sessions), Providers view at the bottom. Editor area in the
- * center/top-right.
+ * agents + running sessions), Repo view (workspace file tree + search) below
+ * it, Providers view at the bottom. Editor area in the center/top-right.
  */
 public class OpencodePerspective implements IPerspectiveFactory {
 
@@ -24,6 +24,12 @@ public class OpencodePerspective implements IPerspectiveFactory {
                 com.opencode.ide.ui.views.ServerView.ID,
                 IPageLayout.LEFT, 0.32f, editorArea);
 
+        // Repo view (workspace file tree + search) in the bottom half of the
+        // left column, below the Server view.
+        layout.addView(
+                com.opencode.ide.ui.views.RepoView.ID,
+                IPageLayout.BOTTOM, 0.50f, com.opencode.ide.ui.views.ServerView.ID);
+
         // Chat view (contributed by com.opencode.ide.chat - referenced by ID so this
         // bundle has no compile dependency on it; silently skipped if not installed).
         layout.addView("com.opencode.ide.chat.views.ChatView", IPageLayout.RIGHT, 0.55f, editorArea);
@@ -40,6 +46,7 @@ public class OpencodePerspective implements IPerspectiveFactory {
         layout.addView("com.opencode.ide.board.views.FleetView", IPageLayout.BOTTOM, 0.50f, editorArea);
 
         layout.addShowViewShortcut(com.opencode.ide.ui.views.ServerView.ID);
+        layout.addShowViewShortcut(com.opencode.ide.ui.views.RepoView.ID);
         layout.addShowViewShortcut("com.opencode.ide.chat.views.ChatView");
         layout.addShowViewShortcut(com.opencode.ide.ui.views.ProvidersView.ID);
         layout.addShowViewShortcut("com.opencode.ide.board.views.BoardView");

@@ -36,6 +36,15 @@ import com.opencode.ide.tasks.TaskStore;
  * (optional - the {@link FleetRunner} hides its own); without one it is
  * skipped, and it can never fail or block the launch.</p>
  *
+ * <p>Permission requests (unattended sessions asking for human approval, see
+ * {@link FleetPermissionBridge}/{@link PermissionQueue}) are collected when
+ * the runner's client is wrapped with
+ * {@link FleetPermissionBridge#watching(OpencodeClient)} and the bridge is
+ * passed to the constructor: the job's session is watched from its creation
+ * (before the prompt - the prompt call blocks while an ask is pending), and
+ * when the launch ends (merged, failed, aborted) the session's pending
+ * requests are dropped again. Without a bridge the fleet runs unchanged.</p>
+ *
  * <p>Pure Java, no Eclipse/OSGi - the later Fleet view drives this.</p>
  */
 public final class TaskFleet {
@@ -49,6 +58,7 @@ public final class TaskFleet {
     private final RoleAgents roleAgents;
     private final SessionEvents events;
     private final Supplier<OpencodeClient> telemetryClient;
+    private final FleetPermissionBridge permissions;
     private final ReentrantLock mergeLock = new ReentrantLock();
     private final Map<String, FleetJob> jobsByTask = new ConcurrentHashMap<>();
     /** Tickets with a launch currently running; guards against double launches (one set-add is atomic). */
@@ -86,11 +96,29 @@ public final class TaskFleet {
      */
     public TaskFleet(FleetRunner runner, TaskStore store, RoleAgents roleAgents,
             SessionEvents events, Supplier<OpencodeClient> telemetryClient) {
+        this(runner, store, roleAgents, events, telemetryClient, null);
+    }
+
+    /**
+     * @param telemetryClient supplies the client for post-merge telemetry
+     *                        (cost actuals + session todos); {@code null} or
+     *                        a {@code null} supply skips telemetry - see
+     *                        {@link FleetTelemetry}
+     * @param permissions     collects the job sessions' permission requests
+     *                        (pair with
+     *                        {@link FleetPermissionBridge#watching(OpencodeClient)}
+     *                        around the runner's client); {@code null} = no
+     *                        permission collection
+     */
+    public TaskFleet(FleetRunner runner, TaskStore store, RoleAgents roleAgents,
+            SessionEvents events, Supplier<OpencodeClient> telemetryClient,
+            FleetPermissionBridge permissions) {
         this.runner = runner;
         this.store = store;
         this.roleAgents = roleAgents;
         this.events = events;
         this.telemetryClient = telemetryClient;
+        this.permissions = permissions;
     }
 
     /** {@link #launch(String, String, Path, Duration)} with the default 30-minute timeout. */
@@ -153,51 +181,61 @@ public final class TaskFleet {
 
         FleetJob job = runner.submit(task);
         jobsByTask.put(taskId, job);
-        if (job.state() == FleetJob.State.FAILED) {
-            return blocked(job, project, taskId, "fleet: " + job.detail());
-        }
-
+        // The prompt call inside submit blocks while an unattended session
+        // waits for a permission answer - watching starts at session creation
+        // (the wrapped client), and ends here on EVERY launch outcome.
+        String permissionSession = job.sessionId();
         try {
-            job = events == null
-                    ? runner.awaitCompletion(job, timeout)
-                    : awaitIdleThenVerify(job, timeout);
-        } catch (OpencodeException e) {
-            job = withState(job, FleetJob.State.FAILED, e.getMessage());
-        }
-        jobsByTask.put(taskId, job);
-        if (job.state() != FleetJob.State.COMPLETED) {
-            return blocked(job, project, taskId, "fleet: " + job.detail());
-        }
+            if (job.state() == FleetJob.State.FAILED) {
+                return blocked(job, project, taskId, "fleet: " + job.detail());
+            }
 
-        mergeLock.lock();
-        try {
-            job = runner.mergeBack(job);
+            try {
+                job = events == null
+                        ? runner.awaitCompletion(job, timeout)
+                        : awaitIdleThenVerify(job, timeout);
+            } catch (OpencodeException e) {
+                job = withState(job, FleetJob.State.FAILED, e.getMessage());
+            }
+            jobsByTask.put(taskId, job);
+            if (job.state() != FleetJob.State.COMPLETED) {
+                return blocked(job, project, taskId, "fleet: " + job.detail());
+            }
+
+            mergeLock.lock();
+            try {
+                job = runner.mergeBack(job);
+            } finally {
+                mergeLock.unlock();
+            }
+            jobsByTask.put(taskId, job);
+            if (job.state() != FleetJob.State.MERGED) {
+                // runner detail is "merge conflicts: <files>"
+                return blocked(job, project, taskId, job.detail());
+            }
+
+            Task merged = store.get(project, taskId);
+            // Only lift the fleet's OWN in-progress marking. The agent may already
+            // have set done, task_advance'd the ticket into the NEXT stage's
+            // product-backlog, or task_send_back'd it (blocked) — force-setting
+            // in-review here would clobber that, fake completion in the next
+            // stage's column, and pre-arm the advance quality gate.
+            if ("in-progress".equals(merged.status)) {
+                store.update(project, taskId, Map.of("status", "in-review"));
+            }
+            String ref = com.opencode.ide.git.FleetGit.branchFor(taskId);
+            if (merged.artifacts.stream()
+                    .noneMatch(a -> "git".equals(a.kind()) && ref.equals(a.ref()))) {
+                store.addArtifact(project, taskId, "git", ref,
+                        "fleet branch merged back by TaskFleet", ASSIGNEE);
+            }
+            recordTelemetry(project, taskId, job);
+            return job;
         } finally {
-            mergeLock.unlock();
+            if (permissions != null && permissionSession != null) {
+                permissions.sessionEnded(permissionSession);
+            }
         }
-        jobsByTask.put(taskId, job);
-        if (job.state() != FleetJob.State.MERGED) {
-            // runner detail is "merge conflicts: <files>"
-            return blocked(job, project, taskId, job.detail());
-        }
-
-        Task merged = store.get(project, taskId);
-        // Only lift the fleet's OWN in-progress marking. The agent may already
-        // have set done, task_advance'd the ticket into the NEXT stage's
-        // product-backlog, or task_send_back'd it (blocked) — force-setting
-        // in-review here would clobber that, fake completion in the next
-        // stage's column, and pre-arm the advance quality gate.
-        if ("in-progress".equals(merged.status)) {
-            store.update(project, taskId, Map.of("status", "in-review"));
-        }
-        String ref = com.opencode.ide.git.FleetGit.branchFor(taskId);
-        if (merged.artifacts.stream()
-                .noneMatch(a -> "git".equals(a.kind()) && ref.equals(a.ref()))) {
-            store.addArtifact(project, taskId, "git", ref,
-                    "fleet branch merged back by TaskFleet", ASSIGNEE);
-        }
-        recordTelemetry(project, taskId, job);
-        return job;
     }
 
     /** Snapshot of the tracked jobs by taskId (copy-on-read, never null). */

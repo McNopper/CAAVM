@@ -30,6 +30,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.part.ViewPart;
 
 import com.opencode.ide.board.fleet.FleetJobHandle;
+import com.opencode.ide.board.fleet.TaskFleetLauncher;
 import com.opencode.ide.board.internal.GitCli;
 import com.opencode.ide.board.model.DiffSource;
 import com.opencode.ide.board.model.FleetJobsModel;
@@ -48,6 +49,11 @@ import com.opencode.ide.core.OpencodeConnection;
  * diff; both run on a background thread (the client may spawn/wait for the
  * server, git can block for up to a minute) and open the dialog from
  * {@code asyncExec}; the action stays disabled while a diff is running.
+ *
+ * <p>The "Permissions (n)" toolbar action (enabled when n &gt; 0, count kept
+ * live via the shared permission queue's listener) opens
+ * {@link FleetPermissionsDialog} where unattended sessions' permission
+ * requests are answered (approve once / always / reject).</p>
  */
 public class FleetView extends ViewPart {
 
@@ -61,6 +67,7 @@ public class FleetView extends ViewPart {
     private Action openDiffAction;
     private Action openFolderAction;
     private Action takeOverAction;
+    private Action permissionsAction;
     /** Single daemon thread for git diff processes (OSGi-light, never blocks the UI thread). */
     private ExecutorService diffExecutor;
     private final AtomicBoolean diffRunning = new AtomicBoolean();
@@ -68,6 +75,13 @@ public class FleetView extends ViewPart {
         Display display = Display.getDefault();
         if (display != null && !display.isDisposed()) {
             display.asyncExec(this::refreshFromModel);
+        }
+    };
+    /** Live pending-count hint: the permission queue notifies on every change (SSE thread). */
+    private final Runnable permissionsListener = () -> {
+        Display display = Display.getDefault();
+        if (display != null && !display.isDisposed()) {
+            display.asyncExec(this::updatePermissionsAction);
         }
     };
 
@@ -109,7 +123,9 @@ public class FleetView extends ViewPart {
 
         contributeActions();
         FleetJobsModel.getDefault().addListener(modelListener);
+        TaskFleetLauncher.permissions().addListener(permissionsListener);
         refreshFromModel();
+        updatePermissionsAction();
     }
 
     private interface RowText {
@@ -179,10 +195,32 @@ public class FleetView extends ViewPart {
         takeOverAction.setToolTipText("Open the worktree and mark the job as taken over");
         takeOverAction.setEnabled(false);
 
+        permissionsAction = new Action("Permissions") {
+            @Override
+            public void run() {
+                new FleetPermissionsDialog(getSite().getShell(),
+                        TaskFleetLauncher.permissions()).open();
+            }
+        };
+        permissionsAction.setToolTipText(
+                "Pending permission requests of unattended fleet sessions (approve once / always / reject)");
+        permissionsAction.setEnabled(false);
+
         IToolBarManager toolbar = getViewSite().getActionBars().getToolBarManager();
+        toolbar.add(permissionsAction);
         toolbar.add(openDiffAction);
         toolbar.add(openFolderAction);
         toolbar.add(takeOverAction);
+    }
+
+    /** Refreshes the "Permissions (n)" hint from the queue (UI thread). */
+    private void updatePermissionsAction() {
+        if (permissionsAction == null || viewer == null || viewer.getControl().isDisposed()) {
+            return;
+        }
+        int pending = TaskFleetLauncher.permissions().pendingCount();
+        permissionsAction.setText(pending == 0 ? "Permissions" : "Permissions (" + pending + ")");
+        permissionsAction.setEnabled(pending > 0);
     }
 
     private FleetJobHandle selectedRow() {
@@ -212,6 +250,7 @@ public class FleetView extends ViewPart {
         setLaidOut(emptyLabel, empty);
         viewer.getControl().getParent().layout();
         updateActionEnablement();
+        updatePermissionsAction();
     }
 
     private static void setLaidOut(Control control, boolean visible) {
@@ -358,6 +397,7 @@ public class FleetView extends ViewPart {
     @Override
     public void dispose() {
         FleetJobsModel.getDefault().removeListener(modelListener);
+        TaskFleetLauncher.permissions().removeListener(permissionsListener);
         if (diffExecutor != null) {
             diffExecutor.shutdown();
             diffExecutor = null;

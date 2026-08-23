@@ -7,13 +7,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.core.OpencodeConnection;
 import com.opencode.ide.fleet.FleetJob;
+import com.opencode.ide.fleet.FleetPermissionBridge;
 import com.opencode.ide.fleet.FleetRunner;
+import com.opencode.ide.fleet.PermissionQueue;
 import com.opencode.ide.fleet.RoleAgents;
 import com.opencode.ide.fleet.SseSessionEvents;
 import com.opencode.ide.fleet.TaskFleet;
@@ -64,6 +67,23 @@ public final class TaskFleetLauncher implements FleetLauncher {
 
     private static final AtomicLong GENERATION = new AtomicLong();
 
+    /**
+     * Process-wide queue of permission requests raised by unattended fleet
+     * sessions (ROADMAP H5 item 1): the bridge feeds it from the primary
+     * connection's event stream, the Fleet view's "Permissions (n)" action
+     * drains it. Answers post through the primary connection's client (which
+     * may block while it spawns the server - answer off the UI thread).
+     */
+    private static final PermissionQueue PERMISSIONS = new PermissionQueue(
+            (sessionId, permissionId, response, remember) -> OpencodeConnection.getInstance()
+                    .getClient().respondToPermission(sessionId, permissionId, response, remember));
+
+    /** Feeds {@link #PERMISSIONS} from the primary event stream; sessions are watched via the wrapped runner client. */
+    private static final FleetPermissionBridge PERMISSION_BRIDGE = new FleetPermissionBridge(PERMISSIONS);
+
+    /** Guards the one-time bridge subscription (Eclipse-session lifetime, never unsubscribed). */
+    private static final AtomicBoolean PERMISSION_BRIDGE_SUBSCRIBED = new AtomicBoolean();
+
     /** Suppliers snapshot + its generation, published as one immutable value per construction. */
     private record SuppliersState(long generation, Suppliers suppliers) {
     }
@@ -98,6 +118,11 @@ public final class TaskFleetLauncher implements FleetLauncher {
         state = new SuppliersState(GENERATION.incrementAndGet(),
                 new Suppliers(clientSupplier, worktreesSupplier));
         this.storeRootSupplier = storeRootSupplier;
+    }
+
+    /** The process-wide queue of pending permission requests raised by fleet sessions. */
+    public static PermissionQueue permissions() {
+        return PERMISSIONS;
     }
 
     @Override
@@ -176,11 +201,26 @@ public final class TaskFleetLauncher implements FleetLauncher {
         // SSE completion rides the primary connection's single /event stream;
         // the client doubles as the one-poll fallback when that stream drops.
         SseSessionEvents events = new SseSessionEvents(primaryEventSubscriber(), client);
+        connectPermissionBridge();
+        // The runner's client is wrapped so its sessions are permission-watched
+        // from creation - the blocking prompt call is where unattended asks wait.
         return new TaskFleet(
-                new FleetRunner(client, current.worktrees().get()),
+                new FleetRunner(PERMISSION_BRIDGE.watching(client), current.worktrees().get()),
                 new TaskStore(storeRoot),
                 new RoleAgents(),
-                events);
+                events,
+                null,
+                PERMISSION_BRIDGE);
+    }
+
+    /**
+     * Subscribes the permission bridge to the primary connection's SSE fan-out
+     * exactly once per process (idempotent across fleet rebuilds).
+     */
+    private static void connectPermissionBridge() {
+        if (PERMISSION_BRIDGE_SUBSCRIBED.compareAndSet(false, true)) {
+            primaryEventSubscriber().subscribe(PERMISSION_BRIDGE::onEvent);
+        }
     }
 
     /** Subscribes to the primary connection's SSE fan-out; the handle unsubscribes. */

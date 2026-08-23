@@ -24,6 +24,12 @@
           category="com.opencode.ide.ui"
           class="com.opencode.ide.ui.views.ProvidersView"/>
     <view
+          id="com.opencode.ide.ui.repo"
+          name="Repo (opencode)"
+          icon="icons/file.png"
+          category="com.opencode.ide.ui"
+          class="com.opencode.ide.ui.views.RepoView"/>
+    <view
           id="com.opencode.ide.ui.views.SessionDetailsView"
           name="Session Details"
           icon="icons/agent.png"
