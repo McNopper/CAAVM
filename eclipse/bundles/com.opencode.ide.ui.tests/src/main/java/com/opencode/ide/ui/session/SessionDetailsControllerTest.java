@@ -51,7 +51,7 @@ public class SessionDetailsControllerTest {
     }
 
     private static Session session() {
-        return new Session("ses_1", "slug-one", "Session One", "build", null, TIME, 9.0, null);
+        return new Session("ses_1", "slug-one", "Session One", "build", null, TIME, 9.0, null, null);
     }
 
     // ---------- mapping ----------
@@ -174,6 +174,27 @@ public class SessionDetailsControllerTest {
         assertNull(snapshot.title());
         assertEquals(1, snapshot.rows().size());
         assertNull(snapshot.errorNote());
+    }
+
+    @Test
+    public void sharedSessionSeedsShareUrlIntoSnapshot() {
+        client.sessions = List.of(new Session("ses_1", "slug-one", "Session One", "build", null,
+                TIME, 9.0, null, new Session.Share("https://opencode.ai/s/abc123")));
+        client.messages = List.of(new ChatEntry(user("u1"), List.of(new ChatPart("text", "hi", null, null))));
+
+        SessionDetails snapshot = new SessionDetailsController("ses_1", () -> client).load();
+
+        assertEquals("https://opencode.ai/s/abc123", snapshot.shareUrl());
+    }
+
+    @Test
+    public void unsharedSessionSnapshotHasNoShareUrl() {
+        client.sessions = List.of(session());
+        client.messages = List.of(new ChatEntry(user("u1"), List.of(new ChatPart("text", "hi", null, null))));
+
+        SessionDetails snapshot = new SessionDetailsController("ses_1", () -> client).load();
+
+        assertNull(snapshot.shareUrl());
     }
 
     // ---------- empty / failure ----------

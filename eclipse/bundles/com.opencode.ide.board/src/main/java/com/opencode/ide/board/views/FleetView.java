@@ -31,16 +31,23 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.opencode.ide.board.fleet.FleetJobHandle;
 import com.opencode.ide.board.internal.GitCli;
+import com.opencode.ide.board.model.DiffSource;
 import com.opencode.ide.board.model.FleetJobsModel;
+import com.opencode.ide.board.model.SessionDiffText;
+import com.opencode.ide.client.OpencodeException;
+import com.opencode.ide.client.model.FileDiff;
+import com.opencode.ide.core.OpencodeConnection;
 
 /**
  * The Fleet view: one row per fleet job in the shared {@link FleetJobsModel}
  * (fed by the Board view's "Launch task"), with state coloring and
  * Open diff / Open folder / Take over actions. Refreshes automatically on
  * model changes ({@code asyncExec} from the model listener). "Open diff"
- * runs the git process on a background thread (it can block for up to a
- * minute) and opens the dialog from {@code asyncExec}; the action stays
- * disabled while a diff is running.
+ * shows the server's authoritative session diff when the job carries a
+ * session id ({@link DiffSource}), falling back to the local git branch
+ * diff; both run on a background thread (the client may spawn/wait for the
+ * server, git can block for up to a minute) and open the dialog from
+ * {@code asyncExec}; the action stays disabled while a diff is running.
  */
 public class FleetView extends ViewPart {
 
@@ -150,7 +157,8 @@ public class FleetView extends ViewPart {
                 openDiff();
             }
         };
-        openDiffAction.setToolTipText("git diff of the task branch against the main worktree");
+        openDiffAction.setToolTipText(
+                "Session diff from the opencode server; falls back to a git diff of the task branch");
         openDiffAction.setEnabled(false);
 
         openFolderAction = new Action("Open folder") {
@@ -212,14 +220,21 @@ public class FleetView extends ViewPart {
         data.exclude = !visible;
     }
 
-    /** Runs the git diff off the UI thread (it is a blocking process, up to the 60 s timeout) and opens the dialog via asyncExec. */
+    /**
+     * Runs the diff off the UI thread and opens the dialog via asyncExec.
+     * Server-first: a job with a session id tries the authoritative
+     * {@code GET /session/:id/diff} via the shared connection (whose client
+     * may block while spawning the server — hence the background thread); an
+     * empty or failing server diff falls back to the local git branch diff.
+     */
     private void openDiff() {
         FleetJobHandle row = selectedRow();
         if (row == null || diffRunning.get()) {
             return;
         }
+        boolean preferServer = DiffSource.of(row) == DiffSource.Source.SERVER;
         Path repo = repoRootOf(row);
-        if (repo == null || !Files.isDirectory(repo)) {
+        if (!preferServer && (repo == null || !Files.isDirectory(repo))) {
             MessageDialog.openInformation(getSite().getShell(), "Open diff",
                     "No main repo known for " + row.taskId()
                             + " (the job has no fleet worktree yet).");
@@ -228,6 +243,7 @@ public class FleetView extends ViewPart {
         diffRunning.set(true);
         updateActionEnablement();
         String taskId = row.taskId();
+        String sessionId = row.sessionId();
         Path repoRoot = repo;
         ExecutorService executor = diffExecutor;
         if (executor == null) {
@@ -235,14 +251,38 @@ public class FleetView extends ViewPart {
             return;
         }
         executor.execute(() -> {
-            String diff = null;
+            String title = null;
+            String text = null;
             String failure = null;
-            try {
-                diff = GitCli.diff(repoRoot, taskId);
-            } catch (RuntimeException e) {
-                failure = e.getMessage();
+            if (preferServer) {
+                try {
+                    List<FileDiff> diffs = OpencodeConnection.getInstance().getClient()
+                            .getSessionDiff(sessionId, null);
+                    if (!diffs.isEmpty()) {
+                        title = "Diff " + taskId + " (session " + sessionId + ")";
+                        text = SessionDiffText.format(diffs);
+                    }
+                } catch (OpencodeException | RuntimeException e) {
+                    // no authoritative diff (server down, unknown session) — try git
+                }
             }
-            String result = diff;
+            if (text == null) {
+                if (repoRoot == null || !Files.isDirectory(repoRoot)) {
+                    failure = "No server diff for session " + sessionId
+                            + " and no fleet worktree to run a local git diff against.";
+                } else {
+                    title = "Diff " + taskId + " ("
+                            + com.opencode.ide.git.FleetGit.branchFor(taskId) + ")";
+                    try {
+                        String diff = GitCli.diff(repoRoot, taskId);
+                        text = diff.isBlank() ? "(no differences)" : diff;
+                    } catch (RuntimeException e) {
+                        failure = e.getMessage();
+                    }
+                }
+            }
+            String dialogTitle = title;
+            String result = text;
             String error = failure;
             Display display = Display.getDefault();
             if (display == null || display.isDisposed()) {
@@ -257,8 +297,7 @@ public class FleetView extends ViewPart {
                 if (error != null) {
                     MessageDialog.openError(getSite().getShell(), "Open diff", error);
                 } else {
-                    new TextDialog(getSite().getShell(), "Diff " + taskId + " (" + com.opencode.ide.git.FleetGit.branchFor(taskId) + ")",
-                            result.isBlank() ? "(no differences)" : result).open();
+                    new TextDialog(getSite().getShell(), dialogTitle, result).open();
                 }
             });
         });

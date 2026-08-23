@@ -120,14 +120,23 @@ public final class ServerLabels {
 
     /** Label of a session: agent identity + title (title, else slug, else id). */
     public static String sessionName(Session s) {
-        String title = (s.title() != null && !s.title().isEmpty())
-                ? s.title()
-                : (s.slug() == null ? s.id() : s.slug());
-        // surface the running agent identity (v1.18.x has no parentID, so no nesting)
+        // surface the running agent identity (the Sessions category is flat per agent)
         if (s.agent() != null && !s.agent().isEmpty()) {
-            return s.agent() + " — " + title;
+            return s.agent() + " — " + nestedSessionName(s);
         }
-        return title;
+        return nestedSessionName(s);
+    }
+
+    /**
+     * Label of a session nested under the agent that runs it: the bare title
+     * (title, else slug, else id) — the agent is already the parent row, so
+     * repeating its name would be noise.
+     */
+    public static String nestedSessionName(Session s) {
+        if (s.title() != null && !s.title().isEmpty()) {
+            return s.title();
+        }
+        return s.slug() == null ? s.id() : s.slug();
     }
 
     /**

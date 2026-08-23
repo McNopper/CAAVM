@@ -40,6 +40,7 @@ import com.opencode.ide.core.OpencodeConnection;
 import com.opencode.ide.ui.internal.Refreshable;
 import com.opencode.ide.ui.internal.UiActivator;
 import com.opencode.ide.ui.internal.ViewLoadSupport;
+import com.opencode.ide.ui.model.AgentSessions;
 import com.opencode.ide.ui.model.ServerLabels;
 
 /**
@@ -47,7 +48,10 @@ import com.opencode.ide.ui.model.ServerLabels;
  * {@link ConnectionsManager} (the primary opencode server first, then any
  * remote servers from the preferences), each with categories for the available
  * agents and the running sessions (nested by {@code parentID}, so subagents
- * appear under the agent that spawned them).
+ * appear under the agent that spawned them). Each agent definition row in
+ * the Agents category additionally nests the server's live sessions that
+ * currently run as that agent (matched by the session's {@code agent} field,
+ * busy first) — double-clicking one opens its live transcript.
  *
  * <p>The primary root behaves exactly like the former single-root view
  * (including the live {@code /event} activity tracker); remote roots show
@@ -144,6 +148,19 @@ public class ServerView extends ViewPart implements Refreshable {
         }
     }
 
+    /**
+     * A live session row nested under the agent that runs it (Agents
+     * category). A wrapper rather than the bare {@link Session} on purpose:
+     * the same session also appears in the Sessions category, and a JFace
+     * tree maps each element to exactly one item — the two tree positions
+     * must be distinct objects. The record's structural equals/hashCode let
+     * the viewer keep the row's expansion state across refreshes. Wrappers
+     * are leaves: subagent children stay reachable under the session's row
+     * in the Sessions category.
+     */
+    record AgentSessionNode(Agent agent, Session session) {
+    }
+
     @Override
     public void createPartControl(Composite parent) {
         Composite composite = new Composite(parent, SWT.NONE);
@@ -187,24 +204,40 @@ public class ServerView extends ViewPart implements Refreshable {
         layout.setColumnData(nameCol.getColumn(), new ColumnWeightData(2, 140, true));
         layout.setColumnData(detailCol.getColumn(), new ColumnWeightData(3, 220, true));
 
-        // double-click a session -> resume it in a chat window
+        // double-click: a session nested under its agent -> live output
+        // (SessionDetailsView, auto-refreshing); a session in the Sessions
+        // category -> resume it in a chat window (unchanged)
         viewer.addDoubleClickListener(e -> {
             Object selection = e.getSelection();
             Object first = (selection instanceof org.eclipse.jface.viewers.IStructuredSelection structured)
                     ? structured.getFirstElement()
                     : null;
-            if (first instanceof Session s && s.id() != null) {
+            if (first instanceof AgentSessionNode nested && nested.session().id() != null) {
+                openSessionDetails(nested.session().id());
+            } else if (first instanceof Session s && s.id() != null) {
                 openChatForSession(s.id());
             }
         });
 
-        // context menu on sessions: chat resume (double-click) + the session details view
+        // context menu on session rows (Sessions category and agent-nested):
+        // live output (agent-nested double-click) + the session details view
         org.eclipse.jface.action.MenuManager menu = new org.eclipse.jface.action.MenuManager();
+        org.eclipse.jface.action.Action liveOutput = new org.eclipse.jface.action.Action("Live output") {
+            @Override
+            public void run() {
+                Session s = selectedSession();
+                if (s != null && s.id() != null) {
+                    openSessionDetails(s.id());
+                }
+            }
+        };
+        liveOutput.setToolTipText("Open the live transcript view (auto-refreshes while the agent runs)");
+        menu.add(liveOutput);
         org.eclipse.jface.action.Action details = new org.eclipse.jface.action.Action("Session details") {
             @Override
             public void run() {
                 Session s = selectedSession();
-                if (s != null) {
+                if (s != null && s.id() != null) {
                     openSessionDetails(s.id());
                 }
             }
@@ -214,6 +247,7 @@ public class ServerView extends ViewPart implements Refreshable {
         viewer.getControl().setMenu(menu.createContextMenu(viewer.getControl()));
         menu.addMenuListener(manager -> {
             Session s = selectedSession();
+            liveOutput.setEnabled(s != null);
             details.setEnabled(s != null);
         });
         getSite().registerContextMenu(menu, viewer);
@@ -223,12 +257,20 @@ public class ServerView extends ViewPart implements Refreshable {
         refresh();
     }
 
-    /** The currently selected session element, or {@code null}. */
+    /**
+     * The currently selected session element, or {@code null}. Recognizes both
+     * tree positions of a session: the raw {@link Session} rows of the
+     * Sessions category and the {@link AgentSessionNode} rows nested under an
+     * agent.
+     */
     private Session selectedSession() {
         Object selection = viewer.getStructuredSelection();
         Object first = (selection instanceof org.eclipse.jface.viewers.IStructuredSelection structured)
                 ? structured.getFirstElement()
                 : null;
+        if (first instanceof AgentSessionNode nested) {
+            return nested.session();
+        }
         return first instanceof Session s ? s : null;
     }
 
@@ -677,7 +719,14 @@ public class ServerView extends ViewPart implements Refreshable {
             return skill.name() == null ? "(unnamed)" : skill.name();
         }
         if (element instanceof Agent a) {
-            return a.name();
+            // definition row: bare name, plus " — n running" while live sessions run as this agent
+            ServerNode owner = AgentSessions.serverOfAgent(roots, a, node -> node.agents);
+            int running = owner == null ? 0 : AgentSessions.runningCount(owner.sessions, a);
+            return AgentSessions.agentName(a.name(), running);
+        }
+        if (element instanceof AgentSessionNode nested) {
+            // nested under the agent row: bare title (the agent is the parent row)
+            return ServerLabels.nestedSessionName(nested.session());
         }
         if (element instanceof Session s) {
             return ServerLabels.sessionName(s);
@@ -686,6 +735,9 @@ public class ServerView extends ViewPart implements Refreshable {
     }
 
     String detail(Object element) {
+        if (element instanceof AgentSessionNode nested) {
+            element = nested.session(); // same rendering as the Sessions category rows
+        }
         if (element instanceof ServerNode sn) {
             return ServerLabels.serverDetail(sn.info());
         }
@@ -730,6 +782,9 @@ public class ServerView extends ViewPart implements Refreshable {
         if (element instanceof CategoryNode) {
             return UiActivator.image(UiActivator.ICON_CATEGORY);
         }
+        if (element instanceof AgentSessionNode nested) {
+            return icon(nested.session()); // same (busy-aware) icon as the Sessions category
+        }
         if (element instanceof Session s) {
             // busy/thinking sessions get a distinct (orange) bubble so changes are visible at a glance
             ServerNode node = ownerOf(s);
@@ -755,7 +810,9 @@ public class ServerView extends ViewPart implements Refreshable {
 
     /**
      * Tree content provider: servers -> categories -> items; sessions nest by
-     * parentID within their own server. Compatible with {@code SWT.VIRTUAL}:
+     * parentID within their own server, and agent definition rows nest the
+     * live sessions running as that agent (wrapped, busy first). Compatible
+     * with {@code SWT.VIRTUAL}:
      * {@link #getChildren(Object)} serves the in-memory lists only (no IO), so
      * the viewer can resolve items lazily on expand.
      */
@@ -812,6 +869,18 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 return new Object[0];
             }
+            if (parent instanceof Agent agent) {
+                // live sessions running as this agent (top-level only, busy
+                // first) — wrapped so they stay distinct from their row in
+                // the Sessions category (one element = one tree item)
+                ServerNode owner = AgentSessions.serverOfAgent(roots, agent, node -> node.agents);
+                if (owner == null) {
+                    return new Object[0];
+                }
+                return AgentSessions.sessionsOf(owner.sessions, agent, owner.statuses).stream()
+                        .map(session -> new AgentSessionNode(agent, session))
+                        .toArray();
+            }
             if (parent instanceof Session session) {
                 ServerNode owner = ownerOf(session);
                 return owner != null ? ServerLabels.childrenOf(owner.sessions, session.id()).toArray() : new Object[0];
@@ -822,22 +891,24 @@ public class ServerView extends ViewPart implements Refreshable {
         /**
          * The tree parent of an element (used by the viewer to preserve
          * expansion state across refreshes): the category's server, the
-         * agent's agents category, the session's parent session (or the
-         * owning server's Sessions category for top-level sessions) and the
-         * primary's Active files category for file activities.
+         * agent's agents category, the agent of an agent-nested session row,
+         * the session's parent session (or the owning server's Sessions
+         * category for top-level sessions) and the primary's Active files
+         * category for file activities.
          */
         @Override
         public Object getParent(Object element) {
             if (element instanceof CategoryNode category) {
                 return category.server;
             }
+            if (element instanceof AgentSessionNode nested) {
+                return nested.agent();
+            }
             if (element instanceof Agent agent) {
-                for (ServerNode node : roots) {
-                    if (node.agents.contains(agent)) {
-                        return node.agentsCategory;
-                    }
-                }
-                return null;
+                // identity-first lookup: two servers can define structurally
+                // equal agents, and the viewer passes the exact element
+                ServerNode owner = AgentSessions.serverOfAgent(roots, agent, node -> node.agents);
+                return owner != null ? owner.agentsCategory : null;
             }
             if (element instanceof McpServerInfo mcp) {
                 for (ServerNode node : roots) {
@@ -895,6 +966,10 @@ public class ServerView extends ViewPart implements Refreshable {
                 if (category.kind == CategoryKind.SKILLS) {
                     return !category.server.skills.isEmpty();
                 }
+            }
+            if (parent instanceof Agent agent) {
+                ServerNode owner = AgentSessions.serverOfAgent(roots, agent, node -> node.agents);
+                return owner != null && AgentSessions.hasSessions(owner.sessions, agent);
             }
             if (parent instanceof Session session) {
                 ServerNode owner = ownerOf(session);

@@ -32,7 +32,7 @@ public class ServerLabelsTest {
 
     private static Session session(String id, String parentID, long updated) {
         return new Session(id, "slug-" + id, "Title " + id, null, parentID,
-                new Session.Time(NOW, updated), null, null);
+                new Session.Time(NOW, updated), null, null, null);
     }
 
     private static Agent agent(String mode, boolean nativeAgent, String description) {
@@ -99,15 +99,29 @@ public class ServerLabelsTest {
     @Test
     public void sessionNamePrefersTitleThenSlugThenIdAndPrefixesAgent() {
         assertEquals("Fix build",
-                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", null, null, null, null, null)));
+                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", null, null, null, null, null, null)));
         assertEquals("slug-one",
-                ServerLabels.sessionName(new Session("s1", "slug-one", null, null, null, null, null, null)));
+                ServerLabels.sessionName(new Session("s1", "slug-one", null, null, null, null, null, null, null)));
         assertEquals("slug-one",
-                ServerLabels.sessionName(new Session("s1", "slug-one", "", null, null, null, null, null)));
+                ServerLabels.sessionName(new Session("s1", "slug-one", "", null, null, null, null, null, null)));
         assertEquals("s1",
-                ServerLabels.sessionName(new Session("s1", null, null, null, null, null, null, null)));
+                ServerLabels.sessionName(new Session("s1", null, null, null, null, null, null, null, null)));
         assertEquals("build — Fix build",
-                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", "build", null, null, null, null)));
+                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", "build", null, null, null, null, null)));
+    }
+
+    @Test
+    public void nestedSessionNameShowsBareTitleWithoutAgentPrefix() {
+        // nested under the agent row, the agent prefix would be noise
+        assertEquals("Fix build",
+                ServerLabels.nestedSessionName(new Session("s1", "slug", "Fix build", "build", null, null, null, null, null)));
+        assertEquals("slug-one",
+                ServerLabels.nestedSessionName(new Session("s1", "slug-one", null, "build", null, null, null, null, null)));
+        assertEquals("s1",
+                ServerLabels.nestedSessionName(new Session("s1", null, null, null, null, null, null, null, null)));
+        // the Sessions category keeps the agent-prefixed form
+        assertEquals("build — Fix build",
+                ServerLabels.sessionName(new Session("s1", "slug", "Fix build", "build", null, null, null, null, null)));
     }
 
     @Test
@@ -124,7 +138,7 @@ public class ServerLabelsTest {
     @Test
     public void sessionDetailAppendsRelativeUpdateTime() {
         Session s = new Session("s1", null, null, null, null,
-                new Session.Time(NOW, NOW - 5 * 60_000L - 10_000L), null, null);
+                new Session.Time(NOW, NOW - 5 * 60_000L - 10_000L), null, null, null);
 
         assertEquals("busy • updated 5m ago", ServerLabels.sessionDetail(s, null, "busy"));
     }
@@ -229,7 +243,7 @@ public class ServerLabelsTest {
         assertEquals(primary, ServerLabels.ownerOf(servers, session("zz", null, 0L), f -> f.sessions(), primary));
         assertEquals(primary, ServerLabels.ownerOf(servers, null, f -> f.sessions(), primary));
         assertEquals(primary, ServerLabels.ownerOf(servers,
-                new Session(null, null, null, null, null, null, null, null), f -> f.sessions(), primary));
+                new Session(null, null, null, null, null, null, null, null, null), f -> f.sessions(), primary));
     }
 
     @Test

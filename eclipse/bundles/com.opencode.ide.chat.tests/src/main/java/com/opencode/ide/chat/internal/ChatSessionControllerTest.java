@@ -699,7 +699,7 @@ public class ChatSessionControllerTest {
         public Session createSession(String title, Path directory) {
             createdSessions.add(title);
             sessionCounter++;
-            return new Session("ses_" + sessionCounter, null, title, null, null, null, null, null);
+            return new Session("ses_" + sessionCounter, null, title, null, null, null, null, null, null);
         }
 
         @Override

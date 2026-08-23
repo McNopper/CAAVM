@@ -3,10 +3,12 @@ package com.opencode.ide.ui.views;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IAction;
+import org.eclipse.jface.action.IStatusLineManager;
 import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.layout.TreeColumnLayout;
 import org.eclipse.jface.resource.JFaceResources;
@@ -17,6 +19,9 @@ import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.jface.viewers.TreeViewerColumn;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.dnd.Clipboard;
+import org.eclipse.swt.dnd.TextTransfer;
+import org.eclipse.swt.dnd.Transfer;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.layout.GridData;
@@ -36,6 +41,7 @@ import com.opencode.ide.ui.internal.UiActivator;
 import com.opencode.ide.ui.internal.ViewLoadSupport;
 import com.opencode.ide.ui.session.SessionDetailsController;
 import com.opencode.ide.ui.session.SessionEventFilter;
+import com.opencode.ide.ui.session.SessionDetailsController.LifecycleResult;
 import com.opencode.ide.ui.session.SessionDetailsController.MessageRow;
 import com.opencode.ide.ui.session.SessionDetailsController.SessionDetails;
 import com.opencode.ide.ui.session.SessionDetailsController.ToolLine;
@@ -60,6 +66,13 @@ import com.opencode.ide.ui.session.SessionDetailsController.TokenTotals;
  * session ({@link SessionEventFilter}); the 5s timer stays as insurance.
  * Only the newest load may render, so an older in-flight result can never
  * overwrite a newer one.</p>
+ *
+ * <p>Session lifecycle actions (Fork, Share/Unshare, Summarize) run the
+ * controller's SWT-free actions in background jobs via
+ * {@link ViewLoadSupport} — the controller returns a
+ * {@link LifecycleResult} instead of throwing, so a mutating POST is never
+ * blindly retried. Success lands as a status line message (Share also copies
+ * the URL to the clipboard), failures as the view's usual error pattern.</p>
  */
 public class SessionDetailsView extends ViewPart implements Refreshable {
 
@@ -80,6 +93,11 @@ public class SessionDetailsView extends ViewPart implements Refreshable {
     private boolean eventRefreshScheduled;
     /** Monotonic load counter: only the newest started load may render its result. */
     private int loadSequence;
+    /** Local share state: seeds from each snapshot, toggles on Share/Unshare. */
+    private boolean shared;
+    private Action forkAction;
+    private Action shareAction;
+    private Action summarizeAction;
 
     /** Tree child node carrying the (collapsed, dimmed) reasoning of a message. */
     private record ReasoningLine(String text) {
@@ -126,6 +144,7 @@ public class SessionDetailsView extends ViewPart implements Refreshable {
         if (sessionId == null) {
             headerLabel.setText("No session selected — open this view via the Server view.");
             setContentDescription("Open via the Server view");
+            setLifecycleActionsEnabled(false); // nothing to act on
         } else {
             controller = new SessionDetailsController(sessionId, this::supplyClient);
             registerEventListener();
@@ -168,9 +187,134 @@ public class SessionDetailsView extends ViewPart implements Refreshable {
             }
         };
         autoRefreshAction.setToolTipText("Refresh automatically every 5 seconds");
+        forkAction = new Action("Fork") {
+            @Override
+            public void run() {
+                runLifecycleAction("Forking session", () -> controller.fork(null),
+                        result -> showStatus("Forked to session " + result.detail()));
+            }
+        };
+        forkAction.setToolTipText("Fork this session at its latest message");
+        shareAction = new Action("Share") {
+            @Override
+            public void run() {
+                if (shared) {
+                    runLifecycleAction("Unsharing session", controller::unshare, result -> {
+                        shared = false;
+                        updateShareAction();
+                        showStatus("Share link withdrawn");
+                        refresh(); // re-sync header + toggle from the server state
+                    });
+                } else {
+                    runLifecycleAction("Sharing session", controller::share, result -> {
+                        copyToClipboard(result.detail());
+                        shared = true;
+                        updateShareAction();
+                        showStatus("Share link copied: " + result.detail());
+                        refresh();
+                    });
+                }
+            }
+        };
+        shareAction.setToolTipText("Publish a read-only share link and copy it to the clipboard");
+        summarizeAction = new Action("Summarize") {
+            @Override
+            public void run() {
+                runLifecycleAction("Summarizing session", controller::summarize,
+                        result -> showStatus("Summarized with " + result.detail()));
+            }
+        };
+        summarizeAction.setToolTipText("Compact the session history into a summary");
         IToolBarManager toolBar = getViewSite().getActionBars().getToolBarManager();
         toolBar.add(refreshAction);
         toolBar.add(autoRefreshAction);
+        toolBar.add(forkAction);
+        toolBar.add(shareAction);
+        toolBar.add(summarizeAction);
+    }
+
+    private void setLifecycleActionsEnabled(boolean enabled) {
+        if (forkAction != null) {
+            forkAction.setEnabled(enabled);
+        }
+        if (shareAction != null) {
+            shareAction.setEnabled(enabled);
+        }
+        if (summarizeAction != null) {
+            summarizeAction.setEnabled(enabled);
+        }
+    }
+
+    /**
+     * Runs one lifecycle action off the UI thread (system job via
+     * {@link ViewLoadSupport}) and delivers its {@link LifecycleResult} on the
+     * UI thread. The controller never throws, so failing POSTs are NOT
+     * retried (a retry could e.g. fork twice); the error path is for
+     * catastrophic failures only.
+     */
+    private void runLifecycleAction(String jobName, ViewLoadSupport.Loader<LifecycleResult> work,
+            Consumer<LifecycleResult> onSuccess) {
+        if (controller == null || viewDisposed || viewer == null || viewer.getControl().isDisposed()) {
+            return;
+        }
+        ViewLoadSupport.load(jobName, work,
+                result -> {
+                    if (viewDisposed || viewer == null || viewer.getControl().isDisposed()) {
+                        return;
+                    }
+                    if (result.success()) {
+                        onSuccess.accept(result);
+                    } else {
+                        showActionError(jobName, result.error());
+                    }
+                },
+                error -> showActionError(jobName, ViewLoadSupport.message(error)));
+    }
+
+    /** Mirrors {@link #showError(Throwable)} for action failures: description + log. */
+    private void showActionError(String what, String error) {
+        if (viewDisposed || viewer == null || viewer.getControl().isDisposed()) {
+            return;
+        }
+        String detail = (error == null || error.isBlank()) ? "unknown error" : error;
+        setContentDescription("Error: " + detail);
+        statusLineMessage(what + " failed");
+        UiActivator.getDefault().getLog().log(
+                new Status(Status.ERROR, UiActivator.PLUGIN_ID, what + " failed: " + detail));
+    }
+
+    /** Transient action feedback goes to the workbench status line. */
+    private void showStatus(String message) {
+        statusLineMessage(message);
+    }
+
+    private void statusLineMessage(String message) {
+        IStatusLineManager statusLine = getViewSite().getActionBars().getStatusLineManager();
+        if (statusLine != null) {
+            statusLine.setMessage(message);
+        }
+    }
+
+    private void updateShareAction() {
+        if (shareAction == null) {
+            return;
+        }
+        shareAction.setText(shared ? "Unshare" : "Share");
+        shareAction.setToolTipText(shared ? "Withdraw the read-only share link"
+                : "Publish a read-only share link and copy it to the clipboard");
+    }
+
+    /** UI-thread clipboard copy (best-effort; empty/null text is ignored). */
+    private void copyToClipboard(String text) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        Clipboard clipboard = new Clipboard(viewer.getControl().getDisplay());
+        try {
+            clipboard.setContents(new Object[] { text }, new Transfer[] { TextTransfer.getInstance() });
+        } finally {
+            clipboard.dispose();
+        }
     }
 
     private void setAutoRefresh(boolean enabled) {
@@ -268,6 +412,11 @@ public class SessionDetailsView extends ViewPart implements Refreshable {
         }
         viewer.setInput(snapshot.rows()); // a List, never a bare element (dev rule)
         setContentDescription(snapshot.rows().size() + " messages");
+        boolean snapshotShared = snapshot.shareUrl() != null; // error snapshots don't reach here
+        if (snapshotShared != shared) {
+            shared = snapshotShared;
+            updateShareAction();
+        }
     }
 
     private void showError(Throwable e) {

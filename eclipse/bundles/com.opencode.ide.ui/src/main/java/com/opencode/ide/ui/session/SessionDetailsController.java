@@ -7,10 +7,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Supplier;
 
+import com.opencode.ide.client.DefaultModels;
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.ChatMessageInfo;
 import com.opencode.ide.client.model.ChatPart;
+import com.opencode.ide.client.model.ConfigInfo;
+import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.client.model.Session;
 
 /**
@@ -32,6 +35,13 @@ public final class SessionDetailsController {
 
     private final String sessionId;
     private final Supplier<OpencodeClient> clientSupplier;
+    /**
+     * Provider/model of the last assistant message seen by {@link #load()}
+     * ({@code [providerId, modelId]}); {@code null} until an assistant reply
+     * carries both. Read by {@link #summarize()} so the summary lands on the
+     * model the session actually used.
+     */
+    private volatile String[] lastAssistantModel;
 
     public SessionDetailsController(String sessionId, Supplier<OpencodeClient> clientSupplier) {
         this.sessionId = sessionId;
@@ -53,14 +63,110 @@ public final class SessionDetailsController {
             List<Session> sessions = client.getSessions();
             return build(sessions, messages);
         } catch (Exception e) {
-            return new SessionDetails(sessionId, null, null, null, null, List.of(), message(e));
+            return new SessionDetails(sessionId, null, null, null, null, null, List.of(), message(e));
         }
     }
 
+    // ---------- session lifecycle actions (fork / share / unshare / summarize) ----------
+
+    /**
+     * {@code POST /session/:id/fork} — fork this session at {@code messageId}
+     * ({@code null} = at the latest message).
+     *
+     * @return the new session id, or the failure reason; never throws.
+     */
+    public LifecycleResult fork(String messageId) {
+        try {
+            Session forked = clientSupplier.get().forkSession(sessionId, messageId);
+            String forkId = (forked == null || forked.id() == null || forked.id().isBlank()) ? "?"
+                    : forked.id();
+            return LifecycleResult.ok(forkId);
+        } catch (Exception e) {
+            return LifecycleResult.failure(message(e));
+        }
+    }
+
+    /**
+     * {@code POST /session/:id/share} — publish a read-only share link.
+     *
+     * @return the share URL, or the failure reason; never throws.
+     */
+    public LifecycleResult share() {
+        try {
+            String url = shareUrl(clientSupplier.get().shareSession(sessionId));
+            return (url == null || url.isBlank())
+                    ? LifecycleResult.failure("server returned no share URL")
+                    : LifecycleResult.ok(url);
+        } catch (Exception e) {
+            return LifecycleResult.failure(message(e));
+        }
+    }
+
+    /**
+     * {@code DELETE /session/:id/share} — withdraw the share link.
+     *
+     * @return success or the failure reason; never throws.
+     */
+    public LifecycleResult unshare() {
+        try {
+            clientSupplier.get().unshareSession(sessionId);
+            return LifecycleResult.ok(null);
+        } catch (Exception e) {
+            return LifecycleResult.failure(message(e));
+        }
+    }
+
+    /**
+     * {@code POST /session/:id/summarize} — compact the session. The model is
+     * the one the session's last assistant message used; only when none was
+     * tracked does it fetch config + providers to resolve the connection
+     * default ({@link DefaultModels#resolve}).
+     *
+     * @return the {@code provider/model} used, or the failure reason; never throws.
+     */
+    public LifecycleResult summarize() {
+        try {
+            OpencodeClient client = clientSupplier.get();
+            String[] model = pickSummarizeModel(lastAssistantModel, null, null); // no IO
+            if (model == null) {
+                model = DefaultModels.resolve(client.getConfig(), client.getProviders());
+            }
+            if (model == null) {
+                return LifecycleResult.failure("no provider/model available");
+            }
+            boolean accepted = client.summarizeSession(sessionId, model[0], model[1]);
+            return accepted ? LifecycleResult.ok(model[0] + "/" + model[1])
+                    : LifecycleResult.failure("server declined to summarize");
+        } catch (Exception e) {
+            return LifecycleResult.failure(message(e));
+        }
+    }
+
+    /** Null-tolerant share-URL extractor (absent share → {@code null}). */
+    public static String shareUrl(Session session) {
+        return (session == null || session.share() == null) ? null : session.share().url();
+    }
+
+    /**
+     * Prefers the session's tracked model ({@code [provider, model]}, complete
+     * = both parts non-blank); falls back to the validated connection default.
+     * Pure — unit-testable.
+     */
+    public static String[] pickSummarizeModel(String[] tracked, ConfigInfo config, ProviderList providers) {
+        if (tracked != null && tracked.length == 2
+                && tracked[0] != null && !tracked[0].isBlank()
+                && tracked[1] != null && !tracked[1].isBlank()) {
+            return tracked;
+        }
+        return DefaultModels.resolve(config, providers);
+    }
+
     private SessionDetails build(List<Session> sessions, List<ChatEntry> messages) {
-        String title = findTitle(sessions);
+        Session self = findSession(sessions);
+        String title = (self == null) ? null : self.title();
+        String shareUrl = shareUrl(self);
         List<MessageRow> rows = new ArrayList<>();
-        String lastAssistantModel = null;
+        String lastAssistantModelLabel = null;
         Double totalCost = null;
         TokenTotals totals = null;
         for (ChatEntry entry : messages == null ? List.<ChatEntry>of() : messages) {
@@ -71,7 +177,10 @@ public final class SessionDetailsController {
             ChatMessageInfo info = entry.info();
             if (info != null && "assistant".equals(info.role())) {
                 if (!info.modelLabel().isEmpty()) {
-                    lastAssistantModel = info.modelLabel();
+                    lastAssistantModelLabel = info.modelLabel();
+                }
+                if (info.providerId() != null && info.modelId() != null) {
+                    lastAssistantModel = new String[] { info.providerId(), info.modelId() };
                 }
                 if (info.cost() != null) {
                     totalCost = (totalCost == null ? 0.0 : totalCost) + info.cost();
@@ -82,17 +191,17 @@ public final class SessionDetailsController {
             }
         }
         String note = rows.isEmpty() ? EMPTY_NOTE : null;
-        return new SessionDetails(sessionId, title, lastAssistantModel, totalCost, totals,
-                List.copyOf(rows), note);
+        return new SessionDetails(sessionId, title, shareUrl, lastAssistantModelLabel, totalCost,
+                totals, List.copyOf(rows), note);
     }
 
-    private String findTitle(List<Session> sessions) {
+    private Session findSession(List<Session> sessions) {
         if (sessions == null) {
             return null;
         }
         for (Session session : sessions) {
             if (session != null && sessionId != null && sessionId.equals(session.id())) {
-                return session.title();
+                return session;
             }
         }
         return null;
@@ -138,11 +247,30 @@ public final class SessionDetailsController {
     // ---------- snapshot records (immutable; the view renders, never mutates) ----------
 
     /**
+     * Outcome of a session lifecycle action ({@link #fork}, {@link #share},
+     * {@link #unshare}, {@link #summarize}): {@code detail} carries the new
+     * session id (fork), the share URL (share) or the {@code provider/model}
+     * used (summarize); failures carry a human-readable {@code error} instead
+     * of an exception.
+     */
+    public record LifecycleResult(boolean success, String detail, String error) {
+
+        static LifecycleResult ok(String detail) {
+            return new LifecycleResult(true, detail, null);
+        }
+
+        static LifecycleResult failure(String error) {
+            return new LifecycleResult(false, null, error);
+        }
+    }
+
+    /**
      * Immutable snapshot: header aggregates plus the ordered message rows, or
      * an {@code errorNote} when loading failed / the history is empty.
+     * {@code shareUrl} mirrors the session's share state (null = unshared).
      */
-    public record SessionDetails(String sessionId, String title, String modelLabel, Double totalCost,
-            TokenTotals tokens, List<MessageRow> rows, String errorNote) {
+    public record SessionDetails(String sessionId, String title, String shareUrl, String modelLabel,
+            Double totalCost, TokenTotals tokens, List<MessageRow> rows, String errorNote) {
 
         public SessionDetails {
             rows = (rows == null) ? List.of() : List.copyOf(rows);

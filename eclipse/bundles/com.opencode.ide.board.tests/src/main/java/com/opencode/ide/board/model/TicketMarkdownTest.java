@@ -34,7 +34,7 @@ public class TicketMarkdownTest {
         assertTrue(doc.contains("## Acceptance criteria\n- [ ] locks work"));
         assertTrue(doc.contains("## Todos\n- [x] write codec\n- [ ] wire tools"));
         assertTrue(doc.contains("## Artifacts\n- `file` `src/Store.java` — implemented"));
-        assertTrue(doc.contains("**[2026-08-23T10:00:00Z] build:**\n\ndone, see diagram"));
+        assertTrue(doc.contains("**[2026-08-23T10:00:00.000Z] build:**\n\ndone, see diagram"));
     }
 
     @Test
@@ -71,7 +71,7 @@ public class TicketMarkdownTest {
 
         assertTrue(doc.contains("_no description_"));
         assertTrue(doc.contains("- [ ] \n"));
-        assertTrue(doc.contains("**[2026-08-23T10:00:00Z] ?:**"));
+        assertTrue(doc.contains("**[2026-08-23T10:00:00.000Z] ?:**"));
     }
 
     @Test

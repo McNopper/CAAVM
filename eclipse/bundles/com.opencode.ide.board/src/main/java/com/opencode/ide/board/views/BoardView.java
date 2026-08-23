@@ -66,6 +66,7 @@ import com.opencode.ide.board.internal.BoardPlugin;
 import com.opencode.ide.board.model.BoardModel;
 import com.opencode.ide.board.model.BoardModel.BoardMode;
 import com.opencode.ide.board.model.BoardSnapshot;
+import com.opencode.ide.board.model.CostOverview;
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.PipelineSnapshot;
 import com.opencode.ide.board.model.StageColumn;
@@ -134,6 +135,7 @@ public class BoardView extends ViewPart {
     private Combo sprintCombo;
     private Combo modeCombo;
     private Action refreshAction;
+    private Action costOverviewAction;
     private Action launchAction;
     private Action takeOverAction;
     private Action blockedOnlyAction;
@@ -651,6 +653,15 @@ public class BoardView extends ViewPart {
         };
         refreshAction.setToolTipText("Reload the board from the task store");
 
+        costOverviewAction = new Action("Cost overview") {
+            @Override
+            public void run() {
+                openCostOverview();
+            }
+        };
+        costOverviewAction.setToolTipText(
+                "Fleet cost/token actuals recorded on tickets (per sprint and per ticket)");
+
         launchAction = new Action("Launch task") {
             @Override
             public void run() {
@@ -672,6 +683,7 @@ public class BoardView extends ViewPart {
         toolbar.add(blockedOnlyAction);
         toolbar.add(stageFilterAction);
         toolbar.add(refreshAction);
+        toolbar.add(costOverviewAction);
         toolbar.add(launchAction);
         toolbar.add(takeOverAction);
     }
@@ -748,9 +760,11 @@ public class BoardView extends ViewPart {
         while (dirty.compareAndSet(true, false)) {
             BoardSnapshot snapshot = null;
             List<String> sprints = List.of();
+            CostOverview cost = null;
             try {
                 snapshot = model.refresh();
                 sprints = model.sprints();
+                cost = model.costOverview();
             } catch (RuntimeException e) {
                 logError("Board refresh failed", e);
             }
@@ -763,12 +777,13 @@ public class BoardView extends ViewPart {
             }
             BoardSnapshot toApply = snapshot;
             List<String> sprintList = sprints;
+            CostOverview costOverview = cost;
             display.asyncExec(() -> {
                 if (boardArea == null || boardArea.isDisposed()) {
                     return;
                 }
                 try {
-                    applySnapshot(toApply, sprintList);
+                    applySnapshot(toApply, sprintList, costOverview);
                 } catch (RuntimeException e) {
                     logError("Applying board snapshot failed", e);
                 }
@@ -785,7 +800,7 @@ public class BoardView extends ViewPart {
     }
 
     /** UI-thread apply of a snapshot computed in the background (mode-aware). */
-    private void applySnapshot(BoardSnapshot snapshot, List<String> sprints) {
+    private void applySnapshot(BoardSnapshot snapshot, List<String> sprints, CostOverview cost) {
         if (boardMode == BoardMode.PIPELINE) {
             applyPipelineSnapshot(snapshot);
         } else {
@@ -803,6 +818,10 @@ public class BoardView extends ViewPart {
             }
             if (goal != null && !goal.isBlank()) {
                 description.append("  \u2022  ").append(goal);
+            }
+            String spent = cost == null ? "" : cost.spentSuffix(model.sprint());
+            if (!spent.isEmpty()) {
+                description.append("  \u2022  ").append(spent);
             }
             setContentDescription(description.toString());
         }
@@ -970,6 +989,14 @@ public class BoardView extends ViewPart {
             return;
         }
         new TicketDetailsDialog(getSite().getShell(), task, repoRoot()).open();
+    }
+
+    /** "Cost overview" toolbar action: aggregates the fleet actuals comments over the whole project. */
+    private void openCostOverview() {
+        if (model == null) {
+            return;
+        }
+        new CostOverviewDialog(getSite().getShell(), model.costOverview(), model.project()).open();
     }
 
     private void launchSelected() {

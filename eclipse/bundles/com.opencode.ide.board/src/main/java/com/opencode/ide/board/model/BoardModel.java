@@ -290,6 +290,23 @@ public final class BoardModel {
         }
     }
 
+    /**
+     * Aggregates the fleet cost actuals comments over ALL tickets of the
+     * project (per ticket, per sprint, project-wide — see
+     * {@link CostOverview}). Tolerant of a missing/unreadable store: an empty
+     * overview comes back instead of an exception.
+     */
+    public CostOverview costOverview() {
+        if (!Files.isDirectory(projectDir())) {
+            return CostOverview.empty();
+        }
+        try {
+            return CostOverview.of(store.list(project, null, null, null, null));
+        } catch (RuntimeException e) {
+            return CostOverview.empty();
+        }
+    }
+
     private Map<String, List<Task>> unassignedBoard() {
         Map<String, List<Task>> out = new LinkedHashMap<>();
         for (String status : Task.VALID_STATUSES) {

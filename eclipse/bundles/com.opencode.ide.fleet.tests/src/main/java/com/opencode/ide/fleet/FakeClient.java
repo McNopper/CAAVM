@@ -77,7 +77,7 @@ final class FakeClient implements OpencodeClient {
         if (onSessionCreated != null) {
             onSessionCreated.run();
         }
-        return new Session(id, "slug", title, null, null, null, null, null);
+        return new Session(id, "slug", title, null, null, null, null, null, null);
     }
 
     @Override

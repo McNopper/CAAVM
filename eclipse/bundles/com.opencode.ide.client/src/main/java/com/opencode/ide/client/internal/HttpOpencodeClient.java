@@ -31,14 +31,21 @@ import com.opencode.ide.client.OpencodeConnectionException;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
+import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.ConfigInfo;
+import com.opencode.ide.client.model.FileDiff;
+import com.opencode.ide.client.model.FileNode;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.ProjectSummary;
 import com.opencode.ide.client.model.ProviderList;
+import com.opencode.ide.client.model.SearchMatch;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
 import com.opencode.ide.client.model.SessionTodo;
 import com.opencode.ide.client.model.SkillInfo;
+import com.opencode.ide.client.model.SymbolResult;
+import com.opencode.ide.client.model.VcsInfo;
 
 /**
  * {@link OpencodeClient} backed by {@code java.net.http.HttpClient} + Gson.
@@ -219,6 +226,206 @@ public final class HttpOpencodeClient implements OpencodeClient {
             body.add("extra", GSON.toJsonTree(extra));
         }
         request("POST", "/log", GSON.toJson(body));
+    }
+
+    // ---------- H5 surface ----------
+
+    @Override
+    public List<FileDiff> getSessionDiff(String sessionId, String messageId) throws OpencodeException {
+        String path = "/session/" + sessionId + "/diff";
+        if (messageId != null && !messageId.isBlank()) {
+            path += "?messageID=" + URLEncoder.encode(messageId, StandardCharsets.UTF_8).replace("+", "%20");
+        }
+        return getList(path, FileDiff.class);
+    }
+
+    @Override
+    public Session forkSession(String sessionId, String messageId) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        if (messageId != null && !messageId.isBlank()) {
+            body.addProperty("messageID", messageId);
+        }
+        return parseBody("POST", "/session/" + sessionId + "/fork",
+                request("POST", "/session/" + sessionId + "/fork", body.toString()), Session.class);
+    }
+
+    @Override
+    public boolean revertMessage(String sessionId, String messageId, String partId) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        if (messageId != null) {
+            body.addProperty("messageID", messageId);
+        }
+        if (partId != null) {
+            body.addProperty("partID", partId);
+        }
+        return parseBody("POST", "/session/" + sessionId + "/revert",
+                request("POST", "/session/" + sessionId + "/revert", body.toString()), Boolean.class);
+    }
+
+    @Override
+    public boolean unrevertSession(String sessionId) throws OpencodeException {
+        return parseBody("POST", "/session/" + sessionId + "/unrevert",
+                request("POST", "/session/" + sessionId + "/unrevert", null), Boolean.class);
+    }
+
+    @Override
+    public boolean summarizeSession(String sessionId, String providerId, String modelId) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        body.addProperty("providerID", providerId);
+        body.addProperty("modelID", modelId);
+        return parseBody("POST", "/session/" + sessionId + "/summarize",
+                request("POST", "/session/" + sessionId + "/summarize", body.toString()), Boolean.class);
+    }
+
+    @Override
+    public Session shareSession(String sessionId) throws OpencodeException {
+        return parseBody("POST", "/session/" + sessionId + "/share",
+                request("POST", "/session/" + sessionId + "/share", null), Session.class);
+    }
+
+    @Override
+    public Session unshareSession(String sessionId) throws OpencodeException {
+        return parseBody("DELETE", "/session/" + sessionId + "/share",
+                request("DELETE", "/session/" + sessionId + "/share", null), Session.class);
+    }
+
+    @Override
+    public boolean respondToPermission(String sessionId, String permissionId, String response, boolean remember)
+            throws OpencodeException {
+        JsonObject body = new JsonObject();
+        body.addProperty("response", response);
+        body.addProperty("remember", remember);
+        String path = "/session/" + sessionId + "/permissions/" + permissionId;
+        return parseBody("POST", path, request("POST", path, body.toString()), Boolean.class);
+    }
+
+    @Override
+    public List<CommandInfo> getCommands() throws OpencodeException {
+        return getListOrEmptyOn404("/command", CommandInfo.class);
+    }
+
+    @Override
+    public ChatEntry runCommand(String sessionId, String command, List<String> arguments) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        body.addProperty("command", command);
+        if (arguments != null && !arguments.isEmpty()) {
+            body.add("arguments", GSON.toJsonTree(arguments));
+        }
+        String path = "/session/" + sessionId + "/command";
+        return parseBody("POST", path, request("POST", path, body.toString(), Duration.ofMinutes(5)),
+                ChatEntry.class);
+    }
+
+    @Override
+    public List<ProjectSummary> getProjects() throws OpencodeException {
+        HttpResponse<String> response = send("GET", "/project", null, Duration.ofSeconds(30));
+        if (response.statusCode() == 404) {
+            return List.of();
+        }
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return List.of();
+        }
+        try {
+            // lenient: {"worktree": "...", "vcs": {"branch": "...", "repository": "..."}} entries
+            JsonElement element = JsonParser.parseString(body);
+            if (!element.isJsonArray()) {
+                return List.of();
+            }
+            List<ProjectSummary> out = new ArrayList<>();
+            for (JsonElement item : element.getAsJsonArray()) {
+                if (!item.isJsonObject()) {
+                    continue;
+                }
+                JsonObject project = item.getAsJsonObject();
+                String worktree = stringOf(project, "worktree");
+                String branch = null;
+                String repository = null;
+                if (project.has("vcs") && project.get("vcs").isJsonObject()) {
+                    JsonObject vcs = project.getAsJsonObject("vcs");
+                    branch = stringOf(vcs, "branch");
+                    repository = stringOf(vcs, "repository");
+                }
+                out.add(new ProjectSummary(worktree, branch, repository));
+            }
+            return out;
+        } catch (JsonParseException e) {
+            ClientLog.warning("opencode GET /project: malformed body; treating as empty: " + truncate(body, 120));
+            return List.of();
+        }
+    }
+
+    @Override
+    public VcsInfo getVcsInfo() throws OpencodeException {
+        HttpResponse<String> response = send("GET", "/vcs", null, Duration.ofSeconds(30));
+        if (response.statusCode() == 404) {
+            return new VcsInfo(null, null);
+        }
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return new VcsInfo(null, null);
+        }
+        try {
+            JsonObject object = JsonParser.parseString(body).getAsJsonObject();
+            return new VcsInfo(stringOf(object, "branch"), stringOf(object, "repository"));
+        } catch (JsonParseException | IllegalStateException e) {
+            ClientLog.warning("opencode GET /vcs: malformed body; treating as empty: " + truncate(body, 120));
+            return new VcsInfo(null, null);
+        }
+    }
+
+    @Override
+    public List<FileNode> listFiles(String path) throws OpencodeException {
+        String target = "/file";
+        if (path != null && !path.isBlank() && !".".equals(path)) {
+            target += "?path=" + URLEncoder.encode(path, StandardCharsets.UTF_8).replace("+", "%20");
+        }
+        return getListOrEmptyOn404(target, FileNode.class);
+    }
+
+    @Override
+    public List<SearchMatch> findText(String pattern) throws OpencodeException {
+        String target = "/find?pattern=" + URLEncoder.encode(pattern, StandardCharsets.UTF_8).replace("+", "%20");
+        return getListOrEmptyOn404(target, SearchMatch.class);
+    }
+
+    @Override
+    public List<String> findFiles(String query) throws OpencodeException {
+        String target = "/find/file?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8).replace("+", "%20");
+        HttpResponse<String> response = request("GET", target, null);
+        return parseBody("GET", target, response,
+                TypeToken.getParameterized(List.class, String.class).getType());
+    }
+
+    @Override
+    public List<SymbolResult> findSymbols(String query) throws OpencodeException {
+        String target = "/find/symbol?query=" + URLEncoder.encode(query, StandardCharsets.UTF_8).replace("+", "%20");
+        return getListOrEmptyOn404(target, SymbolResult.class);
+    }
+
+    @Override
+    public ConfigInfo patchConfig(Map<String, Object> changes) throws OpencodeException {
+        return parseBody("PATCH", "/config", request("PATCH", "/config", GSON.toJson(changes)), ConfigInfo.class);
+    }
+
+    @Override
+    public boolean tuiAction(String action, Map<String, Object> body) throws OpencodeException {
+        String path = "/tui/" + action;
+        String payload = body == null ? null : GSON.toJson(body);
+        HttpResponse<String> response = send("POST", path, payload, Duration.ofSeconds(30));
+        if (response.statusCode() >= 400) {
+            ClientLog.warning("opencode POST " + path + " returned HTTP " + response.statusCode()
+                    + " (TUI not attached?): " + truncate(response.body(), 200));
+            return false; // no TUI client attached is an expected outcome, not an error
+        }
+        return true;
+    }
+
+    private static String stringOf(JsonObject object, String member) {
+        if (object.has(member) && object.get(member).isJsonPrimitive()) {
+            return object.get(member).getAsString();
+        }
+        return null;
     }
 
     private <T> T get(String path, Class<T> type) throws OpencodeException {

@@ -5,7 +5,9 @@ package com.opencode.ide.client.model;
  *
  * <p>Modelled against opencode v1.18.x. {@code parentID} is present on child
  * sessions (e.g. a subagent spawned by another agent) and is used to nest the
- * session tree. Other fields (slug, title, cost, tokens, time) describe the run.</p>
+ * session tree. Other fields (slug, title, cost, tokens, time) describe the
+ * run. {@code share} is only non-{@code null} after {@code POST /session/:id/share}
+ * published a read-only link.</p>
  */
 public record Session(
         String id,
@@ -15,7 +17,8 @@ public record Session(
         String parentID,
         Time time,
         Double cost,
-        Tokens tokens) {
+        Tokens tokens,
+        Share share) {
 
     /** Epoch millis. */
     public record Time(long created, long updated) {
@@ -27,5 +30,9 @@ public record Session(
 
     /** Cache hit (read) vs. fill (write) token counts. */
     public record Cache(long read, long write) {
+    }
+
+    /** Read-only share link ({@code null} unless the session is shared). */
+    public record Share(String url) {
     }
 }

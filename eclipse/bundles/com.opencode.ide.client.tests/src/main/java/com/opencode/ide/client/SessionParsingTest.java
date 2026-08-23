@@ -40,6 +40,15 @@ public class SessionParsingTest {
             }
             """;
 
+    /** Wire shape of {@code POST /session/:id/share}: nested share object with the URL. */
+    private static final String SHARED_SESSION = """
+            {
+              "id": "ses_shared",
+              "title": "Share me",
+              "share": { "url": "https://opencode.ai/s/abc123" }
+            }
+            """;
+
     @Test
     public void parentSessionMaps() {
         Session s = GSON.fromJson(PARENT_SESSION, Session.class);
@@ -63,6 +72,19 @@ public class SessionParsingTest {
     }
 
     @Test
+    public void sharedSessionMapsShareUrl() {
+        Session s = GSON.fromJson(SHARED_SESSION, Session.class);
+        assertEquals("ses_shared", s.id());
+        assertEquals("https://opencode.ai/s/abc123", s.share().url());
+    }
+
+    @Test
+    public void unsharedSessionsHaveNoShareObject() {
+        assertNull("plain session: no share", GSON.fromJson(PARENT_SESSION, Session.class).share());
+        assertNull("child session: no share", GSON.fromJson(CHILD_SESSION, Session.class).share());
+    }
+
+    @Test
     public void sessionStatusMaps() {
         SessionStatus status = GSON.fromJson("{\"type\":\"busy\"}", SessionStatus.class);
         assertEquals("busy", status.type());
@@ -77,5 +99,6 @@ public class SessionParsingTest {
         assertNull(s.title());
         assertNull(s.time());
         assertNull(s.tokens());
+        assertNull(s.share());
     }
 }
