@@ -291,6 +291,39 @@ check("__stopStream is idempotent", streamNode.querySelectorAll(".cursor").lengt
 const rs1 = exec('window.__stopStream("{\\"mid\\":\\"no_such_bubble\\"}")');
 check("__stopStream tolerates an unknown mid", rs1 === true);
 
+// stopStream finalizes raw streamed markdown: a bubble that never gets the
+// authoritative render (intermediate tool-round message, empty POST reply)
+// must not keep raw pipes / a blinking cursor — its accumulated raw text is
+// rendered as markdown when the stream stops
+exec('window.__startAssistant("{\\"mid\\":\\"msg_table\\"}")');
+exec('window.__appendDelta("{\\"mid\\":\\"msg_table\\",\\"text\\":\\"| a | b |\\\\n|---|---|\\\\n| 1 | 2 |\\"}")');
+const tableNode = chatEl.querySelector('.msg.assistant[data-mid="msg_table"]');
+check("__appendDelta streams the raw table", !!tableNode && textOf(tableNode).includes("| a | b |"));
+exec('window.__stopStream("{\\"mid\\":\\"msg_table\\"}")');
+check("__stopStream finalizes the raw table into a rendered table",
+  !!tableNode && tableNode.querySelector(".body").innerHTML.includes("<table>"),
+  tableNode ? tableNode.querySelector(".body").innerHTML.slice(0, 60) : "no node");
+check("__stopStream leaves no cursor on the finalized bubble",
+  !!tableNode && tableNode.querySelectorAll(".cursor").length === 0);
+
+// finalize must run the FULL render pipeline, not just plain markdown:
+// streamed math -> KaTeX, streamed mermaid fence -> diagram pass
+exec('window.__startAssistant("{\\"mid\\":\\"msg_mix\\"}")');
+exec("window.__appendDelta(" + JSON.stringify(JSON.stringify({ mid: "msg_mix", text: "### Result\n\n| k | v |\n|---|---|\n| 1 | $c^2$ |" })) + ")");
+exec("window.__appendDelta(" + JSON.stringify(JSON.stringify({ mid: "msg_mix", text: "\n\n```mermaid\ngraph TD; A-->B;\n```" })) + ")");
+const mixNode = chatEl.querySelector('.msg.assistant[data-mid="msg_mix"]');
+exec('window.__stopStream("{\\"mid\\":\\"msg_mix\\"}")');
+check("finalized stream renders the heading",
+  !!mixNode && mixNode.querySelector(".body").innerHTML.includes("<h3>Result</h3>"));
+check("finalized stream renders the table",
+  !!mixNode && mixNode.querySelector(".body").innerHTML.includes("<table>"));
+check("finalized stream renders inline math via KaTeX",
+  !!mixNode && !!mixNode.querySelector(".katex"),
+  mixNode ? JSON.stringify(textOf(mixNode)).slice(0, 60) : "no node");
+check("finalized stream runs the mermaid pass (fence replaced, no copy button on it)",
+  !!mixNode && mixNode.querySelectorAll("pre code.language-mermaid").length === 0
+    && mixNode.querySelectorAll(".copy-btn").length === 0);
+
 // final authoritative render (markdown + meta)
 const finalScript = 'window.__setAssistantText("{\\"mid\\":\\"msg_1\\",\\"text\\":\\"# Done\\\\n\\\\n`code` and $x^2$\\",'
   + '\\"reasoning\\":\\"\\",\\"meta\\":\\"anthropic/claude\\"}")';

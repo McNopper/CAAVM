@@ -223,7 +223,12 @@ public class ChatSessionControllerTest {
         assertTrue(renderer.deltas.isEmpty());
 
         controller.send(new ChatSessionController.OutgoingMessage(
-                null, "prov", "m1", null, null, "hi"));
+                null, "prov", "m1", null, null, "hi")); // creates ses_1, completes
+        // deltas render while a send is in flight (hold the job so the send
+        // cannot settle first — a delta after it settled is a late orphan)
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hi again"));
         connection.fire(deltaEvent(
                 "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_1\",\"field\":\"text\",\"delta\":\"chunk\"}"));
         assertEquals(List.of("start:msg_1"), renderer.assistants.stream()
@@ -239,6 +244,7 @@ public class ChatSessionControllerTest {
                 "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_1\",\"field\":\"reasoning\",\"delta\":\"x\"}"));
         connection.fire(deltaEvent("{\"sessionID\":\"ses_1\",\"field\":\"text\",\"delta\":\"x\"}"));
         assertEquals(1, renderer.deltas.size());
+        host.queuedBackground.forEach(Runnable::run); // settle the held send
 
         controller.dispose();
         assertTrue(connection.listeners.isEmpty());
@@ -435,6 +441,68 @@ public class ChatSessionControllerTest {
                 renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_stream")));
         assertTrue(renderer.notices.contains("⏹ Aborted by user."));
         host.queuedBackground.clear(); // never completes; nothing more to assert
+    }
+
+    @Test
+    public void toolRoundSecondMessageStopsCursorAndFinalRenderTargetsLastBubble() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "again"));
+        // tool round: the assistant streams TWO messages (think -> tool -> answer);
+        // both bubbles must lose their cursor, the reply lands in the LAST one
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_a\",\"field\":\"text\",\"delta\":\"thinking\"}"));
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_b\",\"field\":\"text\",\"delta\":\"answer\"}"));
+        connection.client.reply = entry("msg_reply", "assistant", "done");
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertTrue("final render must target the last streamed mid, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.startsWith("final:msg_b:done")));
+        assertTrue("first streamed bubble must also be stopped, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_a")));
+        assertTrue(renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_b")));
+    }
+
+    @Test
+    public void emptyReplyKeepsStreamedBubblesAndStopsCursors() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "again"));
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_stream\",\"field\":\"text\",\"delta\":\"partial table\"}"));
+        // observed with tool runs: the POST reply carries no authoritative text;
+        // wiping the bubble would lose the streamed answer, so it must be kept
+        // (the page finalizes the raw stream as markdown on cursor stop)
+        connection.client.reply = entry("msg_reply", "assistant", "");
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertTrue("cursor stop expected, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("stop:msg_stream")));
+        assertFalse("empty reply must not wipe the streamed bubble, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.startsWith("final:msg_stream")));
+    }
+
+    @Test
+    public void lateDeltaAfterSendSettledIsIgnored() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                "build", "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        // a late SSE event for an unknown mid must not spawn an orphan bubble
+        // (nobody would ever stop its blinking cursor)
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_late\",\"field\":\"text\",\"delta\":\"x\"}"));
+
+        assertFalse("late delta must not create a bubble, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.equals("start:msg_late")));
+        assertTrue("late delta must not stream text, got: " + renderer.deltas,
+                renderer.deltas.stream().noneMatch(d -> d.startsWith("msg_late:")));
     }
 
     private static OpencodeEvent deltaEvent(String propertiesJson) {

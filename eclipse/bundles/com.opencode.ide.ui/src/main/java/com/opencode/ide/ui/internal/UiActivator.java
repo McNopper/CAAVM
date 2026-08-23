@@ -23,6 +23,9 @@ public class UiActivator extends AbstractUIPlugin {
     public static final String ICON_AGENT_BUSY = "icons/agent-busy.png";
     public static final String ICON_PROVIDERS = "icons/providers.png";
     public static final String ICON_MODEL = "icons/model.png";
+    public static final String ICON_MCP = "icons/mcp.png";
+    public static final String ICON_SKILL = "icons/skill.png";
+    public static final String ICON_FILE = "icons/file.png";
 
     private static UiActivator instance;
 

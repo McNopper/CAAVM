@@ -406,15 +406,28 @@ window.__setAssistantText = guard("__setAssistantText", function (json) {
 });
 
 // Stops the streaming cursor of one bubble: the host calls this when the send
-// completed, failed or was aborted. Harmless when the bubble or cursor is
-// absent (idempotent), and never touches the streamed text itself.
+// completed, failed or was aborted. If the bubble is still in raw streaming
+// form (no authoritative render arrived — e.g. an intermediate tool-round
+// message, or the POST reply came back empty), the accumulated raw text is
+// finalized into rendered markdown, so a streamed table never stays raw ASCII.
+// Harmless when the bubble or cursor is absent (idempotent); an authoritative
+// __setAssistantText afterwards still replaces the whole body.
 window.__stopStream = guard("__stopStream", function (json) {
   const p = payload(json);
   const node = findAssistant(p.mid);
-  if (node) {
-    node.querySelectorAll(".cursor").forEach(c => c.remove());
+  if (!node) return true;
+  if (!node.classList.contains("stream-done")) {
+    const raw = node.querySelector(".stream-raw");
+    const body = node.querySelector(".body");
+    if (raw && body) {
+      const text = raw.textContent; // the cursor span carries no text
+      body.innerHTML = "";
+      renderMarkdown(body, text);
+      report("stream finalized (" + text.length + " chars)");
+    }
     node.classList.add("stream-done");
   }
+  node.querySelectorAll(".cursor").forEach(c => c.remove());
   return true;
 });
 

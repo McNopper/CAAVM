@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.opencode.ide.client.ChatRequest;
 import com.opencode.ide.client.DefaultModels;
@@ -103,8 +104,12 @@ public final class ChatSessionController {
     private volatile String sessionId;
     private volatile boolean sending;
     private volatile String[] defaultModelParts;
-    /** mid of the bubble the current send streams into (first delta wins); the final render must target it. */
-    private volatile String streamingMid;
+    /**
+     * Every mid that streamed a bubble during the current send, in arrival
+     * order (a tool round produces several assistant messages). The last one
+     * is the final-render target; all of them must get a cursor stop.
+     */
+    private final List<String> streamedMids = new CopyOnWriteArrayList<>();
     private OpencodeEventListener eventListener;
 
     public ChatSessionController(ChatServerConnection connection, Renderer renderer, Host host) {
@@ -136,8 +141,16 @@ public final class ChatSessionController {
                 if (!"text".equals(field)) {
                     return;
                 }
-                if (streamingMid == null) {
-                    streamingMid = messageId;
+                // A delta for an unknown mid while nothing is in flight is a
+                // late event after the send settled (or another client's
+                // message): rendering it would orphan a bubble whose cursor
+                // nobody ever stops. Continuations of known bubbles are fine.
+                boolean known = streamedMids.contains(messageId);
+                if (!sending && !known) {
+                    return;
+                }
+                if (!known) {
+                    streamedMids.add(messageId);
                 }
                 host.runOnUi(() -> {
                     renderer.startAssistant(messageId);
@@ -255,7 +268,7 @@ public final class ChatSessionController {
             return;
         }
         sending = true;
-        streamingMid = null;
+        streamedMids.clear();
         try {
             host.sendingChanged(true);
             host.info("send: begin (" + message.text().length() + " chars)");
@@ -300,32 +313,44 @@ public final class ChatSessionController {
             ChatRequest request = new ChatRequest(sid, message.agent(), providerId, modelId,
                     message.variant(), message.system(), message.text());
             ChatEntry reply = connection.getClient().sendMessage(request);
-            // The final render MUST target the bubble the deltas streamed into — the POST
+            // The final render MUST target a bubble the deltas streamed into — the POST
             // response id and the SSE messageID can differ across server versions, and a
             // mismatched id would orphan the streaming bubble with its blinking cursor.
-            String streamed = streamingMid;
-            String mid = streamed != null ? streamed
-                    : ((reply != null && reply.info() != null) ? reply.info().id() : "assistant");
-            String finalText = (reply != null) ? reply.text() : "";
-            String reasoning = (reply != null) ? reply.reasoning() : "";
-            String meta = metaFor(reply);
-            List<ToolLine> tools = toolLinesOf(reply);
-            host.runOnUi(() ->
-                    renderer.setAssistantText(mid, finalText, reasoning, meta, tools));
+            // With tool rounds there are several streamed bubbles: the reply is the LAST.
+            String lastStreamed = streamedMids.isEmpty() ? null
+                    : streamedMids.get(streamedMids.size() - 1);
+            boolean streamedContent = !streamedMids.isEmpty();
+            boolean replyEmpty = reply == null || reply.text() == null || reply.text().isEmpty();
+            if (streamedContent && replyEmpty) {
+                // The server returned no authoritative text (observed when the
+                // run used tools): keep the streamed bubbles — the cursor stop
+                // finalizes their raw text into rendered markdown on the page.
+                host.info("send job: empty reply, keeping " + streamedMids.size() + " streamed bubble(s)");
+            } else {
+                String mid = lastStreamed != null ? lastStreamed
+                        : ((reply != null && reply.info() != null) ? reply.info().id() : "assistant");
+                String finalText = (reply != null) ? reply.text() : "";
+                String reasoning = (reply != null) ? reply.reasoning() : "";
+                String meta = metaFor(reply);
+                List<ToolLine> tools = toolLinesOf(reply);
+                host.runOnUi(() ->
+                        renderer.setAssistantText(mid, finalText, reasoning, meta, tools));
+            }
         } catch (OpencodeException e) {
             String failure = e.getMessage();
             host.runOnUi(() -> renderer.notice("⚠ Send failed: " + failure));
         } finally {
-            String streamed = streamingMid;
-            streamingMid = null;
-            if (streamed != null) {
+            // Flip the flag first (volatile): any SSE delta arriving after this
+            // sees sending == false and must not spawn an orphan bubble.
+            sending = false;
+            // every streamed bubble gets its cursor stopped (first, middle, last)
+            List<String> streamed = List.copyOf(streamedMids);
+            streamedMids.clear();
+            for (String mid : streamed) {
                 // belt and braces: even on failure/abort the cursor must stop
-                host.runOnUi(() -> renderer.stopStream(streamed));
+                host.runOnUi(() -> renderer.stopStream(mid));
             }
-            host.runOnUi(() -> {
-                sending = false;
-                host.sendingChanged(false);
-            });
+            host.runOnUi(() -> host.sendingChanged(false));
         }
     }
 
@@ -343,9 +368,8 @@ public final class ChatSessionController {
         if (!sending || sid == null) {
             return;
         }
-        String streamed = streamingMid;
-        if (streamed != null) {
-            renderer.stopStream(streamed); // the interrupted bubble must not keep blinking
+        for (String mid : List.copyOf(streamedMids)) {
+            renderer.stopStream(mid); // no interrupted bubble may keep blinking
         }
         renderer.notice("⏹ Aborted by user.");
         host.runInBackground("Aborting opencode chat " + sid, () -> {

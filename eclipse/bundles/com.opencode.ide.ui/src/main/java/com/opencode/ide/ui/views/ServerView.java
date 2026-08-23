@@ -741,6 +741,15 @@ public class ServerView extends ViewPart implements Refreshable {
         if (element instanceof Agent) {
             return UiActivator.image(UiActivator.ICON_AGENT);
         }
+        if (element instanceof McpServerInfo) {
+            return UiActivator.image(UiActivator.ICON_MCP);
+        }
+        if (element instanceof SkillInfo) {
+            return UiActivator.image(UiActivator.ICON_SKILL);
+        }
+        if (element instanceof FileActivity) {
+            return UiActivator.image(UiActivator.ICON_FILE);
+        }
         return null;
     }
 

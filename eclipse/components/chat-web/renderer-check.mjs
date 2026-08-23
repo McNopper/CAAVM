@@ -92,7 +92,10 @@ try {
   check("bridge calls are guarded and report errors", js.includes("function guard("));
   // tool parts (compact tool-call lines on assistant messages)
   check("tool parts render as compact lines", js.includes("renderToolLines") && js.includes("tool-line"));
-  check("tool lines are built without innerHTML (XSS)", /renderToolLines[\s\S]*?insertBefore/.test(js)
+  // cursor-stop finalization: an orphaned stream bubble must not keep raw
+  // markdown (pipes) or a blinking cursor once the host stops its stream
+  check("stopStream finalizes streamed markdown",
+    /__stopStream[\s\S]*?renderMarkdown/.test(js) && js.includes('"stream-done"'));  check("tool lines are built without innerHTML (XSS)", /renderToolLines[\s\S]*?insertBefore/.test(js)
     && !/line\.innerHTML/.test(js));
   check("chat.html styles tool lines per state",
     html.includes(".tool-line.tool-running") && html.includes(".tool-line.tool-completed")
