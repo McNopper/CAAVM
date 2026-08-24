@@ -12,6 +12,9 @@ import java.nio.file.Path;
  *                     server default
  * @param model        {@code provider/modelId}, or {@code null} for the server
  *                     default model
+ * @param bootstrap    optional pre-prompt shell command in the new session
+ *                     (see {@link Bootstrap}; best-effort, never gates the
+ *                     launch), or {@code null} for none
  * @param baseWorktree the main worktree to branch from (the repo root)
  */
 public record FleetTask(
@@ -20,5 +23,12 @@ public record FleetTask(
         String prompt,
         String agent,
         String model,
+        Bootstrap bootstrap,
         Path baseWorktree) {
+
+    /** No-bootstrap convenience: same as passing a {@code null} bootstrap. */
+    public FleetTask(String taskId, String title, String prompt, String agent, String model,
+            Path baseWorktree) {
+        this(taskId, title, prompt, agent, model, null, baseWorktree);
+    }
 }

@@ -14,6 +14,7 @@ import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.ConfigInfo;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.ProjectSummary;
 import com.opencode.ide.client.model.ProviderList;
@@ -24,10 +25,10 @@ import com.opencode.ide.client.model.VcsInfo;
 /**
  * Unit tests for the SWT-free {@link ProjectVcs} project/VCS header model of
  * the Server view: cwd→project resolution with the first-project fallback,
- * the lenient merge with {@code GET /vcs}, graceful degradation to
+ * the lenient merge with {@code GET /vcs}, dirtiness from
+ * {@code GET /file/status}, graceful degradation to
  * {@link ProjectVcs#UNKNOWN}, and the {@code summary()}/{@code tooltip()}
- * renderings (dirty/changed-count rendering via the pure {@code of} factory —
- * the committed client surface carries no dirty indicator yet).
+ * renderings.
  */
 public class ProjectVcsTest {
 
@@ -37,12 +38,14 @@ public class ProjectVcsTest {
         return new ProjectSummary(worktree, branch, repository);
     }
 
-    /** Only the project/VCS endpoints work; everything else is never touched. */
+    /** Only the project/VCS/status endpoints work; everything else is never touched. */
     private static final class FakeClient implements OpencodeClient {
         List<ProjectSummary> projects = List.of();
         VcsInfo vcs = new VcsInfo(null, null);
+        List<FileStatus> status = List.of();
         boolean throwOnProjects;
         boolean throwOnVcs;
+        boolean throwOnStatus;
 
         @Override
         public List<ProjectSummary> getProjects() throws OpencodeException {
@@ -58,6 +61,14 @@ public class ProjectVcsTest {
                 throw new OpencodeException("vcs endpoint gone");
             }
             return vcs;
+        }
+
+        @Override
+        public List<FileStatus> getFileStatus() throws OpencodeException {
+            if (throwOnStatus) {
+                throw new OpencodeException("status endpoint gone");
+            }
+            return status;
         }
 
         @Override
@@ -229,7 +240,70 @@ public class ProjectVcsTest {
         assertEquals("", ProjectVcs.UNKNOWN.tooltip());
     }
 
-    // ---------- renderings beyond today's client surface (pure factory) ----------
+    // ---------- dirty via GET /file/status ----------
+
+    @Test
+    public void nonEmptyFileStatusRendersDirty() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.status = List.of(new FileStatus("a.txt", "modified", 1, 1));
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch main · dirty", vcs.summary());
+    }
+
+    @Test
+    public void emptyFileStatusStaysCleanWithoutChangesLine() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.status = List.of();
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch main", vcs.summary());
+        assertEquals("Project: /w/foo\nBranch: main", vcs.tooltip());
+    }
+
+    @Test
+    public void nullFileStatusListStaysClean() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.status = null;
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch main", vcs.summary());
+    }
+
+    @Test
+    public void failingStatusEndpointKeepsProjectBranchAndNoDirty() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.throwOnStatus = true;
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch main", vcs.summary());
+        assertEquals("Project: /w/foo\nBranch: main", vcs.tooltip());
+    }
+
+    @Test
+    public void tooltipCountsChangedFilesFromStatusSize() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.status = List.of(
+                new FileStatus("a.txt", "modified", 1, 1),
+                new FileStatus("b.txt", "added", 2, 0),
+                new FileStatus("c.txt", "deleted", 0, 3));
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("Project: /w/foo\nBranch: main\nChanges: 3", vcs.tooltip());
+        assertEquals("foo · branch main · dirty", vcs.summary());
+    }
+
+    // ---------- renderings via the pure factory ----------
 
     @Test
     public void dirtyRendersSuffix() {

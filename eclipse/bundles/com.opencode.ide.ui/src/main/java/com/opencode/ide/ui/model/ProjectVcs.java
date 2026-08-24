@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.ProjectSummary;
 import com.opencode.ide.client.model.VcsInfo;
 
@@ -13,15 +14,15 @@ import com.opencode.ide.client.model.VcsInfo;
  * remote) and its renderings — the one-line {@link #summary()} for the view's
  * description slot and the multi-line {@link #tooltip()} for the view title.
  *
- * <p>{@link #load(OpencodeClient, String)} is lenient by design: the committed
- * client surface ({@code GET /project} + {@code GET /vcs}) carries neither a
- * dirty indicator nor changed-file counts, so {@code load} always passes
- * {@code dirty=false} / {@code changedFiles=-1}; any absent endpoint, empty
- * list, blank field or transport failure degrades to {@link #UNKNOWN} — never
- * {@code null}, never an exception — so the header always renders. The pure
- * {@link #of} factory exists for tests and a future richer client surface:
- * dirty state and changed-file counts render as soon as they are passed
- * in.</p>
+ * <p>{@link #load(OpencodeClient, String)} is lenient by design: it resolves
+ * the project via {@code GET /project}, merges it with {@code GET /vcs} and
+ * adds dirtiness from {@code GET /file/status} (a non-empty list means dirty,
+ * its size the changed-file count); any absent endpoint, empty list, blank
+ * field or transport failure degrades — never {@code null}, never an
+ * exception — so the header always renders (a failed status call keeps the
+ * project/branch and renders clean with an unknown count). The pure {@link #of}
+ * factory exists for tests and hand-built instances: dirty state and
+ * changed-file counts render as soon as they are passed in.</p>
  */
 public final class ProjectVcs {
 
@@ -52,8 +53,11 @@ public final class ProjectVcs {
      * worktree equals {@code cwd} (ignoring trailing separators), the first
      * project as the fallback (also for a null/blank {@code cwd}), with the
      * branch/repository of the project record preferred over {@code GET /vcs}.
-     * Absent data — no projects, no VCS, transport errors, or no derivable
-     * project name — degrades to {@link #UNKNOWN}.
+     * Dirtiness and the changed-file count come from {@code GET /file/status}
+     * (non-empty ⇒ dirty, size ⇒ count); its failure or an empty list renders
+     * clean with an unknown count. Absent data — no projects, no VCS,
+     * transport errors, or no derivable project name — degrades to
+     * {@link #UNKNOWN}.
      */
     public static ProjectVcs load(OpencodeClient client, String cwd) {
         if (client == null) {
@@ -61,6 +65,7 @@ public final class ProjectVcs {
         }
         ProjectSummary project = findProject(projectsOf(client), cwd);
         VcsInfo vcs = vcsOf(client);
+        List<FileStatus> status = fileStatusOf(client);
         String worktree = project == null ? null : blankToNull(project.worktree());
         String projectPath = worktree != null ? worktree : blankToNull(cwd);
         String name = nameOf(projectPath);
@@ -71,14 +76,15 @@ public final class ProjectVcs {
                 vcs == null ? null : vcs.branch());
         String repository = firstNonBlank(project == null ? null : project.repository(),
                 vcs == null ? null : vcs.repository());
-        return new ProjectVcs(name, projectPath, worktree, branch, repository, false, -1);
+        int changedFiles = status == null || status.isEmpty() ? -1 : status.size();
+        return new ProjectVcs(name, projectPath, worktree, branch, repository, changedFiles > 0, changedFiles);
     }
 
     /**
      * The pure factory behind every non-unknown instance (rendering path for
-     * tests and a future client surface carrying dirty state or change
-     * counts): derives the project name from {@code projectPath}; a path with
-     * no derivable name degrades to {@link #UNKNOWN}.
+     * tests and hand-built instances): derives the project name from
+     * {@code projectPath}; a path with no derivable name degrades to
+     * {@link #UNKNOWN}.
      */
     public static ProjectVcs of(String projectPath, String worktree, String branch,
             String repository, boolean dirty, int changedFiles) {
@@ -89,6 +95,11 @@ public final class ProjectVcs {
         }
         return new ProjectVcs(name, path, blankToNull(worktree), blankToNull(branch),
                 blankToNull(repository), dirty, changedFiles);
+    }
+
+    /** The resolved project directory (the project's worktree, else the cwd); {@code null} when unknown. */
+    public String projectPath() {
+        return projectPath;
     }
 
     /**
@@ -147,6 +158,14 @@ public final class ProjectVcs {
         }
     }
 
+    private static List<FileStatus> fileStatusOf(OpencodeClient client) {
+        try {
+            return client.getFileStatus();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** The project whose worktree equals {@code cwd} (ignoring trailing separators); the first project as the fallback. */
     private static ProjectSummary findProject(List<ProjectSummary> projects, String cwd) {
         if (projects.isEmpty()) {
@@ -163,7 +182,8 @@ public final class ProjectVcs {
         return projects.get(0);
     }
 
-    private static String trimSeparators(String path) {
+    /** The given path without surrounding whitespace and trailing separators; {@code null} when nothing remains. */
+    static String trimSeparators(String path) {
         if (path == null) {
             return null;
         }

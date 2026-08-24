@@ -20,6 +20,7 @@ import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
 import com.opencode.ide.client.model.SessionTodo;
 import com.opencode.ide.client.McpServerConfig;
+import com.opencode.ide.client.model.ShellResult;
 
 /**
  * In-memory fake of {@link OpencodeClient} for the fleet tests (no HTTP).
@@ -31,6 +32,10 @@ final class FakeClient implements OpencodeClient {
     final List<String> createdTitles = new ArrayList<>();
     final List<Path> sessionDirectories = new ArrayList<>();
     final List<ChatRequest> sentRequests = new ArrayList<>();
+    /** {@code sessionId|agent|command} of every {@link #runShell} attempt, failing ones included. */
+    final List<String> shellCalls = new ArrayList<>();
+    /** Cross-call order log ({@code shell <sid>} / {@code message <sid>}) - pins the bootstrap before the prompt. */
+    final List<String> callLog = new ArrayList<>();
     final Map<String, List<ChatEntry>> messagesBySession = new HashMap<>();
     /** Served by {@link #getSessionTodos(String)} for every session (settable). */
     final List<SessionTodo> sessionTodos = new ArrayList<>();
@@ -40,6 +45,12 @@ final class FakeClient implements OpencodeClient {
     boolean failSessionCreation;
     /** When set, {@link #getMessages(String)} fails - used to prove telemetry is best-effort. */
     boolean failGetMessages;
+    /** Served by {@link #runShell} (settable). */
+    ShellResult shellResult = new ShellResult("msg_shell", null, null, "completed", "bootstrap output");
+    /** When set, {@link #runShell} throws {@link OpencodeException} - proves the bootstrap is best-effort. */
+    boolean failRunShell;
+    /** When set, {@link #runShell} throws {@link IllegalStateException} - a runtime failure must not gate either. */
+    boolean failRunShellRuntime;
     /** Optional hook, invoked after each successful session creation. */
     Runnable onSessionCreated;
     /** Optional hook, invoked inside sendMessage (blocks the send while it runs). */
@@ -107,6 +118,7 @@ final class FakeClient implements OpencodeClient {
         if (blockOnSend != null) {
             blockOnSend.run();
         }
+        callLog.add("message " + request.sessionId());
         sentRequests.add(request);
         List<ChatEntry> entries = messagesBySession.get(request.sessionId());
         entries.add(entry(request.sessionId(), "user", request.text()));
@@ -114,6 +126,19 @@ final class FakeClient implements OpencodeClient {
             entries.add(entry(request.sessionId(), "assistant", replyOnSend));
         }
         return entries.get(entries.size() - 1);
+    }
+
+    @Override
+    public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
+        shellCalls.add(sessionId + "|" + agent + "|" + command);
+        callLog.add("shell " + sessionId);
+        if (failRunShell) {
+            throw new OpencodeException("shell failed");
+        }
+        if (failRunShellRuntime) {
+            throw new IllegalStateException("shell boom");
+        }
+        return shellResult;
     }
 
     @Override

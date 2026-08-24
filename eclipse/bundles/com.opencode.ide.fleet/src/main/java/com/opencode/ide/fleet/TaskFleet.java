@@ -126,6 +126,11 @@ public final class TaskFleet {
         return launch(project, taskId, baseWorktree, DEFAULT_TIMEOUT);
     }
 
+    /** {@link #launch(String, String, Path, Duration, Bootstrap)} without a bootstrap. */
+    public FleetJob launch(String project, String taskId, Path baseWorktree, Duration timeout) {
+        return launch(project, taskId, baseWorktree, timeout, null);
+    }
+
     /**
      * Launches one ticket end-to-end: pre-claim, worktree + session + prompt
      * (via the {@link FleetRunner}), await completion, merge back, and store
@@ -135,25 +140,30 @@ public final class TaskFleet {
      * @param taskId      the ticket id
      * @param baseWorktree the main worktree to branch from (the repo root)
      * @param timeout     how long to await the agent session
+     * @param bootstrap   optional pre-prompt shell command in the new session
+     *                    (best-effort, never gates the launch; {@code null} or
+     *                    a blank command means none - see {@link Bootstrap})
      * @return the final job: {@code MERGED} on success, or {@code FAILED}
      *         with the ticket blocked (submit failure, timeout, merge
      *         conflict - the worktree is kept for post-mortem in all cases)
      * @throws IllegalStateException if the ticket is blocked, already done, or
      *         already has a fleet job in flight
      */
-    public FleetJob launch(String project, String taskId, Path baseWorktree, Duration timeout) {
+    public FleetJob launch(String project, String taskId, Path baseWorktree, Duration timeout,
+            Bootstrap bootstrap) {
         if (!inFlight.add(taskId)) {
             throw new IllegalStateException(
                     "ticket " + taskId + " already has a fleet job in flight (one launch per ticket at a time)");
         }
         try {
-            return launchGuarded(project, taskId, baseWorktree, timeout);
+            return launchGuarded(project, taskId, baseWorktree, timeout, bootstrap);
         } finally {
             inFlight.remove(taskId);
         }
     }
 
-    private FleetJob launchGuarded(String project, String taskId, Path baseWorktree, Duration timeout) {
+    private FleetJob launchGuarded(String project, String taskId, Path baseWorktree, Duration timeout,
+            Bootstrap bootstrap) {
         Task ticket = store.get(project, taskId);
         if (ticket.blocked) {
             throw new IllegalStateException(
@@ -177,6 +187,7 @@ public final class TaskFleet {
                 SelfClaimPrompt.forTicket(ticket).project(project).build(),
                 roleAgents.agentFor(ticket.role),
                 null,
+                bootstrap,
                 baseWorktree);
 
         FleetJob job = runner.submit(task);

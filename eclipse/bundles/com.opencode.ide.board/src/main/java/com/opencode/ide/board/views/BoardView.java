@@ -2,6 +2,8 @@ package com.opencode.ide.board.views;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -70,6 +72,7 @@ import com.opencode.ide.board.model.BoardModel;
 import com.opencode.ide.board.model.BoardModel.BoardMode;
 import com.opencode.ide.board.model.BoardSnapshot;
 import com.opencode.ide.board.model.CostOverview;
+import com.opencode.ide.board.model.DispatchScheduler;
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.PipelineSnapshot;
 import com.opencode.ide.board.model.StageColumn;
@@ -90,7 +93,8 @@ import com.opencode.ide.tasks.VStages;
  * settings), the sprint selector, the "Group by" layout choice (None = the
  * flat five-column status kanban, Pipeline = the ten V-model stage columns
  * plus a trailing untracked group; persisted too), a blocked-only toggle,
- * and Refresh / Launch task / Auto-dispatch / Take over. The board refreshes
+ * and Refresh / Launch task / Auto-dispatch / Auto (the background loop) /
+ * Take over. The board refreshes
  * live via {@link TaskStoreWatcher} on {@code <root>/<project>} and survives
  * a missing store (notice instead of exception, polling continues).
  *
@@ -129,10 +133,15 @@ public class BoardView extends ViewPart {
      */
     private static final AutoDispatch AUTO_DISPATCH = AutoDispatch.of(4, 0, true);
 
+    /** The background loop's tick period (H6 piece 4; calibrated later). */
+    private static final Duration AUTO_DISPATCH_PERIOD = Duration.ofSeconds(30);
+
     private BoardModel model;
     private TaskStoreWatcher watcher;
     /** Assigned in createPartControl — null-checked before every use. */
     private FleetLauncher launcher;
+    /** The H6 background dispatch loop while "Auto" is on; null otherwise. */
+    private DispatchScheduler dispatchScheduler;
 
     private final Map<String, ColumnUi> columns = new LinkedHashMap<>();
     private final List<PipelineColumnUi> pipelineColumns = new ArrayList<>();
@@ -149,6 +158,7 @@ public class BoardView extends ViewPart {
     private Action costOverviewAction;
     private Action launchAction;
     private Action autoDispatchAction;
+    private Action autoLoopAction;
     private Action takeOverAction;
     private Action blockedOnlyAction;
     private Action stageFilterAction;
@@ -699,6 +709,15 @@ public class BoardView extends ViewPart {
         autoDispatchAction.setToolTipText(
                 "Plan over the current sprint (readiness + cost budget) and launch every admitted ticket as a fleet agent");
 
+        autoLoopAction = new Action("Auto \u25B6", Action.AS_CHECK_BOX) {
+            @Override
+            public void run() {
+                toggleDispatchLoop();
+            }
+        };
+        autoLoopAction.setToolTipText("Background auto-dispatch: re-plans the current sprint every 30s and "
+                + "launches admitted tickets until it drains (stops on uncheck or view close)");
+
         takeOverAction = new Action("Take over") {
             @Override
             public void run() {
@@ -715,6 +734,7 @@ public class BoardView extends ViewPart {
         toolbar.add(costOverviewAction);
         toolbar.add(launchAction);
         toolbar.add(autoDispatchAction);
+        toolbar.add(autoLoopAction);
         toolbar.add(takeOverAction);
     }
 
@@ -1063,14 +1083,8 @@ public class BoardView extends ViewPart {
             return;
         }
         Map<String, StageReadiness.Readiness> readiness = StageReadiness.evaluate(model.projectTasks());
-        Set<String> running = new LinkedHashSet<>();
-        for (FleetJobHandle job : FleetJobsModel.getDefault().jobs()) {
-            if (job.state() == FleetJobHandle.State.RUNNING && job.taskId() != null) {
-                running.add(job.taskId());
-            }
-        }
         AutoDispatch.DispatchPlan plan = AUTO_DISPATCH.plan(
-                model.sprintTasks(), readiness, model.costOverview(), running);
+                model.sprintTasks(), readiness, model.costOverview(), runningTaskIds());
         for (String id : plan.launch()) {
             launcher.launch(model.project(), id);
         }
@@ -1085,6 +1099,70 @@ public class BoardView extends ViewPart {
             summary.append("\n").append(skip.id()).append(" \u2014 ").append(skip.reason());
         }
         MessageDialog.openInformation(getSite().getShell(), "Auto-dispatch", summary.toString());
+    }
+
+    /** Ticket ids with a live fleet job — counted against the dispatch concurrency cap. */
+    private static Set<String> runningTaskIds() {
+        Set<String> running = new LinkedHashSet<>();
+        for (FleetJobHandle job : FleetJobsModel.getDefault().jobs()) {
+            if (job.state() == FleetJobHandle.State.RUNNING && job.taskId() != null) {
+                running.add(job.taskId());
+            }
+        }
+        return running;
+    }
+
+    /**
+     * "Auto ▶/■" toggle (ROADMAP H6 piece 4, the self-draining loop): a
+     * {@link DispatchScheduler} over the CURRENT sprint whose suppliers
+     * re-read the model each tick — tickets added to the sprint (or a
+     * freshly selected sprint) drain automatically — running until
+     * unchecked or the view closes. The manual "Auto-dispatch" wave action
+     * above is unchanged.
+     */
+    private void toggleDispatchLoop() {
+        if (autoLoopAction == null) {
+            return;
+        }
+        boolean on = autoLoopAction.isChecked();
+        autoLoopAction.setText(on ? "Auto \u25A0" : "Auto \u25B6");
+        if (on) {
+            startDispatchLoop();
+        } else {
+            stopDispatchLoop("Auto-dispatch loop stopped.");
+        }
+    }
+
+    private void startDispatchLoop() {
+        if (model == null || launcher == null) {
+            return;
+        }
+        stopDispatchLoop(null);
+        dispatchScheduler = new DispatchScheduler(AUTO_DISPATCH, model::sprintTasks,
+                model::costOverview, BoardView::runningTaskIds,
+                id -> launcher.launch(model.project(), id), Clock.systemDefaultZone());
+        dispatchScheduler.start(AUTO_DISPATCH_PERIOD);
+        statusMessage("Auto-dispatch loop started \u2014 every "
+                + AUTO_DISPATCH_PERIOD.toSeconds() + "s over " + model.sprint() + ".");
+    }
+
+    private void stopDispatchLoop(String message) {
+        if (dispatchScheduler != null) {
+            dispatchScheduler.stop();
+            dispatchScheduler = null;
+        }
+        if (message != null) {
+            statusMessage(message);
+        }
+    }
+
+    private void statusMessage(String message) {
+        if (getViewSite() == null || getViewSite().getActionBars() == null) {
+            return;
+        }
+        IStatusLineManager status = getViewSite().getActionBars().getStatusLineManager();
+        status.setErrorMessage(null);
+        status.setMessage(message);
     }
 
     /**
@@ -1314,6 +1392,7 @@ public class BoardView extends ViewPart {
     @Override
     public void dispose() {
         saveSettings();
+        stopDispatchLoop(null);
         if (watcher != null) {
             watcher.stop();
             watcher = null;

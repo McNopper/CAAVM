@@ -2,11 +2,16 @@ package com.opencode.ide.board.views;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IToolBarManager;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -31,14 +36,20 @@ import org.eclipse.ui.part.ViewPart;
 
 import com.opencode.ide.board.fleet.FleetJobHandle;
 import com.opencode.ide.board.fleet.TaskFleetLauncher;
+import com.opencode.ide.board.internal.BoardPlugin;
 import com.opencode.ide.board.internal.GitCli;
 import com.opencode.ide.board.model.DiffSource;
+import com.opencode.ide.board.model.EventsFeed;
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.SessionDiffText;
 import com.opencode.ide.board.model.TakeoverRouter;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.FileDiff;
+import com.opencode.ide.core.ConnectionsManager;
+import com.opencode.ide.core.ManagedConnection;
 import com.opencode.ide.core.OpencodeConnection;
+import com.opencode.ide.fleet.GlobalEventsAggregator;
+import com.opencode.ide.fleet.GlobalEventsAggregator.ObservedEvent;
 
 /**
  * The Fleet view: one row per fleet job in the shared {@link FleetJobsModel}
@@ -58,6 +69,14 @@ import com.opencode.ide.core.OpencodeConnection;
  * live via the shared permission queue's listener) opens
  * {@link FleetPermissionsDialog} where unattended sessions' permission
  * requests are answered (approve once / always / reject).</p>
+ *
+ * <p>The "Events" toolbar action (live {@code n connections (m failed)}
+ * suffix) opens {@link EventsDialog}: the merged global event feed of
+ * every configured connection (primary + remotes). The view owns one
+ * {@link GlobalEventsAggregator} — all configured connections subscribed
+ * on a background thread (the primary's client may block while spawning
+ * the server), re-synced when the connection set changes, unsubscribed
+ * when removed, closed with the view.</p>
  */
 public class FleetView extends ViewPart {
 
@@ -72,10 +91,17 @@ public class FleetView extends ViewPart {
     private Action openFolderAction;
     private Action takeOverAction;
     private Action permissionsAction;
+    private Action eventsAction;
     /** Single daemon thread for git diff processes (OSGi-light, never blocks the UI thread). */
     private ExecutorService diffExecutor;
     /** Single daemon thread for TUI takeover routing (blocking client POSTs). */
     private ExecutorService takeoverExecutor;
+    /** Single daemon thread for global-event subscriptions (the primary client may block spawning the server). */
+    private ExecutorService eventsExecutor;
+    /** The view-owned merged global event feed over all configured connections. */
+    private GlobalEventsAggregator events;
+    /** SWT-free row/badge formatting for the Events action and dialog. */
+    private EventsFeed eventsFeed;
     private final AtomicBoolean diffRunning = new AtomicBoolean();
     private final Runnable modelListener = () -> {
         Display display = Display.getDefault();
@@ -90,6 +116,15 @@ public class FleetView extends ViewPart {
             display.asyncExec(this::updatePermissionsAction);
         }
     };
+    /** Event delivered (any stream thread): timestamp it for row formatting (see {@link EventsFeed#remember}). */
+    private final Consumer<ObservedEvent> eventsListener = this::onGlobalEvent;
+    /** Connection set changed (any thread): re-sync the event subscriptions off the UI thread. */
+    private final Runnable connectionsListener = () -> {
+        Display display = Display.getDefault();
+        if (display != null && !display.isDisposed()) {
+            display.asyncExec(this::scheduleEventSync);
+        }
+    };
 
     @Override
     public void createPartControl(Composite parent) {
@@ -100,6 +135,14 @@ public class FleetView extends ViewPart {
         });
         takeoverExecutor = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "board-fleet-takeover");
+            thread.setDaemon(true);
+            return thread;
+        });
+        events = new GlobalEventsAggregator();
+        eventsFeed = new EventsFeed();
+        events.addListener(eventsListener);
+        eventsExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "board-fleet-events");
             thread.setDaemon(true);
             return thread;
         });
@@ -135,6 +178,8 @@ public class FleetView extends ViewPart {
         contributeActions();
         FleetJobsModel.getDefault().addListener(modelListener);
         TaskFleetLauncher.permissions().addListener(permissionsListener);
+        ConnectionsManager.getDefault().addListener(connectionsListener);
+        scheduleEventSync();
         refreshFromModel();
         updatePermissionsAction();
     }
@@ -218,8 +263,21 @@ public class FleetView extends ViewPart {
                 "Pending permission requests of unattended fleet sessions (approve once / always / reject)");
         permissionsAction.setEnabled(false);
 
+        eventsAction = new Action("Events") {
+            @Override
+            public void run() {
+                GlobalEventsAggregator aggregator = events;
+                if (aggregator != null && eventsFeed != null) {
+                    new EventsDialog(getSite().getShell(), aggregator, eventsFeed).open();
+                }
+            }
+        };
+        eventsAction.setToolTipText(
+                "The merged global event feed of all configured connections (newest 50, live while open)");
+
         IToolBarManager toolbar = getViewSite().getActionBars().getToolBarManager();
         toolbar.add(permissionsAction);
+        toolbar.add(eventsAction);
         toolbar.add(openDiffAction);
         toolbar.add(openFolderAction);
         toolbar.add(takeOverAction);
@@ -233,6 +291,71 @@ public class FleetView extends ViewPart {
         int pending = TaskFleetLauncher.permissions().pendingCount();
         permissionsAction.setText(pending == 0 ? "Permissions" : "Permissions (" + pending + ")");
         permissionsAction.setEnabled(pending > 0);
+    }
+
+    /** Event delivered (any stream thread): timestamps it for row formatting. */
+    private void onGlobalEvent(ObservedEvent event) {
+        EventsFeed feed = eventsFeed;
+        if (feed != null) {
+            feed.remember(event);
+        }
+    }
+
+    /** Re-syncs event subscriptions off the UI thread (the primary client may block on server spawn). */
+    private void scheduleEventSync() {
+        ExecutorService executor = eventsExecutor;
+        if (executor != null) {
+            executor.execute(this::syncEventSubscriptions);
+        }
+    }
+
+    /**
+     * Subscribes every configured connection (primary + remotes) to the
+     * merged event feed and unsubscribes removed ones. Runs on the events
+     * executor — the primary's {@code client()} may block while spawning
+     * the server; a refused subscribe only lands in the failed badge.
+     */
+    private void syncEventSubscriptions() {
+        GlobalEventsAggregator aggregator = events;
+        if (aggregator == null) {
+            return;
+        }
+        try {
+            Set<String> desired = new LinkedHashSet<>();
+            for (ManagedConnection connection : ConnectionsManager.getDefault().connections()) {
+                desired.add(connection.id());
+                if (!aggregator.connections().contains(connection.id())) {
+                    try {
+                        aggregator.subscribe(connection.id(), connection.client());
+                    } catch (OpencodeException | RuntimeException e) {
+                        logWarn("Subscribing global events of " + connection.label()
+                                + " failed: " + e.getMessage());
+                    }
+                }
+            }
+            for (String id : aggregator.connections()) {
+                if (!desired.contains(id)) {
+                    aggregator.unsubscribe(id);
+                }
+            }
+        } finally {
+            Display display = Display.getDefault();
+            if (display != null && !display.isDisposed()) {
+                display.asyncExec(this::updateEventsAction);
+            }
+        }
+    }
+
+    /** Refreshes the "Events · n connections (m failed)" liveness hint (UI thread). */
+    private void updateEventsAction() {
+        if (eventsAction == null || events == null || viewer == null || viewer.getControl().isDisposed()) {
+            return;
+        }
+        String badge = EventsFeed.liveness(events.connections().size(), events.failedConnections().size());
+        String text = badge.isEmpty() ? "Events" : "Events \u00b7 " + badge;
+        if (!text.equals(eventsAction.getText())) {
+            eventsAction.setText(text);
+        }
     }
 
     private FleetJobHandle selectedRow() {
@@ -461,6 +584,11 @@ public class FleetView extends ViewPart {
     public void dispose() {
         FleetJobsModel.getDefault().removeListener(modelListener);
         TaskFleetLauncher.permissions().removeListener(permissionsListener);
+        ConnectionsManager.getDefault().removeListener(connectionsListener);
+        if (events != null) {
+            events.close();
+            events = null;
+        }
         if (diffExecutor != null) {
             diffExecutor.shutdown();
             diffExecutor = null;
@@ -469,6 +597,15 @@ public class FleetView extends ViewPart {
             takeoverExecutor.shutdown();
             takeoverExecutor = null;
         }
+        if (eventsExecutor != null) {
+            eventsExecutor.shutdown();
+            eventsExecutor = null;
+        }
         super.dispose();
+    }
+
+    private static void logWarn(String message) {
+        Platform.getLog(Platform.getBundle(BoardPlugin.PLUGIN_ID))
+                .log(new Status(Status.WARNING, BoardPlugin.PLUGIN_ID, message));
     }
 }

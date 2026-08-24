@@ -14,6 +14,7 @@ import com.opencode.ide.client.model.FileNode;
 import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.OauthStart;
 import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProjectSummary;
 import com.opencode.ide.client.model.ProviderAuth;
@@ -23,6 +24,7 @@ import com.opencode.ide.client.model.SkillInfo;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
 import com.opencode.ide.client.model.SessionTodo;
+import com.opencode.ide.client.model.ShellResult;
 import com.opencode.ide.client.model.SymbolResult;
 import com.opencode.ide.client.model.VcsInfo;
 
@@ -220,6 +222,17 @@ public interface OpencodeClient {
         throw new UnsupportedOperationException("runCommand");
     }
 
+    /**
+     * {@code POST /session/:id/shell} - execute a shell command in the
+     * session context and wait for the created assistant message (opencode
+     * v1.18.21; payload {@code {agent, command}} plus optional
+     * {@code messageID}/{@code model}). The reply is the message plus its
+     * shell tool part, mapped leniently into {@link ShellResult}.
+     */
+    default ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
+        throw new UnsupportedOperationException("runShell");
+    }
+
     /** {@code GET /project} - all projects the server knows (worktree + VCS position). */
     default List<ProjectSummary> getProjects() throws OpencodeException {
         return List.of();
@@ -309,12 +322,25 @@ public interface OpencodeClient {
 
     /**
      * {@code POST /provider/:id/oauth/authorize} - start the provider's first
-     * auth method's OAuth flow (body {@code {"method":0}}). Success means the
-     * server answered with an authorization URL; a 4xx (e.g. the method is
-     * not OAuth) yields {@code false}, transport errors still throw.
+     * auth method's OAuth flow (body {@code {"method":0}}) and get the
+     * authorization answer ({@code {url, method, instructions}}) so the
+     * caller can open the page itself. Parsed leniently: a 4xx, an empty or
+     * malformed body, or a missing url yields an {@link OauthStart} with a
+     * {@code null} {@code url} ("not started"); transport errors still
+     * throw.
+     */
+    default OauthStart beginProviderOauth(String providerId) throws OpencodeException {
+        throw new UnsupportedOperationException("beginProviderOauth");
+    }
+
+    /**
+     * Boolean convenience for {@link #beginProviderOauth(String)}:
+     * {@code true} iff the server answered with a non-blank authorization
+     * URL.
      */
     default boolean startProviderOauth(String providerId) throws OpencodeException {
-        throw new UnsupportedOperationException("startProviderOauth");
+        OauthStart started = beginProviderOauth(providerId);
+        return started != null && started.url() != null && !started.url().isBlank();
     }
 
     /**

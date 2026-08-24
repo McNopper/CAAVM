@@ -26,6 +26,7 @@ import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.program.Program;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.Text;
@@ -36,6 +37,7 @@ import org.eclipse.ui.part.ViewPart;
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.HealthStatus;
+import com.opencode.ide.client.model.OauthStart;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.core.ConnectionsManager;
 import com.opencode.ide.core.ManagedConnection;
@@ -212,10 +214,10 @@ public class ProvidersView extends ViewPart implements Refreshable {
 
     /**
      * Starts the OAuth flow of the selected provider's first auth method on a
-     * background job. The client's boolean result carries no authorization
-     * URL (the server opens the browser itself), so success only instructs
-     * the user to finish the sign-in in that browser; the auth state is
-     * refreshed afterwards.
+     * background job. When the server returns an authorization URL it is
+     * opened in the external browser (plus the server's instructions, if
+     * any); a null URL means the server could not start the flow; the auth
+     * state is refreshed afterwards.
      */
     private void connectSelectedProvider() {
         ModelRow row = selectedRow();
@@ -226,21 +228,27 @@ public class ProvidersView extends ViewPart implements Refreshable {
         setContentDescription("Starting " + providerId + " authorization...");
         ViewLoadSupport.load("Starting provider authorization", () -> {
             OpencodeClient client = primaryClient(ConnectionsManager.getDefault());
-            return Boolean.valueOf(client.startProviderOauth(providerId));
-        }, started -> showOauthResult(providerId, started.booleanValue()),
+            return client.beginProviderOauth(providerId);
+        }, start -> showOauthResult(providerId, start),
                 error -> showOauthError(providerId, error));
     }
 
-    /** Reports the flow's outcome: started (finish in the browser) or refused (no OAuth method). */
-    private void showOauthResult(String providerId, boolean started) {
+    /** Reports the flow's outcome: authorization page opened (finish in the browser) or refused (no URL). */
+    private void showOauthResult(String providerId, OauthStart start) {
         if (viewer.getControl().isDisposed()) {
             return;
         }
-        if (started) {
-            MessageDialog.openInformation(viewer.getControl().getShell(), "Connect provider",
-                    "The opencode server opened an authorization page for \"" + providerId
-                            + "\" in a browser.\n\nComplete the sign-in there; the view then refreshes "
-                            + "the auth state.");
+        String url = start == null ? null : start.url();
+        if (url != null && !url.isBlank()) {
+            boolean opened = Program.launch(url);
+            String message = "Authorization page for \"" + providerId + "\":\n" + url
+                    + "\n\n" + (opened ? "Opened in the external browser — complete the sign-in there."
+                            : "Open the URL above in a browser and complete the sign-in.")
+                    + "\nThe view then refreshes the auth state.";
+            if (start.instructions() != null && !start.instructions().isBlank()) {
+                message += "\n\n" + start.instructions();
+            }
+            MessageDialog.openInformation(viewer.getControl().getShell(), "Connect provider", message);
             refresh();
         } else {
             MessageDialog.openWarning(viewer.getControl().getShell(), "Connect provider",

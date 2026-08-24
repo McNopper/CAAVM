@@ -40,6 +40,7 @@ import com.opencode.ide.client.model.FileNode;
 import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.OauthStart;
 import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProjectSummary;
 import com.opencode.ide.client.model.ProviderAuth;
@@ -48,6 +49,7 @@ import com.opencode.ide.client.model.SearchMatch;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
 import com.opencode.ide.client.model.SessionTodo;
+import com.opencode.ide.client.model.ShellResult;
 import com.opencode.ide.client.model.SkillInfo;
 import com.opencode.ide.client.model.SymbolResult;
 import com.opencode.ide.client.model.VcsInfo;
@@ -324,6 +326,27 @@ public final class HttpOpencodeClient implements OpencodeClient {
     }
 
     @Override
+    public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        body.addProperty("agent", agent);
+        body.addProperty("command", command);
+        String path = "/session/" + sessionId + "/shell";
+        // the server awaits the spawned process - allow as long as a chat reply
+        HttpResponse<String> response = request("POST", path, body.toString(), Duration.ofMinutes(5));
+        String responseBody = response.body();
+        if (responseBody == null || responseBody.isBlank()) {
+            throw new OpencodeException("opencode POST " + path + " failed: HTTP " + response.statusCode()
+                    + " - empty response body where JSON was expected");
+        }
+        try {
+            return shellResult(JsonParser.parseString(responseBody).getAsJsonObject());
+        } catch (JsonParseException | IllegalStateException e) {
+            throw new OpencodeException("opencode POST " + path + " failed: HTTP " + response.statusCode()
+                    + " - malformed response body: " + truncate(responseBody, 300), e);
+        }
+    }
+
+    @Override
     public List<ProjectSummary> getProjects() throws OpencodeException {
         HttpResponse<String> response = send("GET", "/project", null, Duration.ofSeconds(30));
         if (response.statusCode() == 404) {
@@ -494,7 +517,7 @@ public final class HttpOpencodeClient implements OpencodeClient {
     }
 
     @Override
-    public boolean startProviderOauth(String providerId) throws OpencodeException {
+    public OauthStart beginProviderOauth(String providerId) throws OpencodeException {
         JsonObject body = new JsonObject();
         body.addProperty("method", 0);
         String path = "/provider/" + providerId + "/oauth/authorize";
@@ -502,18 +525,20 @@ public final class HttpOpencodeClient implements OpencodeClient {
         if (response.statusCode() >= 400) {
             ClientLog.warning("opencode POST " + path + " returned HTTP " + response.statusCode()
                     + ": " + truncate(response.body(), 200));
-            return false; // no OAuth method / validation error - the caller can surface the flow as unavailable
+            return new OauthStart(null, null, null); // no OAuth method / validation error - nothing started
         }
         String responseBody = response.body();
         if (responseBody == null || responseBody.isBlank()) {
-            return false; // method index 0 was not an OAuth flow - nothing started
+            return new OauthStart(null, null, null); // method index 0 was not an OAuth flow - nothing started
         }
         try {
-            return stringOf(JsonParser.parseString(responseBody).getAsJsonObject(), "url") != null;
+            JsonObject object = JsonParser.parseString(responseBody).getAsJsonObject();
+            return new OauthStart(stringOf(object, "url"), stringOf(object, "method"),
+                    stringOf(object, "instructions"));
         } catch (JsonParseException | IllegalStateException e) {
-            ClientLog.warning("opencode POST " + path + ": malformed body; treating as failure: "
+            ClientLog.warning("opencode POST " + path + ": malformed body; treating as not started: "
                     + truncate(responseBody, 120));
-            return false;
+            return new OauthStart(null, null, null);
         }
     }
 
@@ -527,6 +552,44 @@ public final class HttpOpencodeClient implements OpencodeClient {
             return object.get(member).getAsString();
         }
         return null;
+    }
+
+    private static JsonObject asObject(JsonObject object, String member) {
+        if (object.has(member) && object.get(member).isJsonObject()) {
+            return object.getAsJsonObject(member);
+        }
+        return null;
+    }
+
+    /** Leniently flattens a {@code {info, parts}} (WithParts) shell reply into {@link ShellResult}. */
+    private static ShellResult shellResult(JsonObject envelope) {
+        JsonObject info = asObject(envelope, "info");
+        String messageId = info == null ? null : stringOf(info, "id");
+        String agent = info == null ? null : stringOf(info, "agent");
+        String command = null;
+        String status = null;
+        String output = null;
+        if (envelope.has("parts") && envelope.get("parts").isJsonArray()) {
+            for (JsonElement element : envelope.get("parts").getAsJsonArray()) {
+                if (!element.isJsonObject() || !"tool".equals(stringOf(element.getAsJsonObject(), "type"))) {
+                    continue;
+                }
+                JsonObject state = asObject(element.getAsJsonObject(), "state");
+                if (state == null) {
+                    continue;
+                }
+                status = stringOf(state, "status");
+                JsonObject input = asObject(state, "input");
+                command = input == null ? null : stringOf(input, "command");
+                output = stringOf(state, "output");
+                if (output == null) {
+                    JsonObject metadata = asObject(state, "metadata");
+                    output = metadata == null ? null : stringOf(metadata, "output");
+                }
+                break;
+            }
+        }
+        return new ShellResult(messageId, agent, command, status, output);
     }
 
     private <T> T get(String path, Class<T> type) throws OpencodeException {

@@ -3,7 +3,10 @@ package com.opencode.ide.fleet;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.opencode.ide.client.ChatRequest;
 import com.opencode.ide.client.OpencodeClient;
@@ -11,14 +14,16 @@ import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.ShellResult;
 import com.opencode.ide.git.MergeResult;
 import com.opencode.ide.git.Worktree;
 import com.opencode.ide.git.WorktreeManager;
 
 /**
  * Headless one-task-per-worktree orchestration: creates the task worktree,
- * runs the prompt in a directory-scoped opencode session, polls for
- * completion, and merges the task branch back into the main worktree.
+ * runs the task's optional {@link Bootstrap} shell command in a
+ * directory-scoped opencode session, sends the prompt, polls for completion,
+ * and merges the task branch back into the main worktree.
  *
  * <p>Pure Java, no Eclipse/OSGi - the later Fleet view drives this engine.
  * Merge-back is not synchronized internally; callers must serialize it (see
@@ -26,7 +31,9 @@ import com.opencode.ide.git.WorktreeManager;
  */
 public class FleetRunner {
 
+    private static final Logger LOG = Logger.getLogger(FleetRunner.class.getName());
     private static final long DEFAULT_POLL_MILLIS = 1000;
+    private static final int BOOTSTRAP_OUTPUT_LIMIT = 200;
 
     private final OpencodeClient client;
     private final WorktreeManager worktrees;
@@ -49,21 +56,61 @@ public class FleetRunner {
 
     /**
      * Creates the task worktree ({@code opencode/<taskId>} via the
-     * {@link WorktreeManager}), opens a session scoped to it, and sends the
-     * prompt. On client failure after worktree creation the returned job is
-     * {@code FAILED}; the worktree is deliberately kept (see
-     * {@link FleetJob#worktree}) for post-mortem inspection.
+     * {@link WorktreeManager}), opens a session scoped to it, runs the task's
+     * optional {@link Bootstrap} command, and sends the prompt. On client
+     * failure after worktree creation the returned job is {@code FAILED}; the
+     * worktree is deliberately kept (see {@link FleetJob#worktree}) for
+     * post-mortem inspection.
      */
     public FleetJob submit(FleetTask task) {
         Worktree worktree = worktrees.create(task.baseWorktree(), task.taskId());
         try {
             Session session = client.createSession(task.title(), worktree.path());
+            runBootstrap(session.id(), task.bootstrap());
             client.sendMessage(chatRequest(session.id(), task));
             tasks.put(task.taskId(), task);
             return new FleetJob(task.taskId(), session.id(), worktree.path(), FleetJob.State.RUNNING, null);
         } catch (OpencodeException e) {
             return new FleetJob(task.taskId(), null, worktree.path(), FleetJob.State.FAILED, e.getMessage());
         }
+    }
+
+    /**
+     * Best-effort pre-prompt bootstrap: runs the task's optional shell
+     * command in the new session ({@link OpencodeClient#runShell} - the call
+     * blocks until the process exits, possibly for minutes, on this launch
+     * thread like the prompt itself). A transport failure or an error status
+     * is logged and the launch proceeds with the prompt - the bootstrap is a
+     * convenience (e.g. {@code npm install}), never a gate. Never throws; a
+     * {@code null} or blank command is no bootstrap at all.
+     */
+    private void runBootstrap(String sessionId, Bootstrap bootstrap) {
+        if (bootstrap == null || bootstrap.command() == null || bootstrap.command().isBlank()) {
+            return;
+        }
+        try {
+            ShellResult result = client.runShell(sessionId, bootstrap.agent(), bootstrap.command());
+            String status = result == null || result.status() == null ? "unknown" : result.status();
+            String output = summarize(result == null ? null : result.output());
+            if (status.toLowerCase(Locale.ROOT).contains("error")) {
+                LOG.log(Level.WARNING, "fleet bootstrap '" + bootstrap.command() + "' in session "
+                        + sessionId + " reported status " + status + "; proceeding with the prompt. output: "
+                        + output);
+            } else {
+                LOG.fine(() -> "fleet bootstrap '" + bootstrap.command() + "' in session " + sessionId
+                        + " finished with status " + status + ", output: " + output);
+            }
+        } catch (OpencodeException | RuntimeException e) {
+            LOG.log(Level.WARNING, "fleet bootstrap '" + bootstrap.command() + "' in session "
+                    + sessionId + " failed; proceeding with the prompt", e);
+        }
+    }
+
+    /** Flattens and truncates a bootstrap output for the log summary. */
+    private static String summarize(String output) {
+        String flat = output == null ? "" : output.strip().replace('\n', ' ');
+        return flat.length() <= BOOTSTRAP_OUTPUT_LIMIT ? flat
+                : flat.substring(0, BOOTSTRAP_OUTPUT_LIMIT) + "...";
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.opencode.ide.ui.views;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -7,6 +8,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.IAdaptable;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IToolBarManager;
@@ -42,6 +45,7 @@ import com.opencode.ide.ui.internal.Refreshable;
 import com.opencode.ide.ui.internal.UiActivator;
 import com.opencode.ide.ui.internal.ViewLoadSupport;
 import com.opencode.ide.ui.model.AgentSessions;
+import com.opencode.ide.ui.model.CwdCheck;
 import com.opencode.ide.ui.model.ProjectVcs;
 import com.opencode.ide.ui.model.ServerLabels;
 import com.opencode.ide.ui.model.WorkingSet;
@@ -735,8 +739,40 @@ public class ServerView extends ViewPart implements Refreshable {
             return;
         }
         projectVcs = vcs;
-        setTitleToolTip(vcs.tooltip());
+        setTitleToolTip(headerToolTip(vcs));
         updateContentDescription();
+    }
+
+    /**
+     * The header tooltip: the project/VCS detail, prefixed with the cwd
+     * mismatch warning when the server's project and the active workspace
+     * project point at different directories (see {@link CwdCheck}).
+     */
+    private String headerToolTip(ProjectVcs vcs) {
+        String tooltip = vcs.tooltip();
+        String warning = CwdCheck.check(vcs.projectPath(), activeProjectLocation()).warningLine();
+        if (warning.isEmpty()) {
+            return tooltip;
+        }
+        return tooltip.isEmpty() ? warning : warning + "\n" + tooltip;
+    }
+
+    /**
+     * The location of the active workspace project, derived from the workbench
+     * page's selection (the selected resource's project, adaptable elements
+     * included); {@code null} when the selection yields no resource.
+     */
+    private Path activeProjectLocation() {
+        Object selection = getSite().getPage().getSelection();
+        Object first = (selection instanceof org.eclipse.jface.viewers.IStructuredSelection structured
+                && !structured.isEmpty()) ? structured.getFirstElement() : null;
+        IResource resource = first instanceof IResource res ? res
+                : first instanceof IAdaptable adaptable ? adaptable.getAdapter(IResource.class) : null;
+        if (resource == null) {
+            return null;
+        }
+        var location = resource.getProject().getLocation();
+        return location == null ? null : location.toFile().toPath();
     }
 
     /** The project/VCS part of the description line; empty while unknown (degrades silently). */

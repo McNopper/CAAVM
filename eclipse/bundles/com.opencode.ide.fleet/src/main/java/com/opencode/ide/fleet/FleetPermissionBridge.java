@@ -20,6 +20,7 @@ import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.ShellResult;
 
 /**
  * Event-to-queue bridge for the fleet's {@link PermissionQueue}: feed it the
@@ -179,6 +180,11 @@ public final class FleetPermissionBridge {
         @Override
         public ChatEntry sendMessage(ChatRequest request) throws OpencodeException {
             return delegate.sendMessage(request);
+        }
+
+        @Override
+        public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
+            return delegate.runShell(sessionId, agent, command);
         }
 
         @Override
