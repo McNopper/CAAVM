@@ -1,0 +1,164 @@
+package com.opencode.ide.board.model;
+
+import java.util.Objects;
+
+import org.eclipse.core.runtime.preferences.IEclipsePreferences;
+import org.eclipse.core.runtime.preferences.InstanceScope;
+import org.osgi.service.prefs.BackingStoreException;
+
+/**
+ * SWT-free persistence for the dispatch policy (H6): one {@link AutoDispatch}
+ * plus the optional per-launch bootstrap (agent + command strings, blank =
+ * none) under stable keys of a stable node, backend-agnostic through the tiny
+ * {@link Backend} seam — production runs on Eclipse instance preferences
+ * ({@link #eclipse()}, the core {@code OpencodePreferences} pattern), tests
+ * on an in-memory fake. Both Board dispatch actions load through
+ * {@link #load()} at action time, so dialog edits apply without a restart.
+ *
+ * <p>Load validation (documented rules — a broken stored value never breaks
+ * dispatch): {@code maxConcurrent} must parse to an {@code int >= 1}, else
+ * the default {@value #DEFAULT_MAX_CONCURRENT} applies (absent, corrupt, or
+ * out of range); {@code costBudgetUsd} must parse to a finite
+ * {@code double >= 0}, else 0 (unlimited) applies; {@code includeStale} is
+ * false only when the stored value is exactly {@code "false"} — absent or
+ * corrupt reads as the default true. Bootstrap strings are trimmed; blank
+ * means none. {@link #load()} never throws: a failing backend yields
+ * {@link #defaults()}.</p>
+ */
+public final class DispatchPolicyStore {
+
+    /** Stable instance-preferences node (see {@link #eclipse()}). */
+    public static final String NODE = "com.opencode.ide.board.dispatchPolicy";
+
+    /** Stable keys under {@link #NODE}. */
+    public static final String KEY_MAX_CONCURRENT = "maxConcurrent";
+    public static final String KEY_COST_BUDGET_USD = "costBudgetUsd";
+    public static final String KEY_INCLUDE_STALE = "includeStale";
+    public static final String KEY_BOOTSTRAP_AGENT = "bootstrapAgent";
+    public static final String KEY_BOOTSTRAP_COMMAND = "bootstrapCommand";
+
+    /** The default concurrency (also the fallback of a corrupt {@link #KEY_MAX_CONCURRENT}). */
+    public static final int DEFAULT_MAX_CONCURRENT = 4;
+
+    private final Backend backend;
+
+    /**
+     * One stored dispatch policy plus its bootstrap strings (trimmed;
+     * blank means none).
+     */
+    public record DispatchSettings(AutoDispatch policy, String bootstrapAgent, String bootstrapCommand) {
+
+        /** Normalizes: non-null policy, trimmed never-null bootstrap strings. */
+        public DispatchSettings {
+            policy = Objects.requireNonNull(policy, "policy");
+            bootstrapAgent = stripToEmpty(bootstrapAgent);
+            bootstrapCommand = stripToEmpty(bootstrapCommand);
+        }
+
+        private static String stripToEmpty(String value) {
+            return value == null ? "" : value.strip();
+        }
+    }
+
+    /** Minimal string key/value persistence the store runs on (java.util.prefs-style). */
+    public interface Backend {
+
+        /** @return the stored value, or {@code null} when the key is absent */
+        String get(String key);
+
+        void put(String key, String value);
+
+        /** Persists pending writes; may throw when persistence is unavailable. */
+        void flush();
+    }
+
+    /**
+     * @param backend the persistence seam; production uses {@link #eclipse()},
+     *                tests an in-memory fake
+     */
+    public DispatchPolicyStore(Backend backend) {
+        this.backend = Objects.requireNonNull(backend, "backend");
+    }
+
+    /** Production store over Eclipse instance preferences (node {@value #NODE}). */
+    public static DispatchPolicyStore eclipse() {
+        IEclipsePreferences node = InstanceScope.INSTANCE.getNode(NODE);
+        return new DispatchPolicyStore(new Backend() {
+            @Override
+            public String get(String key) {
+                return node.get(key, null);
+            }
+
+            @Override
+            public void put(String key, String value) {
+                node.put(key, value);
+            }
+
+            @Override
+            public void flush() {
+                try {
+                    node.flush();
+                } catch (BackingStoreException e) {
+                    throw new IllegalStateException("cannot persist dispatch settings: " + e.getMessage(), e);
+                }
+            }
+        });
+    }
+
+    /** The defaults: {@code AutoDispatch.of(4, 0, true)} and no bootstrap. */
+    public static DispatchSettings defaults() {
+        return new DispatchSettings(
+                AutoDispatch.of(DEFAULT_MAX_CONCURRENT, 0, true), "", "");
+    }
+
+    /** Loads and validates (see class doc); never throws — a failing backend yields {@link #defaults()}. */
+    public DispatchSettings load() {
+        try {
+            return new DispatchSettings(
+                    AutoDispatch.of(maxConcurrentOf(backend.get(KEY_MAX_CONCURRENT)),
+                            budgetOf(backend.get(KEY_COST_BUDGET_USD)),
+                            !"false".equals(backend.get(KEY_INCLUDE_STALE))),
+                    backend.get(KEY_BOOTSTRAP_AGENT),
+                    backend.get(KEY_BOOTSTRAP_COMMAND));
+        } catch (RuntimeException e) {
+            return defaults();
+        }
+    }
+
+    /** Persists all five values; a flush failure propagates (the dialog shows it). */
+    public void save(DispatchSettings settings) {
+        DispatchSettings value = Objects.requireNonNull(settings, "settings");
+        backend.put(KEY_MAX_CONCURRENT, Integer.toString(value.policy().maxConcurrent()));
+        backend.put(KEY_COST_BUDGET_USD, Double.toString(value.policy().costBudgetUsd()));
+        backend.put(KEY_INCLUDE_STALE, Boolean.toString(value.policy().includeStale()));
+        backend.put(KEY_BOOTSTRAP_AGENT, value.bootstrapAgent());
+        backend.put(KEY_BOOTSTRAP_COMMAND, value.bootstrapCommand());
+        backend.flush();
+    }
+
+    /** An {@code int >= 1} or the default (see class doc). */
+    private static int maxConcurrentOf(String raw) {
+        if (raw == null) {
+            return DEFAULT_MAX_CONCURRENT;
+        }
+        try {
+            int parsed = Integer.parseInt(raw.strip());
+            return parsed >= 1 ? parsed : DEFAULT_MAX_CONCURRENT;
+        } catch (NumberFormatException e) {
+            return DEFAULT_MAX_CONCURRENT;
+        }
+    }
+
+    /** A finite {@code double >= 0} or 0 (see class doc). */
+    private static double budgetOf(String raw) {
+        if (raw == null) {
+            return 0;
+        }
+        try {
+            double parsed = Double.parseDouble(raw.strip());
+            return Double.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+}

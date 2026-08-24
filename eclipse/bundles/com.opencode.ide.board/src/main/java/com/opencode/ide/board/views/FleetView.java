@@ -178,6 +178,7 @@ public class FleetView extends ViewPart {
         contributeActions();
         FleetJobsModel.getDefault().addListener(modelListener);
         TaskFleetLauncher.permissions().addListener(permissionsListener);
+        TaskFleetLauncher.connectChatPermissions();
         ConnectionsManager.getDefault().addListener(connectionsListener);
         scheduleEventSync();
         refreshFromModel();

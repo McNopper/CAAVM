@@ -298,7 +298,7 @@ public class ChatSessionControllerTest {
     @Test
     public void textDeltasForThisSessionRenderLive() {
         controller.subscribe();
-        assertEquals(1, connection.listeners.size());
+        assertEquals(2, connection.listeners.size()); // delta listener + permission adapter
 
         // before any session exists, deltas are ignored
         connection.fire(deltaEvent("{\"sessionID\":\"ses_1\",\"messageID\":\"m\",\"delta\":\"x\"}"));

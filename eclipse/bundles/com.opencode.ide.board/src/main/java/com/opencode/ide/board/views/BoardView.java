@@ -72,6 +72,7 @@ import com.opencode.ide.board.model.BoardModel;
 import com.opencode.ide.board.model.BoardModel.BoardMode;
 import com.opencode.ide.board.model.BoardSnapshot;
 import com.opencode.ide.board.model.CostOverview;
+import com.opencode.ide.board.model.DispatchPolicyStore;
 import com.opencode.ide.board.model.DispatchScheduler;
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.PipelineSnapshot;
@@ -81,7 +82,10 @@ import com.opencode.ide.board.model.TakeoverRouter;
 import com.opencode.ide.board.model.TaskStoreWatcher;
 import com.opencode.ide.board.model.TicketRow;
 import com.opencode.ide.core.OpencodeConnection;
+import com.opencode.ide.fleet.Bootstrap;
 import com.opencode.ide.git.FleetGit;
+import com.opencode.ide.git.StoreGitStatus;
+import com.opencode.ide.git.StoreSync;
 import com.opencode.ide.tasks.StageReadiness;
 import com.opencode.ide.tasks.Task;
 import com.opencode.ide.tasks.TaskStore;
@@ -94,7 +98,7 @@ import com.opencode.ide.tasks.VStages;
  * flat five-column status kanban, Pipeline = the ten V-model stage columns
  * plus a trailing untracked group; persisted too), a blocked-only toggle,
  * and Refresh / Launch task / Auto-dispatch / Auto (the background loop) /
- * Take over. The board refreshes
+ * Dispatch settings / Take over. The board refreshes
  * live via {@link TaskStoreWatcher} on {@code <root>/<project>} and survives
  * a missing store (notice instead of exception, polling continues).
  *
@@ -127,12 +131,6 @@ public class BoardView extends ViewPart {
     private static final String STATUS_LEGEND =
             "[PB] product-backlog · [SB] sprint-backlog · [IP] in-progress · [IR] in-review · [D] done";
 
-    /**
-     * The manual-wave dispatch policy (H6 piece 2): four concurrent fleet
-     * sessions, no cost cap, rework included. Calibrated/configurable later.
-     */
-    private static final AutoDispatch AUTO_DISPATCH = AutoDispatch.of(4, 0, true);
-
     /** The background loop's tick period (H6 piece 4; calibrated later). */
     private static final Duration AUTO_DISPATCH_PERIOD = Duration.ofSeconds(30);
 
@@ -140,6 +138,8 @@ public class BoardView extends ViewPart {
     private TaskStoreWatcher watcher;
     /** Assigned in createPartControl — null-checked before every use. */
     private FleetLauncher launcher;
+    /** The persisted dispatch policy + bootstrap; null when preference persistence is unavailable. */
+    private DispatchPolicyStore dispatchStore;
     /** The H6 background dispatch loop while "Auto" is on; null otherwise. */
     private DispatchScheduler dispatchScheduler;
 
@@ -155,10 +155,13 @@ public class BoardView extends ViewPart {
     private Combo sprintCombo;
     private Combo modeCombo;
     private Action refreshAction;
+
+    private Action syncStoreAction;
     private Action costOverviewAction;
     private Action launchAction;
     private Action autoDispatchAction;
     private Action autoLoopAction;
+    private Action dispatchSettingsAction;
     private Action takeOverAction;
     private Action blockedOnlyAction;
     private Action stageFilterAction;
@@ -238,10 +241,16 @@ public class BoardView extends ViewPart {
         loadSettings();
         buildBoardArea();
         initModel();
+        try {
+            dispatchStore = DispatchPolicyStore.eclipse();
+        } catch (RuntimeException e) {
+            logError("Dispatch settings persistence unavailable; dispatch runs on the defaults", e);
+        }
         launcher = new TaskFleetLauncher(
                 BoardView::connectClient,
                 FleetGit::defaultManager,
-                () -> model == null ? null : model.root());
+                () -> model == null ? null : model.root(),
+                this::storedBootstrap);
     }
 
     private static com.opencode.ide.client.OpencodeClient connectClient() {
@@ -682,6 +691,15 @@ public class BoardView extends ViewPart {
         };
         refreshAction.setToolTipText("Reload the board from the task store");
 
+        syncStoreAction = new Action("Sync store") {
+            @Override
+            public void run() {
+                syncStore();
+            }
+        };
+        syncStoreAction.setToolTipText(
+                "Commit the task store and pull-rebase + push (distributed-fleet discipline: pull \u2192 claim \u2192 push)");
+
         costOverviewAction = new Action("Cost overview") {
             @Override
             public void run() {
@@ -718,6 +736,16 @@ public class BoardView extends ViewPart {
         autoLoopAction.setToolTipText("Background auto-dispatch: re-plans the current sprint every 30s and "
                 + "launches admitted tickets until it drains (stops on uncheck or view close)");
 
+        dispatchSettingsAction = new Action("Dispatch settings\u2026") {
+            @Override
+            public void run() {
+                openDispatchSettings();
+            }
+        };
+        dispatchSettingsAction.setToolTipText(
+                "The stored auto-dispatch policy (concurrency, cost budget, STALE re-runs) and the "
+                        + "per-launch bootstrap command — both dispatch actions load it at action time");
+
         takeOverAction = new Action("Take over") {
             @Override
             public void run() {
@@ -731,10 +759,12 @@ public class BoardView extends ViewPart {
         toolbar.add(blockedOnlyAction);
         toolbar.add(stageFilterAction);
         toolbar.add(refreshAction);
+        toolbar.add(syncStoreAction);
         toolbar.add(costOverviewAction);
         toolbar.add(launchAction);
         toolbar.add(autoDispatchAction);
         toolbar.add(autoLoopAction);
+        toolbar.add(dispatchSettingsAction);
         toolbar.add(takeOverAction);
     }
 
@@ -811,10 +841,12 @@ public class BoardView extends ViewPart {
             BoardSnapshot snapshot = null;
             List<String> sprints = List.of();
             CostOverview cost = null;
+            StoreGitStatus store = StoreGitStatus.NONE;
             try {
                 snapshot = model.refresh();
                 sprints = model.sprints();
                 cost = model.costOverview();
+                store = StoreGitStatus.load(model.root());
             } catch (RuntimeException e) {
                 logError("Board refresh failed", e);
             }
@@ -828,12 +860,13 @@ public class BoardView extends ViewPart {
             BoardSnapshot toApply = snapshot;
             List<String> sprintList = sprints;
             CostOverview costOverview = cost;
+            StoreGitStatus storeStatus = store;
             display.asyncExec(() -> {
                 if (boardArea == null || boardArea.isDisposed()) {
                     return;
                 }
                 try {
-                    applySnapshot(toApply, sprintList, costOverview);
+                    applySnapshot(toApply, sprintList, costOverview, storeStatus);
                 } catch (RuntimeException e) {
                     logError("Applying board snapshot failed", e);
                 }
@@ -850,7 +883,8 @@ public class BoardView extends ViewPart {
     }
 
     /** UI-thread apply of a snapshot computed in the background (mode-aware). */
-    private void applySnapshot(BoardSnapshot snapshot, List<String> sprints, CostOverview cost) {
+    private void applySnapshot(BoardSnapshot snapshot, List<String> sprints, CostOverview cost,
+            StoreGitStatus store) {
         if (boardMode == BoardMode.PIPELINE) {
             applyPipelineSnapshot(snapshot);
         } else {
@@ -872,6 +906,9 @@ public class BoardView extends ViewPart {
             String spent = cost == null ? "" : cost.spentSuffix(model.sprint());
             if (!spent.isEmpty()) {
                 description.append("  \u2022  ").append(spent);
+            }
+            if (store != null && store.exists() && !store.summary().isBlank()) {
+                description.append("  \u2022  store ").append(store.summary());
             }
             setContentDescription(description.toString());
         }
@@ -1075,16 +1112,19 @@ public class BoardView extends ViewPart {
      * readiness evaluated across the whole project, spend from the
      * project-wide cost overview, live fleet jobs against the concurrency
      * cap — and every admitted id launches through the same
-     * {@link TaskFleetLauncher} path as "Launch task", one call each.
-     * Opt-in per click; no background loop yet.
+     * {@link TaskFleetLauncher} path as "Launch task", one call each. The
+     * policy loads from the {@link DispatchPolicyStore} at click time with
+     * the cost-calibrated per-launch estimate. Opt-in per click; the
+     * background loop is the "Auto" toggle below.
      */
     private void autoDispatch() {
         if (model == null || launcher == null) {
             return;
         }
         Map<String, StageReadiness.Readiness> readiness = StageReadiness.evaluate(model.projectTasks());
-        AutoDispatch.DispatchPlan plan = AUTO_DISPATCH.plan(
-                model.sprintTasks(), readiness, model.costOverview(), runningTaskIds());
+        CostOverview cost = model.costOverview();
+        AutoDispatch.DispatchPlan plan = dispatchPolicy(cost).plan(
+                model.sprintTasks(), readiness, cost, runningTaskIds());
         for (String id : plan.launch()) {
             launcher.launch(model.project(), id);
         }
@@ -1112,13 +1152,46 @@ public class BoardView extends ViewPart {
         return running;
     }
 
+    /** The stored dispatch policy + bootstrap, or the defaults; never throws. */
+    private DispatchPolicyStore.DispatchSettings storedDispatch() {
+        return dispatchStore == null ? DispatchPolicyStore.defaults() : dispatchStore.load();
+    }
+
+    /** The stored bootstrap as the fleet's {@link Bootstrap} (re-read per launch; blank command = none). */
+    private Bootstrap storedBootstrap() {
+        DispatchPolicyStore.DispatchSettings stored = storedDispatch();
+        return Bootstrap.of(stored.bootstrapAgent(), stored.bootstrapCommand());
+    }
+
+    /**
+     * The dispatch policy for the manual action and loop start: the stored
+     * {@link DispatchPolicyStore} values with the cost-calibrated per-launch
+     * estimate (see {@link AutoDispatch#calibratedEstimate(CostOverview)});
+     * loaded at action time so dialog edits apply without a restart.
+     */
+    private AutoDispatch dispatchPolicy(CostOverview cost) {
+        return storedDispatch().policy()
+                .withEstimateUsd(AutoDispatch.calibratedEstimate(cost));
+    }
+
+    /** "Dispatch settings" toolbar action: edit and persist the policy both dispatch actions load. */
+    private void openDispatchSettings() {
+        if (dispatchStore == null) {
+            MessageDialog.openInformation(getSite().getShell(), "Dispatch settings",
+                    "Settings persistence is unavailable; dispatch runs on the defaults.");
+            return;
+        }
+        new DispatchSettingsDialog(getSite().getShell(), dispatchStore).open();
+    }
+
     /**
      * "Auto ▶/■" toggle (ROADMAP H6 piece 4, the self-draining loop): a
      * {@link DispatchScheduler} over the CURRENT sprint whose suppliers
      * re-read the model each tick — tickets added to the sprint (or a
      * freshly selected sprint) drain automatically — running until
-     * unchecked or the view closes. The manual "Auto-dispatch" wave action
-     * above is unchanged.
+     * unchecked or the view closes. The policy loads from the
+     * {@link DispatchPolicyStore} at toggle time (with the cost-calibrated
+     * estimate); the manual "Auto-dispatch" action above loads it per click.
      */
     private void toggleDispatchLoop() {
         if (autoLoopAction == null) {
@@ -1138,7 +1211,7 @@ public class BoardView extends ViewPart {
             return;
         }
         stopDispatchLoop(null);
-        dispatchScheduler = new DispatchScheduler(AUTO_DISPATCH, model::sprintTasks,
+        dispatchScheduler = new DispatchScheduler(dispatchPolicy(model.costOverview()), model::sprintTasks,
                 model::costOverview, BoardView::runningTaskIds,
                 id -> launcher.launch(model.project(), id), Clock.systemDefaultZone());
         dispatchScheduler.start(AUTO_DISPATCH_PERIOD);
@@ -1213,6 +1286,67 @@ public class BoardView extends ViewPart {
             return TakeoverRouter.route(connectClient(), sessionId, prompt);
         } catch (RuntimeException e) {
             return TakeoverRouter.Result.chat(String.valueOf(e.getMessage()));
+        }
+    }
+
+    /**
+     * Distributed-fleet store sync (pull \u2192 claim \u2192 push discipline):
+     * commit local ticket changes, pull-rebase, push — off the UI thread (git
+     * may wait on the network). A pull conflict offers the recover path
+     * (abort the rebase; nothing was pushed).
+     */
+    private void syncStore() {
+        if (model == null) {
+            return;
+        }
+        Path root = model.root();
+        ExecutorService executor = takeoverExecutor;
+        if (executor == null) {
+            return;
+        }
+        setContentDescription("Syncing task store...");
+        executor.execute(() -> {
+            StoreSync.Outcome outcome = StoreSync.sync(root, "sync task store");
+            Display display = Display.getDefault();
+            if (display == null || display.isDisposed()) {
+                return;
+            }
+            display.asyncExec(() -> {
+                if (boardArea == null || boardArea.isDisposed()) {
+                    return;
+                }
+                reportSyncOutcome(outcome);
+                refresh();
+            });
+        });
+    }
+
+    /** Reports the store-sync outcome; a pull conflict offers to abort the rebase. */
+    private void reportSyncOutcome(StoreSync.Outcome outcome) {
+        switch (outcome) {
+            case PUSHED -> MessageDialog.openInformation(getSite().getShell(), "Sync store",
+                    "Task store committed and pushed.");
+            case UP_TO_DATE -> MessageDialog.openInformation(getSite().getShell(), "Sync store",
+                    "Task store is up to date (nothing to commit or push).");
+            case PULL_CONFLICT -> {
+                boolean recover = MessageDialog.openQuestion(getSite().getShell(), "Sync store",
+                        "Pulling the shared task store hit a rebase conflict.\n\n"
+                                + "Abort the rebase and keep your local commits? "
+                                + "(Resolve manually with git if you decline.)");
+                if (recover) {
+                    StoreSync.Outcome recovered = StoreSync.recover(model.root());
+                    MessageDialog.openInformation(getSite().getShell(), "Sync store",
+                            recovered == StoreSync.Outcome.FAILED
+                                    ? "Rebase aborted — your local commits are intact; retry the sync later."
+                                    : "Recovery left the store mid-rebase — resolve manually with git.");
+                }
+            }
+            case PUSH_REJECTED -> MessageDialog.openWarning(getSite().getShell(), "Sync store",
+                    "Push was rejected (a peer pushed newer store state).\n\nSync again to rebase onto it.");
+            case NOT_A_REPO -> MessageDialog.openWarning(getSite().getShell(), "Sync store",
+                    "The task store root is not a git working copy:\n" + model.root());
+            case FAILED -> MessageDialog.openWarning(getSite().getShell(), "Sync store",
+                    "Sync failed (see the Error log for git details).");
         }
     }
 

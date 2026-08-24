@@ -27,9 +27,11 @@ import com.opencode.ide.tasks.Task;
  * new work), and within both groups ids sort in natural order, so the same
  * inputs always yield the same plan. The launch list is capped at
  * {@code maxConcurrent - alreadyRunning.size()} (floor 0), and a cost budget
- * stops admitting once the running total plus {@link #ESTIMATED_COST_USD}
- * per further launch would EXCEED {@code costBudgetUsd} — landing exactly on
- * the budget is still admitted.</p>
+ * stops admitting once the running total plus the policy's per-launch
+ * estimate ({@code estimateUsd} — the {@link #ESTIMATED_COST_USD} placeholder
+ * unless swapped for a calibrated one via {@link #withEstimateUsd}) would
+ * EXCEED {@code costBudgetUsd} — landing exactly on the budget is still
+ * admitted.</p>
  *
  * <p>Budget basis (documented choice): the handed-in overview's
  * <b>grand total</b> ({@link CostOverview#project()}), because {@code plan}
@@ -40,13 +42,17 @@ import com.opencode.ide.tasks.Task;
  * negative budgets (and {@code maxConcurrent < 1}) are rejected at
  * construction.</p>
  */
-public record AutoDispatch(int maxConcurrent, double costBudgetUsd, boolean includeStale) {
+public record AutoDispatch(int maxConcurrent, double costBudgetUsd, boolean includeStale,
+        double estimateUsd) {
 
     /**
      * Flat per-launch cost placeholder until the cost loop calibrates a real
      * estimate: every admitted launch books this against the budget.
      */
     public static final double ESTIMATED_COST_USD = 0.05;
+
+    /** Minimum recorded tickets {@link #calibratedEstimate} needs before it trusts the mean. */
+    public static final int CALIBRATION_MIN_SAMPLES = 3;
 
     public AutoDispatch {
         if (maxConcurrent < 1) {
@@ -56,11 +62,54 @@ public record AutoDispatch(int maxConcurrent, double costBudgetUsd, boolean incl
             throw new IllegalArgumentException(
                     "costBudgetUsd must be >= 0 (0 = unlimited): " + costBudgetUsd);
         }
+        if (!(estimateUsd >= 0)) {
+            throw new IllegalArgumentException("estimateUsd must be >= 0: " + estimateUsd);
+        }
     }
 
-    /** Validates (see class doc) and creates the policy. */
+    /** The placeholder estimate {@link #ESTIMATED_COST_USD} (see class doc). */
+    public AutoDispatch(int maxConcurrent, double costBudgetUsd, boolean includeStale) {
+        this(maxConcurrent, costBudgetUsd, includeStale, ESTIMATED_COST_USD);
+    }
+
+    /** Validates (see class doc) and creates the policy with the placeholder estimate. */
     public static AutoDispatch of(int maxConcurrent, double costBudgetUsd, boolean includeStale) {
         return new AutoDispatch(maxConcurrent, costBudgetUsd, includeStale);
+    }
+
+    /** Copy with the per-launch estimate replaced (e.g. by {@link #calibratedEstimate(CostOverview)}). */
+    public AutoDispatch withEstimateUsd(double calibratedEstimateUsd) {
+        return new AutoDispatch(maxConcurrent, costBudgetUsd, includeStale, calibratedEstimateUsd);
+    }
+
+    /**
+     * Cost-loop calibration (the placeholder → measured step): the mean
+     * recorded cost per ticket whose actuals carry a cost in the overview —
+     * every merged fleet run books its actuals, so the next dispatch plans
+     * with what launches really cost here. Fewer than
+     * {@value #CALIBRATION_MIN_SAMPLES} samples keep the
+     * {@link #ESTIMATED_COST_USD} placeholder (a mean of one or two runs is
+     * noise, not signal); unknown-cost tickets are no samples, zero-cost
+     * tickets are. Rounded to four decimals; never throws ({@code null}
+     * overview reads as no samples).
+     */
+    public static double calibratedEstimate(CostOverview overview) {
+        if (overview == null) {
+            return ESTIMATED_COST_USD;
+        }
+        int samples = 0;
+        double total = 0;
+        for (CostOverview.TicketCost ticket : overview.tickets()) {
+            if (ticket == null || ticket.costUsd() == null) {
+                continue;
+            }
+            samples++;
+            total += ticket.costUsd();
+        }
+        if (samples < CALIBRATION_MIN_SAMPLES) {
+            return ESTIMATED_COST_USD;
+        }
+        return Math.round(total / samples * 10_000.0) / 10_000.0;
     }
 
     /**
@@ -118,13 +167,13 @@ public record AutoDispatch(int maxConcurrent, double costBudgetUsd, boolean incl
             if (launchIds.size() >= capacity) {
                 withheld.put(id, "concurrency cap reached (max " + maxConcurrent
                         + ", " + running.size() + " already running)");
-            } else if (costBudgetUsd > 0 && spend + ESTIMATED_COST_USD > costBudgetUsd) {
+            } else if (costBudgetUsd > 0 && spend + estimateUsd > costBudgetUsd) {
                 withheld.put(id, "cost budget " + CostOverview.usd(costBudgetUsd) + " reached (spent "
                         + CostOverview.usd(spend) + ", estimated "
-                        + CostOverview.usd(ESTIMATED_COST_USD) + " per launch)");
+                        + CostOverview.usd(estimateUsd) + " per launch)");
             } else {
                 launchIds.add(id);
-                spend += ESTIMATED_COST_USD;
+                spend += estimateUsd;
             }
         }
 

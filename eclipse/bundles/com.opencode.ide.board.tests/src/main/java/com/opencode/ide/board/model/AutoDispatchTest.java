@@ -1,10 +1,12 @@
 package com.opencode.ide.board.model;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -22,9 +24,11 @@ import com.opencode.ide.tasks.Task;
  * (STALE before READY — rework before new work — ids in natural order within
  * both groups), the concurrency cap counting already-running jobs, the cost
  * budget boundary (reaching the budget exactly is still admitted; recorded
- * spend counts; unknown spend reads as 0; 0 means unlimited), and the
- * pure-function properties (never throws, never launches non-candidates,
- * same inputs yield the same plan).
+ * spend counts; unknown spend reads as 0; 0 means unlimited), the per-launch
+ * estimate (placeholder default, calibrated swap, plan boundary math), the
+ * {@link AutoDispatch#calibratedEstimate(CostOverview)} calibration rules,
+ * and the pure-function properties (never throws, never launches
+ * non-candidates, same inputs yield the same plan).
  */
 public class AutoDispatchTest {
 
@@ -77,6 +81,12 @@ public class AutoDispatchTest {
         assertThrows(IllegalArgumentException.class, () -> AutoDispatch.of(1, -0.01, true));
         assertThrows("NaN is not a budget either",
                 IllegalArgumentException.class, () -> AutoDispatch.of(1, Double.NaN, true));
+    }
+
+    @Test
+    public void ofRejectsNegativeOrNaNEstimate() {
+        assertThrows(IllegalArgumentException.class, () -> new AutoDispatch(4, 0, true, -0.01));
+        assertThrows(IllegalArgumentException.class, () -> new AutoDispatch(4, 0, true, Double.NaN));
     }
 
     // ------------------------------------------------------------------
@@ -273,5 +283,104 @@ public class AutoDispatchTest {
         Set<String> running = Set.of("T-8");
         assertEquals(policy.plan(tasks, readiness, cost, running),
                 policy.plan(tasks, readiness, cost, running));
+    }
+
+    // ------------------------------------------------------------------
+    // Per-launch estimate (placeholder default, calibrated swap)
+    // ------------------------------------------------------------------
+
+    @Test
+    public void estimateDefaultsToThePlaceholderConstant() {
+        assertEquals(AutoDispatch.ESTIMATED_COST_USD, AutoDispatch.of(4, 0, true).estimateUsd(), 0);
+        assertEquals("the convenience constructor carries the placeholder too",
+                AutoDispatch.ESTIMATED_COST_USD, new AutoDispatch(4, 0, true).estimateUsd(), 0);
+    }
+
+    @Test
+    public void withEstimateKeepsThePolicyAndReplacesTheEstimate() {
+        AutoDispatch policy = AutoDispatch.of(3, 1, false).withEstimateUsd(0.02);
+        assertEquals(3, policy.maxConcurrent());
+        assertEquals(1, policy.costBudgetUsd(), 0);
+        assertFalse(policy.includeStale());
+        assertEquals(0.02, policy.estimateUsd(), 0);
+    }
+
+    @Test
+    public void planBooksTheCustomEstimateAgainstTheBudget() {
+        // $0.10 budget, $0.04 per launch: the first two land within (0.04,
+        // 0.08), the third (0.12) would exceed — the boundary math must use
+        // the calibrated estimate, not the placeholder
+        AutoDispatch policy = AutoDispatch.of(10, 0.10, true).withEstimateUsd(0.04);
+        List<Task> tasks = List.of(ticket("T-1"), ticket("T-2"), ticket("T-3"));
+        Map<String, Readiness> readiness = Map.of("T-1", READY, "T-2", READY, "T-3", READY);
+        AutoDispatch.DispatchPlan plan = policy.plan(tasks, readiness, CostOverview.empty(), Set.of());
+        assertEquals(List.of("T-1", "T-2"), plan.launch());
+        assertTrue(reasonOf(plan, "T-3"), reasonOf(plan, "T-3").contains("$0.04"));
+    }
+
+    // ------------------------------------------------------------------
+    // Calibrated estimate
+    // ------------------------------------------------------------------
+
+    /** An overview of one recorded ticket per cost. */
+    private static CostOverview overviewOfCosts(double... costs) {
+        List<Task> tasks = new ArrayList<>();
+        int i = 1;
+        for (double cost : costs) {
+            Task t = ticket("T-c" + i++);
+            t.comments.add(new Task.Comment(Instant.EPOCH, "fleet",
+                    "fleet actuals: cost " + cost + " USD"));
+            tasks.add(t);
+        }
+        return CostOverview.of(tasks);
+    }
+
+    @Test
+    public void calibratedEstimateMeansTheRecordedTicketCosts() {
+        assertEquals(0.06, AutoDispatch.calibratedEstimate(overviewOfCosts(0.02, 0.04, 0.06, 0.12)), 1e-9);
+    }
+
+    @Test
+    public void calibratedEstimateFallsBackBelowThreeSamples() {
+        assertEquals("two samples are noise, not signal",
+                AutoDispatch.ESTIMATED_COST_USD,
+                AutoDispatch.calibratedEstimate(overviewOfCosts(0.9, 0.1)), 0);
+        assertEquals("no samples at all",
+                AutoDispatch.ESTIMATED_COST_USD,
+                AutoDispatch.calibratedEstimate(CostOverview.empty()), 0);
+    }
+
+    @Test
+    public void calibratedEstimateTrustsExactlyThreeSamples() {
+        assertEquals(0.02, AutoDispatch.calibratedEstimate(overviewOfCosts(0.01, 0.02, 0.03)), 1e-9);
+    }
+
+    @Test
+    public void calibratedEstimateToleratesZeroCostActuals() {
+        assertEquals("recorded zeros are samples, not unknowns",
+                0.01, AutoDispatch.calibratedEstimate(overviewOfCosts(0, 0, 0.03)), 1e-9);
+    }
+
+    @Test
+    public void calibratedEstimateIgnoresUnknownCostTickets() {
+        Task unknown = ticket("T-u");
+        unknown.comments.add(new Task.Comment(Instant.EPOCH, "fleet",
+                "fleet actuals: agent executor, model a/b"));
+        Task known = ticket("T-k");
+        known.comments.add(new Task.Comment(Instant.EPOCH, "fleet", "fleet actuals: cost 0.5 USD"));
+        assertEquals("only tickets with a recorded cost are samples — two known stay below the minimum",
+                AutoDispatch.ESTIMATED_COST_USD,
+                AutoDispatch.calibratedEstimate(CostOverview.of(List.of(unknown, known))), 0);
+    }
+
+    @Test
+    public void calibratedEstimateRoundsToFourDecimals() {
+        assertEquals("the raw mean 0.0100166\u2026 rounds to 4 decimals",
+                0.01, AutoDispatch.calibratedEstimate(overviewOfCosts(0.01, 0.01, 0.01005)), 1e-9);
+    }
+
+    @Test
+    public void calibratedEstimateOfNullOverviewFallsBack() {
+        assertEquals(AutoDispatch.ESTIMATED_COST_USD, AutoDispatch.calibratedEstimate(null), 0);
     }
 }

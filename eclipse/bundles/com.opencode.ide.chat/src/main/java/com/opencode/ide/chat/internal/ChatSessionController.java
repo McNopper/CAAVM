@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import com.opencode.ide.chat.ChatPermissionAdapter;
 import com.opencode.ide.client.ChatRequest;
 import com.opencode.ide.client.DefaultModels;
 import com.opencode.ide.client.OpencodeEventListener;
@@ -111,6 +112,7 @@ public final class ChatSessionController {
      */
     private final List<String> streamedMids = new CopyOnWriteArrayList<>();
     private OpencodeEventListener eventListener;
+    private ChatPermissionAdapter permissionAdapter;
 
     public ChatSessionController(ChatServerConnection connection, Renderer renderer, Host host) {
         this.connection = connection;
@@ -159,6 +161,14 @@ public final class ChatSessionController {
             }
         };
         connection.addEventListener(eventListener);
+        permissionAdapter = new ChatPermissionAdapter(() -> {
+            try {
+                return connection.getClient();
+            } catch (OpencodeException e) {
+                return null;
+            }
+        });
+        connection.addEventListener(permissionAdapter);
     }
 
     /** Unsubscribes from the event stream (view dispose). */
@@ -170,6 +180,14 @@ public final class ChatSessionController {
                 // best-effort during dispose
             }
             eventListener = null;
+        }
+        if (permissionAdapter != null) {
+            try {
+                connection.removeEventListener(permissionAdapter);
+            } catch (Throwable ignored) {
+                // best-effort during dispose
+            }
+            permissionAdapter = null;
         }
     }
 

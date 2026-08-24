@@ -2,6 +2,7 @@ package com.opencode.ide.board.fleet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -9,6 +10,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -18,6 +20,8 @@ import org.junit.rules.TemporaryFolder;
 
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.fleet.Bootstrap;
+import com.opencode.ide.fleet.FleetJob;
 
 /**
  * {@link TaskFleetLauncher} wiring tests: the fast validation paths run
@@ -26,6 +30,10 @@ import com.opencode.ide.client.OpencodeClient;
  * The fleet-cache tests pin the reviewer follow-up #4 semantics: suppliers
  * changes evict per-root fleets (generation-keyed cache) and fleet creation
  * locks per root, so a spawn for one root never stalls another root's launch.
+ * The bootstrap tests capture the engine-call seam: the stored bootstrap
+ * (supplier-injected, re-read per launch) must reach the
+ * {@code TaskFleet.launch} call — as the value while set, as {@code null}
+ * when unset, and degraded to {@code null} when the supplier fails.
  */
 public class TaskFleetLauncherTest {
 
@@ -146,6 +154,86 @@ public class TaskFleetLauncherTest {
         assertEquals(1, spawnA.getCount()); // B settled while A is still spawning
         spawnA.countDown();
         awaitFailure("T-201", null); // A settles too — nothing left spinning
+    }
+
+    // ------------------------------------------------------------------
+    // Bootstrap wiring (stored bootstrap reaches the fleet launch call)
+    // ------------------------------------------------------------------
+
+    @Test
+    public void storedBootstrapReachesTheFleetLaunchCall() throws Exception {
+        Path storeRoot = engineCallStoreRoot("repo4");
+        Bootstrap bootstrap = Bootstrap.of("build", "npm install");
+        AtomicReference<Bootstrap> seen = new AtomicReference<>();
+        CountDownLatch captured = captureEngineLaunch(seen);
+        TaskFleetLauncher launcher = new TaskFleetLauncher(
+                () -> throwingClient("engine-call-not-made"),
+                () -> null,
+                () -> storeRoot,
+                () -> bootstrap);
+
+        FleetJobHandle handle = launcher.launch("hephaestus", "T-301");
+
+        assertEquals(FleetJobHandle.State.RUNNING, handle.state());
+        assertTrue("the engine launch was never called", captured.await(10, TimeUnit.SECONDS));
+        assertEquals("the stored bootstrap must reach the fleet launch call", bootstrap, seen.get());
+    }
+
+    @Test
+    public void unsetBootstrapReachesTheFleetLaunchAsNone() throws Exception {
+        Path storeRoot = engineCallStoreRoot("repo5");
+        AtomicReference<Bootstrap> seen = new AtomicReference<>(Bootstrap.of("stale", "leftover"));
+        CountDownLatch captured = captureEngineLaunch(seen);
+        TaskFleetLauncher launcher = new TaskFleetLauncher(
+                () -> throwingClient("engine-call-not-made"),
+                () -> null,
+                () -> storeRoot);
+
+        launcher.launch("hephaestus", "T-302");
+
+        assertTrue("the engine launch was never called", captured.await(10, TimeUnit.SECONDS));
+        assertNull("no bootstrap supplied means none reaches the fleet", seen.get());
+    }
+
+    @Test
+    public void failingBootstrapSupplierDegradesToNoBootstrap() throws Exception {
+        Path storeRoot = engineCallStoreRoot("repo6");
+        AtomicReference<Bootstrap> seen = new AtomicReference<>();
+        CountDownLatch captured = captureEngineLaunch(seen);
+        TaskFleetLauncher launcher = new TaskFleetLauncher(
+                () -> throwingClient("engine-call-not-made"),
+                () -> null,
+                () -> storeRoot,
+                () -> { throw new IllegalStateException("store unreadable"); });
+
+        launcher.launch("hephaestus", "T-303");
+
+        assertTrue("a failing bootstrap supplier must not block the launch",
+                captured.await(10, TimeUnit.SECONDS));
+        assertNull("the launch proceeds without a bootstrap", seen.get());
+    }
+
+    /** A git repo + store root whose fleet creation succeeds with a throwing client (no server needed). */
+    private Path engineCallStoreRoot(String folder) throws IOException {
+        Path repo = tmp.newFolder(folder).toPath();
+        Files.createDirectories(repo.resolve(".git"));
+        return Files.createDirectories(repo.resolve(".opencode").resolve("tasks"));
+    }
+
+    /**
+     * Replaces the engine call with a capture returning a settled job;
+     * {@link TaskFleetLauncher#resetForTests()} (before/after each test)
+     * restores the real one.
+     */
+    private static CountDownLatch captureEngineLaunch(AtomicReference<Bootstrap> seen) {
+        CountDownLatch captured = new CountDownLatch(1);
+        TaskFleetLauncher.useEngineLaunchForTests(
+                (fleet, project, taskId, repoRoot, timeout, bootstrap) -> {
+                    seen.set(bootstrap);
+                    captured.countDown();
+                    return new FleetJob(taskId, "sess-1", null, FleetJob.State.MERGED, null);
+                });
+        return captured;
     }
 
     /** An {@link OpencodeClient} whose every method throws — fleet creation succeeds, any use fails fast. */

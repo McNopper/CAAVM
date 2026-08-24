@@ -1,0 +1,248 @@
+package com.opencode.ide.git.internal;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.opencode.ide.git.StoreGitStatus;
+import com.opencode.ide.git.StoreSync.Outcome;
+
+/**
+ * The task store's git plumbing behind {@link StoreGitStatus} and
+ * {@link StoreSync}. All invocations go through {@code git -C <dir> ...} with
+ * UTF-8 output capture and a timeout. Unlike {@link GitWorktreeManager} this
+ * layer never throws: failures become {@link StoreGitStatus#NONE} /
+ * {@link Outcome#FAILED} plus a stderr tail in the log.
+ */
+public final class GitStore {
+
+    private static final Logger LOG = Logger.getLogger(GitStore.class.getName());
+
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
+    private static final String GIT = GitLocator.resolve().command().toString();
+    private static final String DEFAULT_MESSAGE = "sync task store";
+    private static final int LOG_TAIL = 1000;
+
+    private static final Pattern AHEAD = Pattern.compile("\\bahead (\\d+)");
+    private static final Pattern BEHIND = Pattern.compile("\\bbehind (\\d+)");
+
+    private GitStore() {
+    }
+
+    record GitOutput(int exitCode, String stdout, String stderr) {
+    }
+
+    public static StoreGitStatus status(Path root) {
+        Path repo = repo(root);
+        if (repo == null) {
+            return StoreGitStatus.NONE;
+        }
+        GitOutput out = run(repo, "status", "--porcelain=v1", "-b");
+        if (out.exitCode() != 0) {
+            return StoreGitStatus.NONE;
+        }
+        String branch = null;
+        int ahead = 0;
+        int behind = 0;
+        int changed = 0;
+        boolean detached = false;
+        boolean headerSeen = false;
+        for (String line : out.stdout().split("\\R")) {
+            if (!headerSeen && line.startsWith("## ")) {
+                headerSeen = true;
+                String header = line.substring(3).trim();
+                if ("No branch".equals(header) || header.startsWith("HEAD (no branch")) {
+                    detached = true;
+                } else if (header.startsWith("No commits yet on ")) {
+                    branch = header.substring("No commits yet on ".length()).trim();
+                } else {
+                    int tracking = header.indexOf("...");
+                    int bracket = header.indexOf('[');
+                    int end = tracking >= 0 ? tracking : header.length();
+                    if (bracket >= 0 && bracket < end) {
+                        end = bracket;
+                    }
+                    branch = header.substring(0, end).trim();
+                    ahead = match(AHEAD, header);
+                    behind = match(BEHIND, header);
+                }
+            } else if (!line.isBlank()) {
+                changed++;
+            }
+        }
+        return new StoreGitStatus(branch, ahead, behind, changed, detached);
+    }
+
+    public static Outcome sync(Path root, String message) {
+        Path repo = repo(root);
+        if (repo == null) {
+            return Outcome.NOT_A_REPO;
+        }
+        if (!isWorkTree(repo)) {
+            return gitUnusable() ? Outcome.FAILED : Outcome.NOT_A_REPO;
+        }
+        GitOutput add = run(repo, "add", "-A");
+        if (add.exitCode() != 0) {
+            warn("git add -A", add);
+            return Outcome.FAILED;
+        }
+        GitOutput staged = run(repo, "diff", "--cached", "--name-only");
+        if (staged.exitCode() != 0) {
+            warn("git diff --cached --name-only", staged);
+            return Outcome.FAILED;
+        }
+        boolean committed = false;
+        if (!staged.stdout().isBlank()) {
+            GitOutput commit = run(repo, "commit", "-m",
+                    message == null || message.isBlank() ? DEFAULT_MESSAGE : message);
+            if (commit.exitCode() != 0) {
+                warn("git commit", commit);
+                return Outcome.FAILED;
+            }
+            committed = true;
+        }
+        GitOutput pull = run(repo, "pull", "--rebase");
+        if (pull.exitCode() != 0) {
+            warn("git pull --rebase", pull);
+            return rebaseInProgress(repo) ? Outcome.PULL_CONFLICT : Outcome.FAILED;
+        }
+        boolean unpushed = unpushedCommits(repo) != 0;
+        GitOutput push = run(repo, "push");
+        if (push.exitCode() != 0) {
+            warn("git push", push);
+            return rejected(push) ? Outcome.PUSH_REJECTED : Outcome.FAILED;
+        }
+        return committed || unpushed ? Outcome.PUSHED : Outcome.UP_TO_DATE;
+    }
+
+    public static Outcome recover(Path root) {
+        Path repo = repo(root);
+        if (repo == null) {
+            return Outcome.NOT_A_REPO;
+        }
+        if (!isWorkTree(repo)) {
+            return gitUnusable() ? Outcome.FAILED : Outcome.NOT_A_REPO;
+        }
+        GitOutput abort = run(repo, "rebase", "--abort");
+        if (abort.exitCode() != 0) {
+            warn("git rebase --abort", abort);
+        }
+        return rebaseInProgress(repo) ? Outcome.PULL_CONFLICT : Outcome.FAILED;
+    }
+
+    private static int match(Pattern pattern, String header) {
+        Matcher matcher = pattern.matcher(header);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : 0;
+    }
+
+    private static boolean isWorkTree(Path repo) {
+        GitOutput probe = run(repo, "rev-parse", "--is-inside-work-tree");
+        return probe.exitCode() == 0 && "true".equals(probe.stdout().trim());
+    }
+
+    private static boolean gitUnusable() {
+        GitOutput version = run(Path.of("."), "--version");
+        return version.exitCode() != 0;
+    }
+
+    private static boolean rejected(GitOutput push) {
+        String output = (push.stdout() + push.stderr()).toLowerCase(Locale.ROOT);
+        return output.contains("rejected") || output.contains("non-fast-forward")
+                || output.contains("fetch first");
+    }
+
+    private static int unpushedCommits(Path repo) {
+        GitOutput count = run(repo, "rev-list", "--count", "@{upstream}..HEAD");
+        if (count.exitCode() != 0) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(count.stdout().trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private static boolean rebaseInProgress(Path repo) {
+        if (run(repo, "rev-parse", "-q", "--verify", "REBASE_HEAD").exitCode() == 0) {
+            return true;
+        }
+        return rebaseDirExists(repo, "rebase-merge") || rebaseDirExists(repo, "rebase-apply");
+    }
+
+    private static boolean rebaseDirExists(Path repo, String name) {
+        GitOutput path = run(repo, "rev-parse", "--git-path", name);
+        if (path.exitCode() != 0 || path.stdout().isBlank()) {
+            return false;
+        }
+        return Files.isDirectory(repo.resolve(path.stdout().trim()));
+    }
+
+    private static Path repo(Path root) {
+        return root == null ? null : root.toAbsolutePath().normalize();
+    }
+
+    private static void warn(String action, GitOutput out) {
+        String stderr = out.stderr().trim();
+        String tail = stderr.length() <= LOG_TAIL ? stderr : stderr.substring(stderr.length() - LOG_TAIL);
+        LOG.log(Level.WARNING, action + " failed (exit " + out.exitCode() + "): " + tail);
+    }
+
+    private static GitOutput run(Path directory, String... args) {
+        List<String> command = new ArrayList<>();
+        command.add(GIT);
+        command.add("-C");
+        command.add(directory.toString());
+        command.addAll(List.of(args));
+        Process process;
+        try {
+            process = new ProcessBuilder(command).start();
+        } catch (IOException e) {
+            return new GitOutput(-1, "", "failed to start git (" + GIT + "): " + e.getMessage());
+        }
+        CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> readUtf8(process.getInputStream()));
+        CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> readUtf8(process.getErrorStream()));
+        boolean finished;
+        try {
+            finished = process.waitFor(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
+            return new GitOutput(-1, "", "interrupted while waiting for git " + Arrays.toString(args));
+        }
+        if (!finished) {
+            process.destroyForcibly();
+            return new GitOutput(-1, "", "git " + Arrays.toString(args) + " timed out after " + TIMEOUT);
+        }
+        return new GitOutput(process.exitValue(), join(stdout), join(stderr));
+    }
+
+    private static String join(CompletableFuture<String> future) {
+        try {
+            return future.get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static String readUtf8(InputStream in) {
+        try (in) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
+        }
+    }
+}

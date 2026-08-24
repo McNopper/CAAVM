@@ -37,7 +37,9 @@ Dependency rules (enforced in the manifests, plus build-time Eclipse-import bans
 `ProjectContext` interface (defined in core's context package), implemented as an OSGi service in
 the cdt bundle. `git`, `tools` and `components/chat-web` have no Eclipse dependencies at all —
 agents run headless; the IDE is the human's overview + takeover surface. See
-[`ARCHITECTURE.md`](ARCHITECTURE.md) for the four separation axes and the review checklist.
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the four separation axes and the review checklist,
+and [`DISTRIBUTED-FLEETS.md`](DISTRIBUTED-FLEETS.md) for running one shared board across
+several machines (store git status + *Sync store* in the Board view).
 
 ```
 opencode-eclipse/

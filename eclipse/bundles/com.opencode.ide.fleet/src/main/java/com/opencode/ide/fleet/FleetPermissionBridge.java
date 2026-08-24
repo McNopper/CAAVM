@@ -5,22 +5,37 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import com.opencode.ide.client.ChatRequest;
 import com.opencode.ide.client.McpServerConfig;
 import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.client.OpencodeEventStream;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.activity.PermissionEvents;
 import com.opencode.ide.client.activity.PermissionRequest;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
+import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.ConfigInfo;
+import com.opencode.ide.client.model.FileDiff;
+import com.opencode.ide.client.model.FileNode;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
+import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.OauthStart;
 import com.opencode.ide.client.model.OpencodeEvent;
+import com.opencode.ide.client.model.ProjectSummary;
+import com.opencode.ide.client.model.ProviderAuth;
 import com.opencode.ide.client.model.ProviderList;
+import com.opencode.ide.client.model.SearchMatch;
+import com.opencode.ide.client.model.SkillInfo;
 import com.opencode.ide.client.model.Session;
 import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.SessionTodo;
 import com.opencode.ide.client.model.ShellResult;
+import com.opencode.ide.client.model.SymbolResult;
+import com.opencode.ide.client.model.VcsInfo;
 
 /**
  * Event-to-queue bridge for the fleet's {@link PermissionQueue}: feed it the
@@ -119,7 +134,12 @@ public final class FleetPermissionBridge {
         return new WatchingClient(delegate);
     }
 
-    /** Delegating client that registers created sessions with the bridge. */
+    /**
+     * Delegating client that registers created sessions with the bridge.
+     * Overrides every {@link OpencodeClient} method mechanically (the
+     * {@code WatchingClientDelegationTest} reflection guard enforces this) —
+     * only {@code createSession} adds the registration.
+     */
     private final class WatchingClient implements OpencodeClient {
 
         private final OpencodeClient delegate;
@@ -159,6 +179,12 @@ public final class FleetPermissionBridge {
         }
 
         @Override
+        public Session createSession(String title) throws OpencodeException {
+            // through the two-arg override so the created session is registered
+            return createSession(title, null);
+        }
+
+        @Override
         public Session createSession(String title, Path directory) throws OpencodeException {
             Session session = delegate.createSession(title, directory);
             if (session != null && session.id() != null) {
@@ -173,8 +199,23 @@ public final class FleetPermissionBridge {
         }
 
         @Override
+        public List<McpServerInfo> getMcpServers() throws OpencodeException {
+            return delegate.getMcpServers();
+        }
+
+        @Override
+        public List<SkillInfo> getSkills() throws OpencodeException {
+            return delegate.getSkills();
+        }
+
+        @Override
         public List<ChatEntry> getMessages(String sessionId) throws OpencodeException {
             return delegate.getMessages(sessionId);
+        }
+
+        @Override
+        public List<SessionTodo> getSessionTodos(String sessionId) throws OpencodeException {
+            return delegate.getSessionTodos(sessionId);
         }
 
         @Override
@@ -183,14 +224,142 @@ public final class FleetPermissionBridge {
         }
 
         @Override
-        public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
-            return delegate.runShell(sessionId, agent, command);
+        public void abortSession(String sessionId) throws OpencodeException {
+            delegate.abortSession(sessionId);
         }
 
         @Override
         public void log(String service, String level, String message, Map<String, Object> extra)
                 throws OpencodeException {
             delegate.log(service, level, message, extra);
+        }
+
+        @Override
+        public List<FileDiff> getSessionDiff(String sessionId, String messageId) throws OpencodeException {
+            return delegate.getSessionDiff(sessionId, messageId);
+        }
+
+        @Override
+        public Session forkSession(String sessionId, String messageId) throws OpencodeException {
+            return delegate.forkSession(sessionId, messageId);
+        }
+
+        @Override
+        public boolean revertMessage(String sessionId, String messageId, String partId) throws OpencodeException {
+            return delegate.revertMessage(sessionId, messageId, partId);
+        }
+
+        @Override
+        public boolean unrevertSession(String sessionId) throws OpencodeException {
+            return delegate.unrevertSession(sessionId);
+        }
+
+        @Override
+        public boolean summarizeSession(String sessionId, String providerId, String modelId)
+                throws OpencodeException {
+            return delegate.summarizeSession(sessionId, providerId, modelId);
+        }
+
+        @Override
+        public Session shareSession(String sessionId) throws OpencodeException {
+            return delegate.shareSession(sessionId);
+        }
+
+        @Override
+        public Session unshareSession(String sessionId) throws OpencodeException {
+            return delegate.unshareSession(sessionId);
+        }
+
+        @Override
+        public boolean respondToPermission(String sessionId, String permissionId, String response, boolean remember)
+                throws OpencodeException {
+            return delegate.respondToPermission(sessionId, permissionId, response, remember);
+        }
+
+        @Override
+        public List<CommandInfo> getCommands() throws OpencodeException {
+            return delegate.getCommands();
+        }
+
+        @Override
+        public ChatEntry runCommand(String sessionId, String command, List<String> arguments)
+                throws OpencodeException {
+            return delegate.runCommand(sessionId, command, arguments);
+        }
+
+        @Override
+        public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
+            return delegate.runShell(sessionId, agent, command);
+        }
+
+        @Override
+        public List<ProjectSummary> getProjects() throws OpencodeException {
+            return delegate.getProjects();
+        }
+
+        @Override
+        public VcsInfo getVcsInfo() throws OpencodeException {
+            return delegate.getVcsInfo();
+        }
+
+        @Override
+        public List<FileNode> listFiles(String path) throws OpencodeException {
+            return delegate.listFiles(path);
+        }
+
+        @Override
+        public List<SearchMatch> findText(String pattern) throws OpencodeException {
+            return delegate.findText(pattern);
+        }
+
+        @Override
+        public List<String> findFiles(String query) throws OpencodeException {
+            return delegate.findFiles(query);
+        }
+
+        @Override
+        public List<SymbolResult> findSymbols(String query) throws OpencodeException {
+            return delegate.findSymbols(query);
+        }
+
+        @Override
+        public ConfigInfo patchConfig(Map<String, Object> changes) throws OpencodeException {
+            return delegate.patchConfig(changes);
+        }
+
+        @Override
+        public boolean tuiAction(String action, Map<String, Object> body) throws OpencodeException {
+            return delegate.tuiAction(action, body);
+        }
+
+        @Override
+        public List<FileStatus> getFileStatus() throws OpencodeException {
+            return delegate.getFileStatus();
+        }
+
+        @Override
+        public String getFileContent(String path) throws OpencodeException {
+            return delegate.getFileContent(path);
+        }
+
+        @Override
+        public List<ProviderAuth> getProviderAuths() throws OpencodeException {
+            return delegate.getProviderAuths();
+        }
+
+        @Override
+        public OauthStart beginProviderOauth(String providerId) throws OpencodeException {
+            return delegate.beginProviderOauth(providerId);
+        }
+
+        @Override
+        public boolean startProviderOauth(String providerId) throws OpencodeException {
+            return delegate.startProviderOauth(providerId);
+        }
+
+        @Override
+        public OpencodeEventStream getGlobalEvents(Consumer<OpencodeEvent> sink, Consumer<Boolean> connectionListener) {
+            return delegate.getGlobalEvents(sink, connectionListener);
         }
     }
 }
