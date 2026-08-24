@@ -41,7 +41,7 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 | `project-manager-` | Project management | `project-manager-operating-model`, `project-manager-orchestrate-execution`, `project-manager-route-request`, `project-manager-audit-traceability`, `project-manager-estimate-costs`, `project-manager-create-ticket`, `project-manager-doc-about` |
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
-| `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation) |
+| `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation), `code-repo-map` (probe-don't-read orientation map: layout, build/test entry points, module one-liners) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-author`,
 `executor`, `reviewer`, `rubberduck`, `research`, `project-manager`); domain agents keep their prefix
@@ -61,6 +61,13 @@ product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-r
 blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
 stage = optional V-pipeline field: task_advance -> next stage's backlog; task_send_back -> previous stage (blocked + reason)
 ```
+
+Readiness machinery (H6 dataflow): `task_readiness` reports, per ticket, whether its
+stage is READY / WAIT_UPSTREAM / STALE / BLOCKED / RUNNING — upstream done AND inputs
+unchanged since the last run — and the store records `inputs changed:` history markers
+when an upstream moves after a downstream ran. The PM agent can use it to ask "what's
+runnable right now"; the Eclipse Board mirrors it as an opt-in auto-dispatcher
+(*Auto ▶*: launches every runnable sprint ticket under a concurrency + cost-budget cap).
 
 - A worker **self-claims** by role: `task_claim(role=…)` atomically finds the next
   matching ticket, moves it to `in-progress`, sets `assignee`. Two agents never get the

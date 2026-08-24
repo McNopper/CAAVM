@@ -19,13 +19,13 @@ for a second backend, extracted when one actually arrives).
 |---|---|---|---|
 | `com.opencode.ide.client` | **opencode** | `com.google.gson` only — **Eclipse-free, build-enforced** | Pure-Java opencode HTTP client, DTOs (records mirroring the server's OpenAPI), `ChatRequests`/`McpRequests`, SSE parsing + event stream, server launcher, `ClientLog` seam. Reusable as a plain library outside Eclipse/OSGi. |
 | `com.opencode.ide.core` | **eclipse adapter** | `client` + `mcp` + Eclipse runtime + equinox.security | Eclipse glue: preferences (secure remote credentials), activator (installs the Eclipse `ClientLog` adapter, bridges the tasksRoot preference into the MCP endpoint), `ProjectContext` service tracking, `OpencodeConnection` + `ConnectionsManager` (plural connections) lifecycle. |
-| `com.opencode.ide.ui` | **eclipse** | `core` + `client` + `org.eclipse.ui`/`jface`/`swt` | The **OpenCode** perspective, the Server/Providers/**Repo** views, the connection preference page. Server view nests each agent's running sessions (double-click = live transcript); Session details carries Fork/Share/Summarize lifecycle actions; Repo view = lazy file tree + fuzzy file/`@`symbol/`/`text search over the opencode endpoints. |
-| `com.opencode.ide.chat` | **chat ui** | `core` + `client` + SWT `Browser` (no `ui` dependency) | Eclipse **host** for the chat-web component: `ChatPage` (browser facade) + `ChatSessionController` (SWT-free) + embedded `ChatWebServer` serving the component's assets. |
+| `com.opencode.ide.ui` | **eclipse** | `core` + `client` + `org.eclipse.ui`/`jface`/`swt` | The **OpenCode** perspective, the Server/Providers/**Repo** views, the connection preference page. Server view: project/VCS header (dirty + cwd-mismatch warning) + *Working set* category + agent-nested live sessions (double-click = transcript); Session details carries Fork/Share/Summarize lifecycle actions; Providers view shows auth state + *Connect…* (OAuth URL); Repo view = lazy file tree + fuzzy file/`@`symbol/`/`text search over the opencode endpoints. |
+| `com.opencode.ide.chat` | **chat ui** | `core` + `client` + SWT `Browser` (no `ui` dependency) | Eclipse **host** for the chat-web component: `ChatPage` (browser facade) + `ChatSessionController` (SWT-free) + embedded `ChatWebServer` serving the component's assets. Composer carries the `/command` picker (`CommandComposer`); exported `ChatPermissionSink` seam routes chat-session permission asks into the shared queue. |
 | `components/chat-web` | **non-Java** | — (static assets + node checks) | The standalone chat renderer (markdown + KaTeX + highlight.js + mermaid) with a documented bridge contract — hostable in any environment that serves files and calls JS. |
-| `com.opencode.ide.git` | **agentic git** | — (git CLI) — Eclipse-free | `WorktreeManager`: branch + worktree per agent task (under `.git/opencode-fleet/`), serial merge-back with clean conflict abort. Fleet isolation layer, no UI. |
-| `com.opencode.ide.fleet` | **fleet engine** | `client` + `git` + `tasks` — **Eclipse-free, build-enforced** | `FleetRunner`: the headless loop — submit (worktree + directory-scoped session + prompt) → await completion (SSE or poll) → merge back (MERGED / FAILED-on-conflict). `TaskFleet` adds the V-pipeline launch loop (pre-claim → stage-mapped agent → merge → store sync) + per-run cost actuals on the ticket; the Board view drives it. `PermissionQueue` + `FleetPermissionBridge` buffer pending `permission.asked` requests for unattended runs. |
+| `com.opencode.ide.git` | **agentic git** | — (git CLI) — Eclipse-free | `WorktreeManager`: branch + worktree per agent task (under `.git/opencode-fleet/`), serial merge-back with clean conflict abort. Fleet isolation layer. `StoreGitStatus`/`StoreSync` = distributed-fleet store discipline (status summary; commit → pull-rebase → push with recover — see [`DISTRIBUTED-FLEETS.md`](DISTRIBUTED-FLEETS.md)). |
+| `com.opencode.ide.fleet` | **fleet engine** | `client` + `git` + `tasks` — **Eclipse-free, build-enforced** | `FleetRunner`: the headless loop — submit (worktree + directory-scoped session + optional `/shell` `Bootstrap`) → await completion (SSE or poll) → merge back (MERGED / FAILED-on-conflict). `TaskFleet` adds the V-pipeline launch loop (pre-claim → stage-mapped agent → merge → store sync) + per-run cost actuals on the ticket; the Board view drives it. `PermissionQueue` + `FleetPermissionBridge` buffer pending `permission.asked` requests for unattended runs (chat sessions feed the same queue via the chat seam); `GlobalEventsAggregator` merges `/global/event` streams across connections. |
 | `com.opencode.ide.tools` | **agent tools** | `com.google.gson` only — **Eclipse-free, build-enforced** | **`ToolProvider` SPI** + JSON-RPC dispatch + the built-in C++ tool pack (`tools.cpp`: toolchains, build, lint, format). Future language packs = new providers depending on this bundle only. |
-| `com.opencode.ide.tasks` | **task board** | `tools` + gson — **Eclipse-free, build-enforced** | The **task store** (`.opencode/tasks/<project>/`, one Markdown file per ticket) + the **`task_*` tool pack** (create/claim/release/sprint/traceability; replaces the retired Python pm MCP server). Also ships `TasksStdioMain` — the same tools over stdio via `eclipse/tasks-tools.ps1` for TUI-only sessions. |
+| `com.opencode.ide.tasks` | **task board** | `tools` + gson — **Eclipse-free, build-enforced** | The **task store** (`.opencode/tasks/<project>/`, one Markdown file per ticket) + the **`task_*` tool pack** (create/claim/release/sprint/traceability/readiness/invalidations; replaces the retired Python pm MCP server) + `StageReadiness` (the pure dataflow-readiness function behind H6 auto-dispatch and `task_readiness`). Also ships `TasksStdioMain` — the same tools over stdio via `eclipse/tasks-tools.ps1` for TUI-only sessions. |
 | `com.opencode.ide.board` | **board ui** | `core` + `client` + `tasks` + `fleet` + `git` + `chat` + Eclipse UI | **PM Board view** (kanban over the task store: 5 columns, sprint selector + goal, blocked flags, artifact links with markdown/diagram rendering, *Launch task* → `TaskFleet` via `TaskFleetLauncher`, *Take over*, **Cost overview** dialog + `• $X spent` header suffix aggregating the `fleet actuals:` comments) + **Fleet view** (jobs = task → session → worktree → state, per-job **server diff** (`/session/:id/diff`) with local-git fallback, folder/takeover, **Permissions (n)** dialog — approve once/always/reject on pending `permission.asked` requests). SWT-free model (`BoardModel`, `TaskStoreWatcher`, `FleetJobsModel`, `CostOverview`, `DiffSource`/`SessionDiffText`, `FleetPermissions`) is unit-tested. |
 | `mojo/opencode-tasks` | **maven plugin** | the `tasks` bundle store classes (plain jar dep) | **`opencode-tasks:sync`** (validate/normalize `.opencode/tasks/`: schema lint, id/counter consistency, LF; `-Dopencode.tasks.fix=true` applies safe fixes) and **`opencode-tasks:plan`** (render the sprint board as Markdown + standalone HTML into `target/opencode-tasks/`). Maven plans, CMake builds — never invokes a compiler. |
 | `com.opencode.ide.mcp` | **agent endpoint** | `tools` + `tasks` + gson | Local **MCP server** (stateless Streamable HTTP on 127.0.0.1): OSGi DS lifecycle + HTTP endpoint only; tool implementations live in `tools`/`tasks`. Service-driven activation — the endpoint comes up when core binds it, after the tasksRoot preference was bridged. |
@@ -278,8 +278,20 @@ The Providers view shows providers as tree roots with their models as children
   wired into `TaskFleetLauncher` over the primary connection's event stream);
   **chat abort + tool-part rendering + copy-code + newChat/abort key bindings**;
   **CDT first cut** (`CdtProjectContext` service, `DiagnosticsMarkers`/`MarkerApplier`).
-  Reviewed by rubberduck + reviewer gates (2 blockers, 7 majors found & fixed, incl. the
-  real `ChatPart.state` wire shape and a TaskFleet double-launch guard).
+   Reviewed by rubberduck + reviewer gates (2 blockers, 7 majors found & fixed, incl. the
+   real `ChatPart.state` wire shape and a TaskFleet double-launch guard).
+- **Done (H5 + H6 complete, 2026-08-23, six parallel waves):** the full opencode v1.18
+  deep-integration surface — permission queue for unattended fleets (chat sessions included),
+  per-job server diffs, official `/tui` take-over (select-session → append → submit),
+  Repo view + Working set + project/VCS header with cwd cross-check, `/command` picker +
+  `/shell` bootstrap, fork/share/summarize lifecycle, provider auth + OAuth connect,
+  global-events aggregator + Events dialog; and the **H6 dataflow V-pipeline**:
+  `StageReadiness` → invalidation records → `task_readiness` tool → `AutoDispatch` policy
+  (persisted, cost-calibrated) → background `DispatchScheduler` behind the Board's
+  *Auto ▶* toggle — a stage runs as soon as its upstream is done and its inputs unchanged.
+  Distributed-fleet store sync (status header + *Sync store*; see
+  [`DISTRIBUTED-FLEETS.md`](DISTRIBUTED-FLEETS.md)). ~700 new unit/component tests, all
+  headless; the Eclipse UI pass over the deployed jars is the remaining verification step.
 
 **Strategic direction (see [`ROADMAP.md`](ROADMAP.md) for the full plan):**
 - **Agentic C++ harness:** agents create/build/test/lint/format/debug headless in isolated git
@@ -292,7 +304,7 @@ The Providers view shows providers as tree roots with their models as children
   it via MCP tools; "launch from a task" feeds the fleet (Phase 9). Maven plans — CMake builds.
 - **Multi-language later** → new `ToolProvider` implementations (Python first candidate); the
   chat/server/git layers are language-agnostic.
-- **Native markdown chat** → shipped (Phase 12); remaining: abort, tool parts, copy-code.
+- **Native markdown chat** → shipped (Phase 12) incl. abort, tool parts, copy-code, `/command` picker.
 
 ## Notes
 

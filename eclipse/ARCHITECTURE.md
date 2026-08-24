@@ -38,9 +38,9 @@ the `ToolProvider` SPI.
 |---|---|---|
 | `com.opencode.ide.client` (+ tests) | gson | opencode REST/SSE client, DTOs, `ChatRequests`/`McpRequests`, `OpencodeEventStream`, server launcher; hardened error semantics |
 | `com.opencode.ide.tools` (+ tests) | gson | `ToolProvider` SPI + `McpDispatcher` (JSON-RPC) — language-agnostic; the C++ pack lives beside it (tier 3) |
-| `com.opencode.ide.tasks` (+ tests) | tools, gson | the Markdown task store (`.opencode/tasks/`), the V-pipeline (`VStages`, advance/sendBack), the `task_*` tool pack, `TasksStdioMain` (stdio transport) |
-| `com.opencode.ide.git` (+ tests) | — | `WorktreeManager` + `FleetGit` conventions (branch/worktree naming) over the git CLI |
-| `com.opencode.ide.fleet` (+ tests) | client, git, tasks | the fleet engine: `FleetRunner` (submit → await → mergeBack), `TaskFleet` (V-pipeline launch loop), `RoleAgents` dispatch, `SelfClaimPrompt`, telemetry |
+| `com.opencode.ide.tasks` (+ tests) | tools, gson | the Markdown task store (`.opencode/tasks/`), the V-pipeline (`VStages`, advance/sendBack), `StageReadiness` (pure dataflow readiness) + `recordInvalidations` (upstream-changed history markers), the `task_*` tool pack (incl. `task_readiness`), `TasksStdioMain` (stdio transport) |
+| `com.opencode.ide.git` (+ tests) | — | `WorktreeManager` + `FleetGit` conventions (branch/worktree naming) over the git CLI; `StoreGitStatus`/`StoreSync` (distributed-fleet store status + pull→commit→push discipline) |
+| `com.opencode.ide.fleet` (+ tests) | client, git, tasks | the fleet engine: `FleetRunner` (submit → optional `/shell` bootstrap → await → mergeBack), `TaskFleet` (V-pipeline launch loop), `RoleAgents` dispatch, `SelfClaimPrompt`, telemetry, `PermissionQueue`/`FleetPermissionBridge` (unattended permission gating), `GlobalEventsAggregator` (merged cross-connection event feed) |
 | `mojo/opencode-tasks` (plain maven-plugin, not OSGi) | tasks (plain jar), gson, maven-api | `opencode-tasks:sync` / `:plan` over the same store — Maven plans, CMake builds |
 
 ### Tier 2 — the Eclipse harness (OSGi bundles, thin adapters + UI)
@@ -51,7 +51,7 @@ the `ToolProvider` SPI.
 | `com.opencode.ide.mcp` (+ tests) | tools, **tasks**, gson | the `eclipse-build` MCP endpoint (Streamable HTTP, 127.0.0.1) + DS lifecycle only; service-driven activation (activates when core binds `McpInfo`) |
 | `com.opencode.ide.ui` (+ tests) | client, core, workbench | Server (multi-root, virtualized, MCP/skills/sessions) + Providers + Session-details views, perspective, connection preference page; `ViewLoadSupport` |
 | `com.opencode.ide.chat` (+ tests) | client, core, workbench, gson | the Browser host for `components/chat-web` (`ChatPage` + SWT-free `ChatSessionController` + embedded web server); does NOT depend on ui |
-| `com.opencode.ide.board` (+ tests) | client, core, tasks, fleet, git, gson, workbench | the PM surface: Board (flat + V-pipeline layouts, stage filter, blocked rendering) + Fleet views; SWT-free model unit-tested |
+| `com.opencode.ide.board` (+ tests) | client, core, tasks, fleet, git, chat, gson, workbench | the PM surface: Board (flat + V-pipeline layouts, stage filter, blocked rendering, cost overview, *Auto ▶* self-draining dispatch via `DispatchScheduler`/`AutoDispatch`/`StageReadiness`, dispatch settings, store git header + *Sync store*) + Fleet views (jobs, server diff, permissions dialog, events dialog, TUI-first take-over); SWT-free model unit-tested |
 | `com.opencode.ide.cdt` (+ tests) | core, CDT bundles | the CDT bridge (tier 3) |
 
 ### Tier 3 — C++-development specifics
