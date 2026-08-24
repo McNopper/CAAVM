@@ -2,6 +2,7 @@ package com.opencode.ide.ui.views;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.core.commands.Parameterization;
 import org.eclipse.core.commands.ParameterizedCommand;
@@ -48,6 +49,7 @@ import com.opencode.ide.ui.model.ModelComparator;
 import com.opencode.ide.ui.model.ModelFilter;
 import com.opencode.ide.ui.model.ModelRow;
 import com.opencode.ide.ui.model.ModelRows;
+import com.opencode.ide.ui.model.ProviderAuthState;
 
 /**
  * Models from {@code GET /config/providers}, shown as a flat, sortable table.
@@ -75,7 +77,11 @@ public class ProvidersView extends ViewPart implements Refreshable {
     /** All rows from the last load (the filter/sort source array). */
     private volatile ModelRow[] source = new ModelRow[0];
 
-    private record ProvidersLoad(List<ModelRow> rows, String server, String healthTag) {
+    /** Auth states by provider id from the last load (empty while unknown). */
+    private volatile Map<String, ProviderAuthState> authStates = Map.of();
+
+    private record ProvidersLoad(List<ModelRow> rows, String server, String healthTag,
+            Map<String, ProviderAuthState> auths) {
     }
 
     @Override
@@ -109,7 +115,7 @@ public class ProvidersView extends ViewPart implements Refreshable {
         filter = new ModelFilter();
         comparator = new ModelComparator();
 
-        createColumn(layout, "Provider", 2, ModelRow::providerName, 0);
+        createColumn(layout, "Provider", 2, this::providerWithAuth, 0);
         createColumn(layout, "Model", 3, r -> r.model() == null ? "" : (r.model().name() == null ? r.model().id() : r.model().name()), 1);
         createColumn(layout, "ID", 2, r -> r.model() == null ? "" : r.model().id(), 2);
         createColumn(layout, "Status", 1, r -> r.model() == null || r.model().status() == null ? "" : r.model().status(), 3);
@@ -129,17 +135,28 @@ public class ProvidersView extends ViewPart implements Refreshable {
         viewer.addDoubleClickListener((DoubleClickEvent e) ->
                 openChatWithSelection((IStructuredSelection) e.getSelection()));
 
-        // context menu with the same action
+        // context menu with the same action, plus the provider OAuth connect
+        // (enabled only on rows of providers the loaded auth data does not
+        // show as authenticated)
         Action chatAction = new Action("Chat with This Model") {
             @Override
             public void run() {
                 openChatWithSelection(viewer.getStructuredSelection());
             }
         };
+        Action connectAction = new Action("Connect…") {
+            @Override
+            public void run() {
+                connectSelectedProvider();
+            }
+        };
+        connectAction.setToolTipText("Start the provider's OAuth flow (complete it in the browser the server opens)");
         MenuManager menuManager = new MenuManager();
         menuManager.add(chatAction);
+        menuManager.add(connectAction);
         Menu menu = menuManager.createContextMenu(viewer.getControl());
         viewer.getControl().setMenu(menu);
+        menuManager.addMenuListener(manager -> connectAction.setEnabled(connectableSelection()));
 
         contributeActions();
         refresh();
@@ -175,6 +192,74 @@ public class ProvidersView extends ViewPart implements Refreshable {
         }
     }
 
+    // ---------- provider OAuth connect ----------
+
+    /** The selected row, or {@code null}. */
+    private ModelRow selectedRow() {
+        Object first = viewer.getStructuredSelection().getFirstElement();
+        return first instanceof ModelRow row ? row : null;
+    }
+
+    /** Whether the selection is a model row of a provider not authenticated per the loaded auth data. */
+    private boolean connectableSelection() {
+        ModelRow row = selectedRow();
+        if (row == null || row.providerId() == null) {
+            return false;
+        }
+        ProviderAuthState state = authStates.get(row.providerId());
+        return state == null || !state.authenticated();
+    }
+
+    /**
+     * Starts the OAuth flow of the selected provider's first auth method on a
+     * background job. The client's boolean result carries no authorization
+     * URL (the server opens the browser itself), so success only instructs
+     * the user to finish the sign-in in that browser; the auth state is
+     * refreshed afterwards.
+     */
+    private void connectSelectedProvider() {
+        ModelRow row = selectedRow();
+        if (row == null || row.providerId() == null) {
+            return;
+        }
+        String providerId = row.providerId();
+        setContentDescription("Starting " + providerId + " authorization...");
+        ViewLoadSupport.load("Starting provider authorization", () -> {
+            OpencodeClient client = primaryClient(ConnectionsManager.getDefault());
+            return Boolean.valueOf(client.startProviderOauth(providerId));
+        }, started -> showOauthResult(providerId, started.booleanValue()),
+                error -> showOauthError(providerId, error));
+    }
+
+    /** Reports the flow's outcome: started (finish in the browser) or refused (no OAuth method). */
+    private void showOauthResult(String providerId, boolean started) {
+        if (viewer.getControl().isDisposed()) {
+            return;
+        }
+        if (started) {
+            MessageDialog.openInformation(viewer.getControl().getShell(), "Connect provider",
+                    "The opencode server opened an authorization page for \"" + providerId
+                            + "\" in a browser.\n\nComplete the sign-in there; the view then refreshes "
+                            + "the auth state.");
+            refresh();
+        } else {
+            MessageDialog.openWarning(viewer.getControl().getShell(), "Connect provider",
+                    "The opencode server could not start an OAuth flow for \"" + providerId
+                            + "\" (its first auth method may not be OAuth).");
+        }
+    }
+
+    private void showOauthError(String providerId, Throwable error) {
+        if (viewer.getControl().isDisposed()) {
+            return;
+        }
+        MessageDialog.openError(viewer.getControl().getShell(), "Connect provider",
+                "Starting the OAuth flow for \"" + providerId + "\" failed: "
+                        + ViewLoadSupport.message(error));
+        UiActivator.getDefault().getLog().log(
+                new Status(Status.ERROR, UiActivator.PLUGIN_ID, "Failed to start provider OAuth", error));
+    }
+
     private void contributeActions() {
         refreshAction = new Action("Refresh") {
             @Override
@@ -195,9 +280,11 @@ public class ProvidersView extends ViewPart implements Refreshable {
             OpencodeClient client = primaryClient(manager);
             String healthTag = healthTag(client.getHealth()); // also ensures spawned/connected
             ProviderList list = manager.providers(manager.primaryConnection());
+            Map<String, ProviderAuthState> auths = ProviderAuthState.load(client);   // lenient: never throws
             String server = OpencodeConnection.getInstance().getConnectConfig().baseUrl().toString();
-            return new ProvidersLoad(ModelRows.toRows(list), server, healthTag);
-        }, result -> showRows(result.rows(), result.server(), result.healthTag()), this::showError);
+            return new ProvidersLoad(ModelRows.toRows(list), server, healthTag, auths);
+        }, result -> showRows(result.rows(), result.server(), result.healthTag(), result.auths()),
+                this::showError);
     }
 
     private static OpencodeClient primaryClient(ConnectionsManager manager) throws OpencodeException {
@@ -213,13 +300,25 @@ public class ProvidersView extends ViewPart implements Refreshable {
                 + (health != null && health.version() != null ? ", v" + health.version() : "");
     }
 
-    private void showRows(List<ModelRow> rows, String server, String healthTag) {
+    private void showRows(List<ModelRow> rows, String server, String healthTag,
+            Map<String, ProviderAuthState> auths) {
         if (viewer.getControl().isDisposed()) {
             return;
         }
         source = rows.toArray(new ModelRow[0]);
+        authStates = auths == null ? Map.of() : auths;
         applyFilterAndSort();
         setContentDescription("Server: " + server + "  •  " + healthTag + "  •  " + rows.size() + " models");
+    }
+
+    /** Provider cell: the provider name plus {@code " · auth"} while its auth data shows a method. */
+    private String providerWithAuth(ModelRow row) {
+        String name = row.providerName();
+        ProviderAuthState state = authStates.get(row.providerId());
+        if (state == null || !state.authenticated()) {
+            return name; // exactly the bare name while no auth data applies
+        }
+        return (name == null || name.isEmpty() ? row.providerId() : name) + " · auth";
     }
 
     /** Recomputes the visible array from the source (filter + sort) and pushes it into the viewer. */

@@ -4,8 +4,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +65,7 @@ import com.opencode.ide.board.fleet.FleetJobHandle;
 import com.opencode.ide.board.fleet.FleetLauncher;
 import com.opencode.ide.board.fleet.TaskFleetLauncher;
 import com.opencode.ide.board.internal.BoardPlugin;
+import com.opencode.ide.board.model.AutoDispatch;
 import com.opencode.ide.board.model.BoardModel;
 import com.opencode.ide.board.model.BoardModel.BoardMode;
 import com.opencode.ide.board.model.BoardSnapshot;
@@ -76,6 +79,7 @@ import com.opencode.ide.board.model.TaskStoreWatcher;
 import com.opencode.ide.board.model.TicketRow;
 import com.opencode.ide.core.OpencodeConnection;
 import com.opencode.ide.git.FleetGit;
+import com.opencode.ide.tasks.StageReadiness;
 import com.opencode.ide.tasks.Task;
 import com.opencode.ide.tasks.TaskStore;
 import com.opencode.ide.tasks.VStages;
@@ -86,9 +90,9 @@ import com.opencode.ide.tasks.VStages;
  * settings), the sprint selector, the "Group by" layout choice (None = the
  * flat five-column status kanban, Pipeline = the ten V-model stage columns
  * plus a trailing untracked group; persisted too), a blocked-only toggle,
- * and Refresh / Launch task / Take over. The board refreshes live via
- * {@link TaskStoreWatcher} on {@code <root>/<project>} and survives a missing
- * store (notice instead of exception, polling continues).
+ * and Refresh / Launch task / Auto-dispatch / Take over. The board refreshes
+ * live via {@link TaskStoreWatcher} on {@code <root>/<project>} and survives
+ * a missing store (notice instead of exception, polling continues).
  *
  * <p>Blocked tickets are unmissable in both layouts: red bold rows, a red
  * blocked count in every pipeline column header. The context menu on a ticket
@@ -119,6 +123,12 @@ public class BoardView extends ViewPart {
     private static final String STATUS_LEGEND =
             "[PB] product-backlog · [SB] sprint-backlog · [IP] in-progress · [IR] in-review · [D] done";
 
+    /**
+     * The manual-wave dispatch policy (H6 piece 2): four concurrent fleet
+     * sessions, no cost cap, rework included. Calibrated/configurable later.
+     */
+    private static final AutoDispatch AUTO_DISPATCH = AutoDispatch.of(4, 0, true);
+
     private BoardModel model;
     private TaskStoreWatcher watcher;
     /** Assigned in createPartControl — null-checked before every use. */
@@ -138,11 +148,12 @@ public class BoardView extends ViewPart {
     private Action refreshAction;
     private Action costOverviewAction;
     private Action launchAction;
+    private Action autoDispatchAction;
     private Action takeOverAction;
     private Action blockedOnlyAction;
     private Action stageFilterAction;
     /** Selected stage ids for the visibility filter; {@code null} = all visible. */
-    private java.util.Set<String> visibleStages;
+    private Set<String> visibleStages;
     private boolean updatingSprintCombo;
     private boolean updatingModeCombo;
     private String rootOverride = "";
@@ -679,6 +690,15 @@ public class BoardView extends ViewPart {
         launchAction.setToolTipText("Launch a fleet agent on the selected ticket (sprint-backlog / in-progress)");
         launchAction.setEnabled(false);
 
+        autoDispatchAction = new Action("Auto-dispatch") {
+            @Override
+            public void run() {
+                autoDispatch();
+            }
+        };
+        autoDispatchAction.setToolTipText(
+                "Plan over the current sprint (readiness + cost budget) and launch every admitted ticket as a fleet agent");
+
         takeOverAction = new Action("Take over") {
             @Override
             public void run() {
@@ -694,6 +714,7 @@ public class BoardView extends ViewPart {
         toolbar.add(refreshAction);
         toolbar.add(costOverviewAction);
         toolbar.add(launchAction);
+        toolbar.add(autoDispatchAction);
         toolbar.add(takeOverAction);
     }
 
@@ -1026,6 +1047,44 @@ public class BoardView extends ViewPart {
             status.setMessage("Launched " + row.id()
                     + (handle.sessionId() == null ? "" : " (session " + handle.sessionId() + ")"));
         }
+    }
+
+    /**
+     * "Auto-dispatch" toolbar action (ROADMAP H6 piece 2, manual wave):
+     * {@link AutoDispatch} plans over the current sprint's tickets —
+     * readiness evaluated across the whole project, spend from the
+     * project-wide cost overview, live fleet jobs against the concurrency
+     * cap — and every admitted id launches through the same
+     * {@link TaskFleetLauncher} path as "Launch task", one call each.
+     * Opt-in per click; no background loop yet.
+     */
+    private void autoDispatch() {
+        if (model == null || launcher == null) {
+            return;
+        }
+        Map<String, StageReadiness.Readiness> readiness = StageReadiness.evaluate(model.projectTasks());
+        Set<String> running = new LinkedHashSet<>();
+        for (FleetJobHandle job : FleetJobsModel.getDefault().jobs()) {
+            if (job.state() == FleetJobHandle.State.RUNNING && job.taskId() != null) {
+                running.add(job.taskId());
+            }
+        }
+        AutoDispatch.DispatchPlan plan = AUTO_DISPATCH.plan(
+                model.sprintTasks(), readiness, model.costOverview(), running);
+        for (String id : plan.launch()) {
+            launcher.launch(model.project(), id);
+        }
+        if (!plan.launch().isEmpty()) {
+            revealFleetView();
+        }
+        refresh();
+        updateActionEnablement();
+        StringBuilder summary = new StringBuilder("Launched ").append(plan.launch().size())
+                .append(", skipped ").append(plan.skipped().size()).append(".");
+        for (AutoDispatch.Skip skip : plan.skipped()) {
+            summary.append("\n").append(skip.id()).append(" \u2014 ").append(skip.reason());
+        }
+        MessageDialog.openInformation(getSite().getShell(), "Auto-dispatch", summary.toString());
     }
 
     /**

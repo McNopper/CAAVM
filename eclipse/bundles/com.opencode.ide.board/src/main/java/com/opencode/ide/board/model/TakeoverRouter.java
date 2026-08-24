@@ -13,12 +13,14 @@ import com.opencode.ide.client.OpencodeException;
  * Extracted so the routing is testable without SWT.
  *
  * <p>Sequence: a {@code show-toast} probe doubles as the takeover
- * notification; when a TUI answers, {@code append-prompt} queues the
- * standard {@link #takeoverPrompt(String, String)} text in the TUI's input
- * box and {@code submit-prompt} (a no-payload action) sends it. Routing
- * never throws: any refused action ({@code tuiAction} returns false — HTTP
- * 404 when no TUI is attached), missing input, or exception along the way
- * yields {@link Outcome#CHAT}.</p>
+ * notification; when a TUI answers, {@code select-session} first navigates
+ * that TUI to the ticket's session (body key {@code sessionID}, per the
+ * server's {@code tui.session.select} schema), then {@code append-prompt}
+ * queues the standard {@link #takeoverPrompt(String, String)} text in the
+ * TUI's input box and {@code submit-prompt} (a no-payload action) sends it.
+ * Routing never throws: any refused action ({@code tuiAction} returns false
+ * — HTTP 404 when no TUI is attached), missing input, or exception along the
+ * way yields {@link Outcome#CHAT}.</p>
  *
  * <p>Chosen semantics for a refused submit after a successful append: the
  * prompt stays appended (unsubmitted) in the TUI input, ready for the human
@@ -77,6 +79,9 @@ public final class TakeoverRouter {
                     "variant", "info"));
             if (!attached) {
                 return Result.chat("no TUI attached");
+            }
+            if (!client.tuiAction("select-session", Map.of("sessionID", session))) {
+                return Result.chat("TUI refused select-session (session left unselected)");
             }
             if (!client.tuiAction("append-prompt", Map.of("text", prompt))) {
                 return Result.chat("TUI refused append-prompt");

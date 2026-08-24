@@ -27,9 +27,10 @@ import com.opencode.ide.client.model.SessionStatus;
 
 /**
  * Unit tests for the {@link TakeoverRouter} decision: an attached TUI is
- * probed, appended to and submitted to in order; every refusal, missing
- * input or exception falls back to CHAT. The refused-submit case documents
- * the chosen semantics (prompt stays appended in the TUI input).
+ * probed, navigated to the session (select-session), appended to and
+ * submitted to in order; every refusal, missing input or exception falls
+ * back to CHAT. The refused-submit case documents the chosen semantics
+ * (prompt stays appended in the TUI input).
  */
 public class TakeoverRouterTest {
 
@@ -40,6 +41,7 @@ public class TakeoverRouterTest {
         final List<String> actions = new ArrayList<>();
         final List<Map<String, Object>> bodies = new ArrayList<>();
         boolean tuiAttached = true;
+        boolean refuseSelect;
         boolean refuseAppend;
         boolean refuseSubmit;
         OpencodeException failure;
@@ -57,6 +59,7 @@ public class TakeoverRouterTest {
             }
             return switch (action) {
                 case "show-toast" -> tuiAttached;
+                case "select-session" -> !refuseSelect;
                 case "append-prompt" -> !refuseAppend;
                 case "submit-prompt" -> !refuseSubmit;
                 default -> true;
@@ -120,11 +123,11 @@ public class TakeoverRouterTest {
     }
 
     @Test
-    public void tuiAttachedRoutesProbeAppendSubmitInOrder() {
+    public void tuiAttachedRoutesProbeSelectAppendSubmitInOrder() {
         FakeClient client = new FakeClient();
         Result result = TakeoverRouter.route(client, "ses_1", PROMPT);
         assertEquals(Outcome.TUI, result.outcome());
-        assertEquals(List.of("show-toast", "append-prompt", "submit-prompt"), client.actions);
+        assertEquals(List.of("show-toast", "select-session", "append-prompt", "submit-prompt"), client.actions);
         assertTrue(result.detail(), result.detail().contains("ses_1"));
     }
 
@@ -139,17 +142,25 @@ public class TakeoverRouterTest {
     }
 
     @Test
+    public void selectSessionNavigatesBeforeAnythingIsAppended() {
+        FakeClient client = new FakeClient();
+        TakeoverRouter.route(client, "ses_1", PROMPT);
+        assertEquals("the body key is the server schema's camelCase sessionID",
+                Map.of("sessionID", "ses_1"), client.bodies.get(1));
+    }
+
+    @Test
     public void appendPromptCarriesThePromptText() {
         FakeClient client = new FakeClient();
         TakeoverRouter.route(client, "ses_1", PROMPT);
-        assertEquals(Map.of("text", PROMPT), client.bodies.get(1));
+        assertEquals(Map.of("text", PROMPT), client.bodies.get(2));
     }
 
     @Test
     public void submitPromptSendsNoBody() {
         FakeClient client = new FakeClient();
         TakeoverRouter.route(client, "ses_1", PROMPT);
-        assertNull(client.bodies.get(2));
+        assertNull(client.bodies.get(3));
     }
 
     @Test
@@ -163,12 +174,22 @@ public class TakeoverRouterTest {
     }
 
     @Test
+    public void refusedSelectFallsBackToChatWithoutAppend() {
+        FakeClient client = new FakeClient();
+        client.refuseSelect = true;
+        Result result = TakeoverRouter.route(client, "ses_1", PROMPT);
+        assertEquals(Outcome.CHAT, result.outcome());
+        assertEquals(List.of("show-toast", "select-session"), client.actions);
+        assertTrue(result.detail(), result.detail().contains("select-session"));
+    }
+
+    @Test
     public void refusedAppendFallsBackToChatWithoutSubmit() {
         FakeClient client = new FakeClient();
         client.refuseAppend = true;
         Result result = TakeoverRouter.route(client, "ses_1", PROMPT);
         assertEquals(Outcome.CHAT, result.outcome());
-        assertEquals(List.of("show-toast", "append-prompt"), client.actions);
+        assertEquals(List.of("show-toast", "select-session", "append-prompt"), client.actions);
     }
 
     @Test
@@ -179,7 +200,7 @@ public class TakeoverRouterTest {
         client.refuseSubmit = true;
         Result result = TakeoverRouter.route(client, "ses_1", PROMPT);
         assertEquals(Outcome.CHAT, result.outcome());
-        assertEquals(List.of("show-toast", "append-prompt", "submit-prompt"), client.actions);
+        assertEquals(List.of("show-toast", "select-session", "append-prompt", "submit-prompt"), client.actions);
         assertTrue(result.detail(), result.detail().contains("appended"));
     }
 

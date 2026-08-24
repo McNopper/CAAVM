@@ -291,6 +291,37 @@ public final class BoardModel {
     }
 
     /**
+     * Every ticket of the project as full {@link Task}s — the snapshot basis
+     * {@link com.opencode.ide.tasks.StageReadiness#evaluate(List)} expects
+     * (upstream evidence may live in any ticket of the project). Tolerant of
+     * a missing/unreadable store: an empty list instead of an exception.
+     */
+    public List<Task> projectTasks() {
+        if (!Files.isDirectory(projectDir())) {
+            return List.of();
+        }
+        try {
+            return List.copyOf(store.list(project, null, null, null, null));
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * The selected sprint's tickets as full {@link Task}s — {@link #BACKLOG}
+     * selects the unassigned ones, exactly like {@link #refresh()}.
+     */
+    public List<Task> sprintTasks() {
+        List<Task> out = new ArrayList<>();
+        for (Task t : projectTasks()) {
+            if (BACKLOG.equals(sprint) ? t.sprint == null : sprint.equals(t.sprint)) {
+                out.add(t);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Aggregates the fleet cost actuals comments over ALL tickets of the
      * project (per ticket, per sprint, project-wide — see
      * {@link CostOverview}). Tolerant of a missing/unreadable store: an empty

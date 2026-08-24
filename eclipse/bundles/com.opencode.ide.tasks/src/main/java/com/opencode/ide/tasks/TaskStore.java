@@ -105,6 +105,11 @@ public final class TaskStore {
     private static final Duration LOCK_TIMEOUT = Duration.ofSeconds(30);
     private static final Gson GSON = new Gson();
     private static final Set<String> ARTIFACT_KINDS = Set.of("file", "git", "path", "url", "doc");
+    private static final String INVALIDATION_BY = "h6";
+    /** The readiness report's severity order: most urgent kind first. */
+    private static final List<StageReadiness.Kind> READINESS_SEVERITY = List.of(
+            StageReadiness.Kind.STALE, StageReadiness.Kind.BLOCKED, StageReadiness.Kind.WAIT_UPSTREAM,
+            StageReadiness.Kind.RUNNING, StageReadiness.Kind.READY, StageReadiness.Kind.NOT_APPLICABLE);
 
     private final Path root;
 
@@ -631,6 +636,77 @@ public final class TaskStore {
         out.put("orphan_definitions", orphanDefinitions);
         out.put("orphan_verifications", orphanVerifications);
         return out;
+    }
+
+    /**
+     * Persists the H6 invalidation markers: every ticket whose current
+     * {@link StageReadiness} verdict is STALE, and whose last history event
+     * is not already the matching marker, gets one appended - the action
+     * {@code "inputs changed: upstream <id> updated <ts>"} names the changed
+     * upstream and its updated_at, {@code by} is {@code "h6"} - plus an
+     * updated_at touch, so the ticket itself shows why a re-run is due.
+     * Idempotent: a second run without further upstream changes appends
+     * nothing (the marked ticket's fresh updated_at is no longer older than
+     * the upstream's; the last-event guard also catches same-millisecond
+     * races). One transaction over the whole project; the verdicts come from
+     * one snapshot, so cascading staleness (a marked ticket invalidating its
+     * own downstream) is picked up by the next run.
+     *
+     * @return the number of tickets newly marked (0 when nothing is stale).
+     */
+    public int recordInvalidations(String project) {
+        return transaction(project, data -> {
+            List<Task> tickets = new ArrayList<>(data.tasks.values());
+            Map<String, StageReadiness.Readiness> verdicts = StageReadiness.evaluate(tickets);
+            int marked = 0;
+            for (Task t : tickets) {
+                StageReadiness.Readiness verdict = verdicts.get(t.id);
+                if (verdict == null || verdict.kind() != StageReadiness.Kind.STALE) {
+                    continue;
+                }
+                Task upstream = StageReadiness.staleCause(t, tickets);
+                if (upstream == null) {
+                    continue;
+                }
+                String action = "inputs changed: upstream " + upstream.id
+                        + " updated " + Task.formatTs(upstream.updatedAt);
+                if (!t.history.isEmpty() && action.equals(t.history.get(t.history.size() - 1).action())) {
+                    continue;
+                }
+                t.updatedAt = now();
+                t.history(action, INVALIDATION_BY);
+                data.changed.add(t.id);
+                marked++;
+            }
+            return marked;
+        });
+    }
+
+    /**
+     * The H6 dispatch-readiness report for the PM agent: one compact row per
+     * ticket - {@code id}, {@code stage}, {@code kind}, {@code reason} from
+     * {@link StageReadiness#evaluate} (tickets without a stage included as
+     * NOT_APPLICABLE with a null stage) - ordered by kind severity (STALE,
+     * BLOCKED, WAIT_UPSTREAM, RUNNING, READY, NOT_APPLICABLE) then id, so
+     * "what's runnable right now" reads top-down.
+     */
+    public List<Map<String, Object>> readiness(String project) {
+        List<Task> tickets = list(project, null, null, null, null);
+        Map<String, StageReadiness.Readiness> verdicts = StageReadiness.evaluate(tickets);
+        tickets.sort(Comparator
+                .comparing((Task t) -> READINESS_SEVERITY.indexOf(verdicts.get(t.id).kind()))
+                .thenComparing(t -> t.id));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Task t : tickets) {
+            StageReadiness.Readiness r = verdicts.get(t.id);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", t.id);
+            row.put("stage", t.stage);
+            row.put("kind", r.kind().name());
+            row.put("reason", r.reason());
+            rows.add(row);
+        }
+        return rows;
     }
 
     /**

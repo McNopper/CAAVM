@@ -71,6 +71,19 @@ public final class StageReadiness {
     }
 
     /**
+     * The epic-chain upstream ticket a STALE verdict for {@code t} blames:
+     * the newest done/in-review ticket in {@code t}'s upstream stage. Only
+     * meaningful once {@link #evaluate} returned STALE for {@code t} (the
+     * verdict owns the precedence chain and the staleness comparison); the
+     * store's invalidation recorder uses this to name the upstream in the
+     * marker it appends.
+     */
+    static Task staleCause(Task t, List<Task> tickets) {
+        String upstream = upstreamStage(t.stage);
+        return upstream == null ? null : satisfiedViaEpicChain(t, upstream, tickets);
+    }
+
+    /**
      * The upstream stage whose outputs feed {@code stage}: the previous
      * ladder stage for definition stages ({@code null} for requirements),
      * the paired definition stage for verification stages.

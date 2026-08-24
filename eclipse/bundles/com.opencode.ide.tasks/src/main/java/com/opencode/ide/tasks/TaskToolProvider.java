@@ -28,7 +28,9 @@ import com.opencode.ide.tools.ToolProvider;
  * {@code pm-*} skills keep working after a pure rename. On top of that pack,
  * {@code task_advance}/{@code task_send_back} drive the V-model pipeline
  * (stage hand-forward with the in-review/done quality gate, and the blocked
- * hand-back loop; see {@link VStages}).
+ * hand-back loop; see {@link VStages}), and {@code task_readiness} exposes
+ * the {@link StageReadiness} dispatch verdicts so the PM agent can ask
+ * what's runnable right now.
  *
  * <p>Parameter names keep the historical {@code ticket_id}/{@code project}
  * spellings for compatibility with existing agent prose ("task" and "ticket"
@@ -202,6 +204,14 @@ public final class TaskToolProvider implements ToolProvider {
             {
                 Map<String, Object> out = store.traceability(reqStr(a, "project"));
                 return json(PRETTY.toJsonTree(out));
+            }
+            case "task_readiness":
+            {
+                JsonArray arr = new JsonArray();
+                for (Map<String, Object> row : store.readiness(reqStr(a, "project"))) {
+                    arr.add(PRETTY.toJsonTree(row));
+                }
+                return json(arr);
             }
             default:
                 return McpToolResult.error("unknown tool '" + name + "'");
@@ -431,6 +441,11 @@ public final class TaskToolProvider implements ToolProvider {
                     obj.add("sprint_id", strP());
                 })));
         out.add(new McpTool("task_traceability", "Build a definition<->verification traceability matrix for a project.",
+                schema(new String[]{"project"}, obj -> obj.add("project", strP()))));
+        out.add(new McpTool("task_readiness",
+                "Per-ticket V-model dispatch readiness (H6): one {id, stage, kind, reason} row per ticket, ordered "
+                        + "by severity (STALE, BLOCKED, WAIT_UPSTREAM, RUNNING, READY, NOT_APPLICABLE) then id - "
+                        + "what's runnable right now.",
                 schema(new String[]{"project"}, obj -> obj.add("project", strP()))));
         return List.copyOf(out);
     }

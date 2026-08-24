@@ -28,6 +28,7 @@ import com.opencode.ide.client.OpencodeEventListener;
 import com.opencode.ide.client.activity.ActivityTracker;
 import com.opencode.ide.client.activity.FileActivity;
 import com.opencode.ide.client.model.Agent;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
 import com.opencode.ide.client.model.OpencodeEvent;
@@ -43,6 +44,7 @@ import com.opencode.ide.ui.internal.ViewLoadSupport;
 import com.opencode.ide.ui.model.AgentSessions;
 import com.opencode.ide.ui.model.ProjectVcs;
 import com.opencode.ide.ui.model.ServerLabels;
+import com.opencode.ide.ui.model.WorkingSet;
 
 /**
  * Per-server explorer: one root per connection of the
@@ -80,7 +82,7 @@ public class ServerView extends ViewPart implements Refreshable {
 
     private final ActivityTracker tracker = new ActivityTracker();
 
-    enum CategoryKind { AGENTS, SESSIONS, ACTIVE_FILES, MCP_SERVERS, SKILLS }
+    enum CategoryKind { AGENTS, SESSIONS, ACTIVE_FILES, WORKING_SET, MCP_SERVERS, SKILLS }
 
     static final class ServerNode {
         final boolean primary;
@@ -97,9 +99,11 @@ public class ServerView extends ViewPart implements Refreshable {
         final Map<String, String> activity;    // sessionId -> live label ("thinking"/"running tool"/...)
         final List<McpServerInfo> mcpServers;
         final List<SkillInfo> skills;
+        final WorkingSet workingSet;
         final CategoryNode agentsCategory;
         final CategoryNode sessionsCategory;
         final CategoryNode filesCategory;
+        final CategoryNode workingSetCategory;
         final CategoryNode mcpCategory;
         final CategoryNode skillsCategory;
 
@@ -107,13 +111,13 @@ public class ServerView extends ViewPart implements Refreshable {
                 String version, Long pid, List<Agent> agents, List<Session> sessions,
                 Map<String, SessionStatus> statuses) {
             this(primary, label, mode, url, healthy, version, pid, null, agents, sessions, statuses,
-                    List.of(), List.of());
+                    List.of(), List.of(), WorkingSet.EMPTY);
         }
 
         ServerNode(boolean primary, String label, String mode, String url, boolean healthy,
                 String version, Long pid, OpencodeClient client, List<Agent> agents,
                 List<Session> sessions, Map<String, SessionStatus> statuses,
-                List<McpServerInfo> mcpServers, List<SkillInfo> skills) {
+                List<McpServerInfo> mcpServers, List<SkillInfo> skills, WorkingSet workingSet) {
             this.primary = primary;
             this.label = label;
             this.mode = mode;
@@ -128,9 +132,11 @@ public class ServerView extends ViewPart implements Refreshable {
             this.activity = new HashMap<>();
             this.mcpServers = mcpServers == null ? List.of() : mcpServers;
             this.skills = skills == null ? List.of() : skills;
+            this.workingSet = workingSet == null ? WorkingSet.EMPTY : workingSet;
             this.agentsCategory = new CategoryNode("Agents", CategoryKind.AGENTS, this);
             this.sessionsCategory = new CategoryNode("Sessions", CategoryKind.SESSIONS, this);
             this.filesCategory = new CategoryNode("Active files", CategoryKind.ACTIVE_FILES, this);
+            this.workingSetCategory = new CategoryNode("Working set", CategoryKind.WORKING_SET, this);
             this.mcpCategory = new CategoryNode("MCP servers", CategoryKind.MCP_SERVERS, this);
             this.skillsCategory = new CategoryNode("Skills", CategoryKind.SKILLS, this);
         }
@@ -414,6 +420,7 @@ public class ServerView extends ViewPart implements Refreshable {
         Map<String, SessionStatus> statuses = connection.getClient().getSessionStatus();
         List<McpServerInfo> mcpServers = safeMcp(connection.getClient());
         List<SkillInfo> skills = safeSkills(connection.getClient());
+        WorkingSet workingSet = WorkingSet.load(connection.getClient());   // lenient: never throws
         String mode = connection.getMode();
         String url = connection.getConnectConfig().baseUrl().toString();
         Long pid = connection.getSpawnedProcessId();
@@ -423,7 +430,8 @@ public class ServerView extends ViewPart implements Refreshable {
                 sessions == null ? Collections.emptyList() : sessions,
                 statuses == null ? Collections.emptyMap() : statuses,
                 mcpServers == null ? Collections.emptyList() : mcpServers,
-                skills == null ? Collections.emptyList() : skills);
+                skills == null ? Collections.emptyList() : skills,
+                workingSet);
     }
 
     /**
@@ -444,6 +452,7 @@ public class ServerView extends ViewPart implements Refreshable {
             Map<String, SessionStatus> statuses = client.getSessionStatus();
             List<McpServerInfo> mcpServers = safeMcp(client);
             List<SkillInfo> skills = safeSkills(client);
+            WorkingSet workingSet = WorkingSet.load(client);   // lenient: never throws
             return new ServerNode(false, label, null, url,
                     health != null && health.healthy(),
                     health == null ? null : health.version(),
@@ -453,7 +462,8 @@ public class ServerView extends ViewPart implements Refreshable {
                     sessions == null ? Collections.emptyList() : sessions,
                     statuses == null ? Collections.emptyMap() : statuses,
                     mcpServers == null ? Collections.emptyList() : mcpServers,
-                    skills == null ? Collections.emptyList() : skills);
+                    skills == null ? Collections.emptyList() : skills,
+                    workingSet);
         } catch (Exception e) {
             return new ServerNode(false, label, null, url, false, null, null,
                     Collections.emptyList(), Collections.emptyList(), Collections.emptyMap());
@@ -519,6 +529,7 @@ public class ServerView extends ViewPart implements Refreshable {
             expanded.add(node.agentsCategory);
             expanded.add(node.sessionsCategory);
             expanded.add(node.filesCategory);
+            expanded.add(node.workingSetCategory);
             expanded.add(node.mcpCategory);
             expanded.add(node.skillsCategory);
         }
@@ -762,6 +773,7 @@ public class ServerView extends ViewPart implements Refreshable {
                 case AGENTS -> c.server.agents.size();
                 case SESSIONS -> c.server.sessions.size();
                 case ACTIVE_FILES -> tracker.snapshot().files().size();
+                case WORKING_SET -> c.server.workingSet.size();
                 case MCP_SERVERS -> c.server.mcpServers.size();
                 case SKILLS -> c.server.skills.size();
             };
@@ -769,6 +781,9 @@ public class ServerView extends ViewPart implements Refreshable {
         }
         if (element instanceof FileActivity f) {
             return ServerLabels.fileActivityName(f);
+        }
+        if (element instanceof FileStatus file) {
+            return WorkingSet.entryLabel(file);
         }
         if (element instanceof McpServerInfo mcp) {
             return mcp.id() == null ? "(unnamed)" : mcp.id();
@@ -802,6 +817,9 @@ public class ServerView extends ViewPart implements Refreshable {
         if (element instanceof CategoryNode c) {
             if (c.kind == CategoryKind.SESSIONS) {
                 return ServerLabels.sessionsCategoryDetail(c.server.sessions, c.server.statuses);
+            }
+            if (c.kind == CategoryKind.WORKING_SET) {
+                return c.server.workingSet.summary();
             }
             return "";
         }
@@ -863,6 +881,9 @@ public class ServerView extends ViewPart implements Refreshable {
         if (element instanceof FileActivity) {
             return UiActivator.image(UiActivator.ICON_FILE);
         }
+        if (element instanceof FileStatus) {
+            return UiActivator.image(UiActivator.ICON_FILE);
+        }
         return null;
     }
 
@@ -905,6 +926,7 @@ public class ServerView extends ViewPart implements Refreshable {
                 if (node.primary && !tracker.snapshot().files().isEmpty()) {
                     children.add(node.filesCategory); // hidden while nothing is being worked on
                 }
+                children.add(node.workingSetCategory);
                 children.add(node.mcpCategory);
                 children.add(node.skillsCategory);
                 return children.toArray();
@@ -918,6 +940,9 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 if (category.kind == CategoryKind.ACTIVE_FILES) {
                     return activeFiles();
+                }
+                if (category.kind == CategoryKind.WORKING_SET) {
+                    return category.server.workingSet.entries().toArray();
                 }
                 if (category.kind == CategoryKind.MCP_SERVERS) {
                     return category.server.mcpServers.toArray();
@@ -984,6 +1009,14 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 return null;
             }
+            if (element instanceof FileStatus file) {
+                for (ServerNode node : roots) {
+                    if (node.workingSet.entries().contains(file)) {
+                        return node.workingSetCategory;
+                    }
+                }
+                return null;
+            }
             if (element instanceof Session session) {
                 ServerNode owner = ownerOf(session);
                 if (owner == null) {
@@ -1017,6 +1050,9 @@ public class ServerView extends ViewPart implements Refreshable {
                 }
                 if (category.kind == CategoryKind.ACTIVE_FILES) {
                     return !tracker.snapshot().files().isEmpty();
+                }
+                if (category.kind == CategoryKind.WORKING_SET) {
+                    return !category.server.workingSet.isEmpty();
                 }
                 if (category.kind == CategoryKind.MCP_SERVERS) {
                     return !category.server.mcpServers.isEmpty();
