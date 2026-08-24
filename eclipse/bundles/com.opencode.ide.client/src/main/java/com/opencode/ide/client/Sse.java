@@ -60,7 +60,8 @@ public final class Sse {
 
     /**
      * Parse one SSE JSON frame into an {@link OpencodeEvent}. Returns {@code null}
-     * for malformed JSON (pure - does not log).
+     * for malformed JSON (pure - does not log). {@code /global/event} frames
+     * wrap the event in a {@code payload} envelope; it is unwrapped here.
      */
     public static OpencodeEvent parseEvent(String json) {
         if (json == null || json.isBlank()) {
@@ -68,6 +69,9 @@ public final class Sse {
         }
         try {
             JsonObject object = JsonParser.parseString(json).getAsJsonObject();
+            if (object.has("payload") && object.get("payload").isJsonObject()) {
+                object = object.getAsJsonObject("payload");
+            }
             String type = object.has("type") ? object.get("type").getAsString() : null;
             JsonObject properties = (object.has("properties") && object.get("properties").isJsonObject())
                     ? object.getAsJsonObject("properties")

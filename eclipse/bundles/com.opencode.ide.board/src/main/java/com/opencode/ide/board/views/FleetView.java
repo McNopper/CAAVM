@@ -35,6 +35,7 @@ import com.opencode.ide.board.internal.GitCli;
 import com.opencode.ide.board.model.DiffSource;
 import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.SessionDiffText;
+import com.opencode.ide.board.model.TakeoverRouter;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.FileDiff;
 import com.opencode.ide.core.OpencodeConnection;
@@ -42,7 +43,10 @@ import com.opencode.ide.core.OpencodeConnection;
 /**
  * The Fleet view: one row per fleet job in the shared {@link FleetJobsModel}
  * (fed by the Board view's "Launch task"), with state coloring and
- * Open diff / Open folder / Take over actions. Refreshes automatically on
+ * Open diff / Open folder / Take over actions (takeover is TUI-first: the
+ * session is handed to the attached opencode TUI via {@link TakeoverRouter}
+ * when one answers, else the worktree opens and the job is marked taken
+ * over). Refreshes automatically on
  * model changes ({@code asyncExec} from the model listener). "Open diff"
  * shows the server's authoritative session diff when the job carries a
  * session id ({@link DiffSource}), falling back to the local git branch
@@ -70,6 +74,8 @@ public class FleetView extends ViewPart {
     private Action permissionsAction;
     /** Single daemon thread for git diff processes (OSGi-light, never blocks the UI thread). */
     private ExecutorService diffExecutor;
+    /** Single daemon thread for TUI takeover routing (blocking client POSTs). */
+    private ExecutorService takeoverExecutor;
     private final AtomicBoolean diffRunning = new AtomicBoolean();
     private final Runnable modelListener = () -> {
         Display display = Display.getDefault();
@@ -89,6 +95,11 @@ public class FleetView extends ViewPart {
     public void createPartControl(Composite parent) {
         diffExecutor = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "board-fleet-diff");
+            thread.setDaemon(true);
+            return thread;
+        });
+        takeoverExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "board-fleet-takeover");
             thread.setDaemon(true);
             return thread;
         });
@@ -192,7 +203,8 @@ public class FleetView extends ViewPart {
                 takeOver();
             }
         };
-        takeOverAction.setToolTipText("Open the worktree and mark the job as taken over");
+        takeOverAction.setToolTipText(
+                "Hand the session to the attached opencode TUI; without one, open the worktree and mark the job as taken over");
         takeOverAction.setEnabled(false);
 
         permissionsAction = new Action("Permissions") {
@@ -356,11 +368,62 @@ public class FleetView extends ViewPart {
         }
     }
 
+    /**
+     * TUI-first takeover (ROADMAP H5 item 3): the routing runs off the UI
+     * thread (the client may spawn/wait for the server; every TUI action is
+     * a blocking POST) and the outcome applies via {@code asyncExec}. On
+     * TUI the session is handed to the attached opencode TUI; on CHAT (no
+     * TUI attached, no session) the pre-TUI behavior stands — open the
+     * worktree and mark the job taken over.
+     */
     private void takeOver() {
         FleetJobHandle row = selectedRow();
         if (row == null) {
             return;
         }
+        if (row.sessionId() == null || row.sessionId().isBlank()) {
+            openWorktreeTakeOver(row);
+            return;
+        }
+        String sessionId = row.sessionId();
+        String prompt = TakeoverRouter.takeoverPrompt(row.taskId(), null);
+        ExecutorService executor = takeoverExecutor;
+        if (executor == null) {
+            return;
+        }
+        executor.execute(() -> {
+            TakeoverRouter.Result result = routeTakeover(sessionId, prompt);
+            Display display = Display.getDefault();
+            if (display == null || display.isDisposed()) {
+                return;
+            }
+            display.asyncExec(() -> {
+                if (viewer == null || viewer.getControl().isDisposed()) {
+                    return;
+                }
+                if (result.outcome() == TakeoverRouter.Outcome.TUI) {
+                    MessageDialog.openInformation(getSite().getShell(), "Take over",
+                            "Session handed to the attached TUI.\n" + result.detail());
+                    FleetJobsModel.getDefault().update(new FleetJobHandle(row.taskId(), row.sessionId(),
+                            row.worktree(), row.state(), "taken over by user (TUI)"));
+                } else {
+                    openWorktreeTakeOver(row);
+                }
+            });
+        });
+    }
+
+    /** Routes the takeover; a client-acquisition failure is a CHAT result, never an exception. */
+    private static TakeoverRouter.Result routeTakeover(String sessionId, String prompt) {
+        try {
+            return TakeoverRouter.route(OpencodeConnection.getInstance().getClient(), sessionId, prompt);
+        } catch (OpencodeException | RuntimeException e) {
+            return TakeoverRouter.Result.chat("no opencode server: " + e.getMessage());
+        }
+    }
+
+    /** The pre-TUI takeover: open the worktree in the file explorer and mark the job taken over. */
+    private void openWorktreeTakeOver(FleetJobHandle row) {
         Path worktree = worktreeOf(row);
         if (worktree != null && Files.isDirectory(worktree)) {
             Program.launch(worktree.toString());
@@ -401,6 +464,10 @@ public class FleetView extends ViewPart {
         if (diffExecutor != null) {
             diffExecutor.shutdown();
             diffExecutor = null;
+        }
+        if (takeoverExecutor != null) {
+            takeoverExecutor.shutdown();
+            takeoverExecutor = null;
         }
         super.dispose();
     }

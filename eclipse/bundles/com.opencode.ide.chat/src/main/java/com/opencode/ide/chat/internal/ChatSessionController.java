@@ -284,14 +284,7 @@ public final class ChatSessionController {
     private void runSendJob(OutgoingMessage message) {
         try {
             host.info("send job: running");
-            String sid = sessionId;
-            if (sid == null) {
-                Session session = connection.getClient().createSession("Eclipse Chat");
-                sid = session.id();
-                sessionId = sid;
-                String finalSid = sid;
-                host.runOnUi(() -> host.statusChanged("Session " + finalSid));
-            }
+            String sid = ensureSession();
 
             String providerId = message.providerId();
             String modelId = message.modelId();
@@ -313,45 +306,113 @@ public final class ChatSessionController {
             ChatRequest request = new ChatRequest(sid, message.agent(), providerId, modelId,
                     message.variant(), message.system(), message.text());
             ChatEntry reply = connection.getClient().sendMessage(request);
-            // The final render MUST target a bubble the deltas streamed into — the POST
-            // response id and the SSE messageID can differ across server versions, and a
-            // mismatched id would orphan the streaming bubble with its blinking cursor.
-            // With tool rounds there are several streamed bubbles: the reply is the LAST.
-            String lastStreamed = streamedMids.isEmpty() ? null
-                    : streamedMids.get(streamedMids.size() - 1);
-            boolean streamedContent = !streamedMids.isEmpty();
-            boolean replyEmpty = reply == null || reply.text() == null || reply.text().isEmpty();
-            if (streamedContent && replyEmpty) {
-                // The server returned no authoritative text (observed when the
-                // run used tools): keep the streamed bubbles — the cursor stop
-                // finalizes their raw text into rendered markdown on the page.
-                host.info("send job: empty reply, keeping " + streamedMids.size() + " streamed bubble(s)");
-            } else {
-                String mid = lastStreamed != null ? lastStreamed
-                        : ((reply != null && reply.info() != null) ? reply.info().id() : "assistant");
-                String finalText = (reply != null) ? reply.text() : "";
-                String reasoning = (reply != null) ? reply.reasoning() : "";
-                String meta = metaFor(reply);
-                List<ToolLine> tools = toolLinesOf(reply);
-                host.runOnUi(() ->
-                        renderer.setAssistantText(mid, finalText, reasoning, meta, tools));
-            }
+            settleReply(reply);
         } catch (OpencodeException e) {
             String failure = e.getMessage();
             host.runOnUi(() -> renderer.notice("⚠ Send failed: " + failure));
         } finally {
-            // Flip the flag first (volatile): any SSE delta arriving after this
-            // sees sending == false and must not spawn an orphan bubble.
-            sending = false;
-            // every streamed bubble gets its cursor stopped (first, middle, last)
-            List<String> streamed = List.copyOf(streamedMids);
-            streamedMids.clear();
-            for (String mid : streamed) {
-                // belt and braces: even on failure/abort the cursor must stop
-                host.runOnUi(() -> renderer.stopStream(mid));
-            }
-            host.runOnUi(() -> host.sendingChanged(false));
+            finishSend();
         }
+    }
+
+    /**
+     * Sends a picked custom slash command ({@code POST /session/:id/command}):
+     * renders the echo immediately, creates the session if this is the first
+     * submission, and settles the reply through the same streaming/final-render
+     * path as a normal send. A no-op while another submission is in flight.
+     */
+    public void sendCommand(CommandComposer.CommandSelection selection) {
+        if (sending || selection == null || selection.kind() != CommandComposer.Kind.COMMAND
+                || selection.command() == null || selection.command().name() == null) {
+            return;
+        }
+        String command = selection.command().name();
+        List<String> arguments = selection.arguments() == null ? List.of() : selection.arguments();
+        sending = true;
+        streamedMids.clear();
+        try {
+            host.sendingChanged(true);
+            host.info("send command: begin (" + command + ")");
+            renderer.appendUser(echoText(selection, command, arguments));
+            host.runInBackground("Running opencode command " + command,
+                    () -> runCommandJob(command, arguments));
+        } catch (Throwable t) {
+            host.error("command failed unexpectedly", t);
+            sending = false;
+            host.sendingChanged(false);
+        }
+    }
+
+    private void runCommandJob(String command, List<String> arguments) {
+        try {
+            host.info("command job: running");
+            String sid = ensureSession();
+            ChatEntry reply = connection.getClient().runCommand(sid, command, arguments);
+            settleReply(reply);
+        } catch (OpencodeException e) {
+            String failure = e.getMessage();
+            host.runOnUi(() -> renderer.notice("⚠ Command failed: " + failure));
+        } finally {
+            finishSend();
+        }
+    }
+
+    /** Creates the session on first use and reports its id as the view status. */
+    private String ensureSession() throws OpencodeException {
+        String sid = sessionId;
+        if (sid == null) {
+            Session session = connection.getClient().createSession("Eclipse Chat");
+            sid = session.id();
+            sessionId = sid;
+            String finalSid = sid;
+            host.runOnUi(() -> host.statusChanged("Session " + finalSid));
+        }
+        return sid;
+    }
+
+    /**
+     * Renders the authoritative reply of a finished submission. The final
+     * render MUST target a bubble the deltas streamed into — the POST response
+     * id and the SSE messageID can differ across server versions, and a
+     * mismatched id would orphan the streaming bubble with its blinking
+     * cursor. With tool rounds there are several streamed bubbles: the reply
+     * is the LAST.
+     */
+    private void settleReply(ChatEntry reply) {
+        String lastStreamed = streamedMids.isEmpty() ? null
+                : streamedMids.get(streamedMids.size() - 1);
+        boolean streamedContent = !streamedMids.isEmpty();
+        boolean replyEmpty = reply == null || reply.text() == null || reply.text().isEmpty();
+        if (streamedContent && replyEmpty) {
+            // The server returned no authoritative text (observed when the
+            // run used tools): keep the streamed bubbles — the cursor stop
+            // finalizes their raw text into rendered markdown on the page.
+            host.info("send job: empty reply, keeping " + streamedMids.size() + " streamed bubble(s)");
+        } else {
+            String mid = lastStreamed != null ? lastStreamed
+                    : ((reply != null && reply.info() != null) ? reply.info().id() : "assistant");
+            String finalText = (reply != null) ? reply.text() : "";
+            String reasoning = (reply != null) ? reply.reasoning() : "";
+            String meta = metaFor(reply);
+            List<ToolLine> tools = toolLinesOf(reply);
+            host.runOnUi(() ->
+                    renderer.setAssistantText(mid, finalText, reasoning, meta, tools));
+        }
+    }
+
+    /** Clears the in-flight flag and stops every streamed bubble's cursor. */
+    private void finishSend() {
+        // Flip the flag first (volatile): any SSE delta arriving after this
+        // sees sending == false and must not spawn an orphan bubble.
+        sending = false;
+        // every streamed bubble gets its cursor stopped (first, middle, last)
+        List<String> streamed = List.copyOf(streamedMids);
+        streamedMids.clear();
+        for (String mid : streamed) {
+            // belt and braces: even on failure/abort the cursor must stop
+            host.runOnUi(() -> renderer.stopStream(mid));
+        }
+        host.runOnUi(() -> host.sendingChanged(false));
     }
 
     // ---------- abort ----------
@@ -388,5 +449,14 @@ public final class ChatSessionController {
             return "";
         }
         return reply.info().modelLabel();
+    }
+
+    /** Echo for a command submission: the typed text, or a reconstructed {@code /cmd args}. */
+    private static String echoText(CommandComposer.CommandSelection selection, String command,
+            List<String> arguments) {
+        if (selection.message() != null && !selection.message().isBlank()) {
+            return selection.message();
+        }
+        return "/" + command + (arguments.isEmpty() ? "" : " " + String.join(" ", arguments));
     }
 }

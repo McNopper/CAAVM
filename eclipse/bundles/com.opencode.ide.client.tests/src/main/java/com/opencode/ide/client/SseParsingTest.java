@@ -125,4 +125,24 @@ public class SseParsingTest {
         List<String> frames = Sse.frames(java.util.Arrays.asList(": comment", "event: x").iterator());
         assertTrue(frames.isEmpty());
     }
+
+    @Test
+    public void unwrapsGlobalEventPayloadEnvelope() {
+        // /global/event frame shape: {"directory":…, "project":…, "payload":{"id","type","properties"}}
+        String sse = "data: {\"directory\":\"/repo\",\"project\":\"p1\","
+                + "\"payload\":{\"id\":\"evt_1\",\"type\":\"session.created\",\"properties\":{\"info\":{\"id\":\"ses_g1\"}}}}\n\n";
+        List<OpencodeEvent> events = Sse.events(sse);
+        assertEquals(1, events.size());
+        assertEquals("session.created", events.get(0).type());
+        assertEquals("ses_g1", events.get(0).at("info.id"));
+    }
+
+    @Test
+    public void plainFramesWithoutEnvelopeStillParse() {
+        String sse = "data: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"ses_1\"}}\n\n";
+        List<OpencodeEvent> events = Sse.events(sse);
+        assertEquals(1, events.size());
+        assertEquals("session.idle", events.get(0).type());
+        assertEquals("ses_1", events.get(0).string("sessionID"));
+    }
 }

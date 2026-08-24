@@ -71,6 +71,7 @@ import com.opencode.ide.board.model.FleetJobsModel;
 import com.opencode.ide.board.model.PipelineSnapshot;
 import com.opencode.ide.board.model.StageColumn;
 import com.opencode.ide.board.model.StageSelection;
+import com.opencode.ide.board.model.TakeoverRouter;
 import com.opencode.ide.board.model.TaskStoreWatcher;
 import com.opencode.ide.board.model.TicketRow;
 import com.opencode.ide.core.OpencodeConnection;
@@ -150,6 +151,8 @@ public class BoardView extends ViewPart {
 
     /** Single-thread daemon executor: serializes snapshot computes, one per view. */
     private ExecutorService refreshExecutor;
+    /** Single daemon thread for TUI takeover routing (blocking client POSTs). */
+    private ExecutorService takeoverExecutor;
     /** True while a drain loop owns the compute (single-flight guard). */
     private final AtomicBoolean draining = new AtomicBoolean();
     /** Set on every refresh request; consumed by the drain loop (latest-wins). */
@@ -188,6 +191,11 @@ public class BoardView extends ViewPart {
     public void createPartControl(Composite parent) {
         refreshExecutor = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "board-refresh");
+            thread.setDaemon(true);
+            return thread;
+        });
+        takeoverExecutor = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "board-takeover");
             thread.setDaemon(true);
             return thread;
         });
@@ -677,7 +685,8 @@ public class BoardView extends ViewPart {
                 takeOverSelected();
             }
         };
-        takeOverAction.setToolTipText("Open the ticket's fleet worktree in the file explorer and select it on the board");
+        takeOverAction.setToolTipText(
+                "Hand the ticket's fleet session to the attached opencode TUI; without one, open its fleet worktree in the file explorer");
         takeOverAction.setEnabled(false);
 
         toolbar.add(blockedOnlyAction);
@@ -1019,11 +1028,69 @@ public class BoardView extends ViewPart {
         }
     }
 
+    /**
+     * TUI-first takeover (ROADMAP H5 item 3): the ticket's fleet session is
+     * handed to the attached opencode TUI over the {@code /tui} control
+     * channel (routing off the UI thread — the client may spawn/wait for
+     * the server); without a session or TUI the pre-TUI behavior stands —
+     * open the fleet worktree and select the ticket.
+     */
     private void takeOverSelected() {
         TicketRow row = selectedRow();
         if (row == null) {
             return;
         }
+        String sessionId = fleetSessionOf(row.id());
+        if (sessionId == null) {
+            openWorktreeTakeOver(row);
+            return;
+        }
+        String prompt = TakeoverRouter.takeoverPrompt(row.id(), row.title());
+        ExecutorService executor = takeoverExecutor;
+        if (executor == null) {
+            return;
+        }
+        executor.execute(() -> {
+            TakeoverRouter.Result result = routeTakeover(sessionId, prompt);
+            Display display = Display.getDefault();
+            if (display == null || display.isDisposed()) {
+                return;
+            }
+            display.asyncExec(() -> {
+                if (boardArea == null || boardArea.isDisposed()) {
+                    return;
+                }
+                if (result.outcome() == TakeoverRouter.Outcome.TUI) {
+                    MessageDialog.openInformation(getSite().getShell(), "Take over",
+                            "Session handed to the attached TUI.\n" + result.detail());
+                } else {
+                    openWorktreeTakeOver(row);
+                }
+            });
+        });
+    }
+
+    /** Routes the takeover; a client-acquisition failure is a CHAT result, never an exception. */
+    private static TakeoverRouter.Result routeTakeover(String sessionId, String prompt) {
+        try {
+            return TakeoverRouter.route(connectClient(), sessionId, prompt);
+        } catch (RuntimeException e) {
+            return TakeoverRouter.Result.chat(String.valueOf(e.getMessage()));
+        }
+    }
+
+    /** The fleet job's session for a ticket, or {@code null} when no job carries one. */
+    private static String fleetSessionOf(String ticketId) {
+        return FleetJobsModel.getDefault().jobs().stream()
+                .filter(job -> ticketId != null && ticketId.equals(job.taskId()))
+                .map(FleetJobHandle::sessionId)
+                .filter(id -> id != null && !id.isBlank())
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** The pre-TUI takeover: open the ticket's fleet worktree and select it on the board. */
+    private void openWorktreeTakeOver(TicketRow row) {
         Path repo = repoRoot();
         Path worktree = repo == null ? null
                 : FleetGit.worktreePath(repo, row.id());
@@ -1195,6 +1262,10 @@ public class BoardView extends ViewPart {
         if (refreshExecutor != null) {
             refreshExecutor.shutdown();
             refreshExecutor = null;
+        }
+        if (takeoverExecutor != null) {
+            takeoverExecutor.shutdown();
+            takeoverExecutor = null;
         }
         super.dispose();
     }

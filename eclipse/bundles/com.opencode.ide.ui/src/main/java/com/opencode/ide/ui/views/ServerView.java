@@ -41,6 +41,7 @@ import com.opencode.ide.ui.internal.Refreshable;
 import com.opencode.ide.ui.internal.UiActivator;
 import com.opencode.ide.ui.internal.ViewLoadSupport;
 import com.opencode.ide.ui.model.AgentSessions;
+import com.opencode.ide.ui.model.ProjectVcs;
 import com.opencode.ide.ui.model.ServerLabels;
 
 /**
@@ -70,6 +71,8 @@ public class ServerView extends ViewPart implements Refreshable {
 
     private volatile List<ServerNode> roots = List.of();
     private volatile ServerNode current;   // the primary root, while loaded
+    private volatile ServerNode selectedServer;   // root under the cursor; drives the project/VCS header
+    private volatile ProjectVcs projectVcs = ProjectVcs.UNKNOWN;
     private OpencodeEventListener eventListener;
     private Runnable trackerListener;
     private Runnable connectionsListener;
@@ -87,6 +90,7 @@ public class ServerView extends ViewPart implements Refreshable {
         final boolean healthy;
         final String version;
         final Long pid;
+        final OpencodeClient client;   // for per-connection header loads; null when offline
         final List<Agent> agents;
         final List<Session> sessions;          // mutable: updated live from /event
         final Map<String, SessionStatus> statuses;   // mutable
@@ -102,14 +106,14 @@ public class ServerView extends ViewPart implements Refreshable {
         ServerNode(boolean primary, String label, String mode, String url, boolean healthy,
                 String version, Long pid, List<Agent> agents, List<Session> sessions,
                 Map<String, SessionStatus> statuses) {
-            this(primary, label, mode, url, healthy, version, pid, agents, sessions, statuses,
+            this(primary, label, mode, url, healthy, version, pid, null, agents, sessions, statuses,
                     List.of(), List.of());
         }
 
         ServerNode(boolean primary, String label, String mode, String url, boolean healthy,
-                String version, Long pid, List<Agent> agents, List<Session> sessions,
-                Map<String, SessionStatus> statuses, List<McpServerInfo> mcpServers,
-                List<SkillInfo> skills) {
+                String version, Long pid, OpencodeClient client, List<Agent> agents,
+                List<Session> sessions, Map<String, SessionStatus> statuses,
+                List<McpServerInfo> mcpServers, List<SkillInfo> skills) {
             this.primary = primary;
             this.label = label;
             this.mode = mode;
@@ -117,6 +121,7 @@ public class ServerView extends ViewPart implements Refreshable {
             this.healthy = healthy;
             this.version = version;
             this.pid = pid;
+            this.client = client;
             this.agents = agents;
             this.sessions = new ArrayList<>(sessions);
             this.statuses = new HashMap<>(statuses);
@@ -216,6 +221,18 @@ public class ServerView extends ViewPart implements Refreshable {
                 openSessionDetails(nested.session().id());
             } else if (first instanceof Session s && s.id() != null) {
                 openChatForSession(s.id());
+            }
+        });
+
+        // the project/VCS header follows the selected connection (primary as the fallback)
+        viewer.addSelectionChangedListener(event -> {
+            Object selection = event.getSelection();
+            Object first = (selection instanceof org.eclipse.jface.viewers.IStructuredSelection structured)
+                    ? structured.getFirstElement()
+                    : null;
+            if (first instanceof ServerNode node) {
+                selectedServer = node;
+                updateProjectHeader();
             }
         });
 
@@ -401,6 +418,7 @@ public class ServerView extends ViewPart implements Refreshable {
         String url = connection.getConnectConfig().baseUrl().toString();
         Long pid = connection.getSpawnedProcessId();
         return new ServerNode(true, "primary", mode, url, health.healthy(), health.version(), pid,
+                connection.getClient(),
                 agents == null ? Collections.emptyList() : agents,
                 sessions == null ? Collections.emptyList() : sessions,
                 statuses == null ? Collections.emptyMap() : statuses,
@@ -430,6 +448,7 @@ public class ServerView extends ViewPart implements Refreshable {
                     health != null && health.healthy(),
                     health == null ? null : health.version(),
                     null,
+                    client,
                     agents == null ? Collections.emptyList() : agents,
                     sessions == null ? Collections.emptyList() : sessions,
                     statuses == null ? Collections.emptyMap() : statuses,
@@ -505,6 +524,7 @@ public class ServerView extends ViewPart implements Refreshable {
         }
         viewer.setExpandedElements(expanded.toArray());
         updateContentDescription();
+        updateProjectHeader();
     }
 
     // ---------- live updates (driven by /event SSE via core) ----------
@@ -658,7 +678,8 @@ public class ServerView extends ViewPart implements Refreshable {
             long active = primary.activity.size();
             setContentDescription((primary.healthy ? "Connected" : "Unreachable") + ": " + primary.url
                     + "  •  live  •  " + primary.agents.size() + " agents, " + primary.sessions.size() + " sessions"
-                    + (active > 0 ? "  •  " + active + " active" : ""));
+                    + (active > 0 ? "  •  " + active + " active" : "")
+                    + projectVcsSuffix());
             return;
         }
         long up = nodes.stream().filter(n -> n.healthy).count();
@@ -675,7 +696,42 @@ public class ServerView extends ViewPart implements Refreshable {
         if (primary != null && !primary.activity.isEmpty()) {
             sb.append("  •  ").append(primary.activity.size()).append(" active");
         }
+        sb.append(projectVcsSuffix());
         setContentDescription(sb.toString());
+    }
+
+    // ---------- project/VCS header (SWT-free logic in ProjectVcs) ----------
+
+    /** Loads the project/VCS line of the selected connection (the primary root as the fallback). */
+    private void updateProjectHeader() {
+        ServerNode node = selectedServer != null ? selectedServer : current;
+        if (node == null || node.client == null) {
+            return; // nothing selected / offline: keep the previous header
+        }
+        OpencodeClient client = node.client;
+        ViewLoadSupport.load("Loading project VCS", () -> ProjectVcs.load(client, null),
+                vcs -> showProjectVcs(client, vcs),
+                error -> showProjectVcs(client, ProjectVcs.UNKNOWN));
+    }
+
+    /** Applies a loaded header; results superseded by a newer selection or refresh are dropped. */
+    private void showProjectVcs(OpencodeClient client, ProjectVcs vcs) {
+        if (viewer == null || viewer.getControl().isDisposed()) {
+            return;
+        }
+        ServerNode node = selectedServer != null ? selectedServer : current;
+        if (node == null || node.client != client) {
+            return;
+        }
+        projectVcs = vcs;
+        setTitleToolTip(vcs.tooltip());
+        updateContentDescription();
+    }
+
+    /** The project/VCS part of the description line; empty while unknown (degrades silently). */
+    private String projectVcsSuffix() {
+        String summary = projectVcs.summary();
+        return summary.isEmpty() ? "" : "  •  " + summary;
     }
 
     private void showError(Throwable e) {
@@ -684,6 +740,8 @@ public class ServerView extends ViewPart implements Refreshable {
         }
         viewer.setInput(null);
         setContentDescription("Error: " + ViewLoadSupport.message(e));
+        projectVcs = ProjectVcs.UNKNOWN;
+        setTitleToolTip("");
         UiActivator.getDefault().getLog().log(
                 new Status(Status.ERROR, UiActivator.PLUGIN_ID, "Failed to load opencode server", e));
     }

@@ -13,12 +13,14 @@ import com.opencode.ide.client.internal.Auth;
 import com.opencode.ide.client.model.OpencodeEvent;
 
 /**
- * Subscribes to the opencode server's {@code /event} SSE stream, parses the
+ * Subscribes to an opencode server SSE stream ({@code /event} for one project,
+ * {@code /global/event} via {@link #global} for all projects), parses the
  * {@code data:} frames into {@link OpencodeEvent}s, and pushes them to a sink.
  * Reconnects with exponential back-off on close/error. Runs on a daemon thread.
  *
  * <p>The wire format is SSE: lines starting with {@code data:} carry JSON;
- * events are separated by blank lines.</p>
+ * events are separated by blank lines. Global frames wrap the event in a
+ * {@code payload} envelope; {@link Sse#parseEvent(String)} unwraps it.</p>
  *
  * <p>Lifecycle matters here: the response body of a long-lived SSE request keeps
  * a connection (and the client's selector thread) alive, so {@link #stop()}
@@ -29,10 +31,12 @@ import com.opencode.ide.client.model.OpencodeEvent;
 public final class OpencodeEventStream {
 
     private static final String PATH = "/event";
+    private static final String GLOBAL_PATH = "/global/event";
     /** A connection must last this long before the back-off is considered cleared. */
     private static final long STABLE_CONNECTION_MILLIS = 10_000L;
 
     private final HttpClient http;
+    private final String path;
     private final URI eventUri;
     private final String authHeader;
     private final Consumer<OpencodeEvent> sink;
@@ -56,14 +60,29 @@ public final class OpencodeEventStream {
      */
     public OpencodeEventStream(ConnectionConfig config, Consumer<OpencodeEvent> sink,
             Consumer<Boolean> connectionListener) {
+        this(PATH, config, sink, connectionListener);
+    }
+
+    private OpencodeEventStream(String path, ConnectionConfig config, Consumer<OpencodeEvent> sink,
+            Consumer<Boolean> connectionListener) {
+        this.path = path;
         this.http = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1) // match HttpOpencodeClient: server dislikes h2c upgrades
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
-        this.eventUri = config.baseUrl().resolve(PATH);
+        this.eventUri = config.baseUrl().resolve(path);
         this.authHeader = Auth.basicHeader(config.username(), config.password());
         this.sink = sink;
         this.connectionListener = connectionListener;
+    }
+
+    /**
+     * Stream for {@code GET /global/event} (opencode v1.18.21): events across
+     * all projects, same lifecycle and callbacks as the per-project stream.
+     */
+    public static OpencodeEventStream global(ConnectionConfig config, Consumer<OpencodeEvent> sink,
+            Consumer<Boolean> connectionListener) {
+        return new OpencodeEventStream(GLOBAL_PATH, config, sink, connectionListener);
     }
 
     public synchronized void start() {
@@ -126,7 +145,7 @@ public final class OpencodeEventStream {
                         drain(stream.iterator());
                     } else {
                         // the body must still be closed, or the connection leaks per retry
-                        ClientLog.warning("opencode /event returned HTTP " + status);
+                        ClientLog.warning("opencode " + path + " returned HTTP " + status);
                     }
                 } finally {
                     body = null;
@@ -134,7 +153,7 @@ public final class OpencodeEventStream {
                 }
             } catch (Exception e) {
                 if (running && !Thread.currentThread().isInterrupted()) {
-                    ClientLog.warning("opencode /event error: " + e.getMessage());
+                    ClientLog.warning("opencode " + path + " error: " + e.getMessage());
                 }
             }
             if (Thread.currentThread().isInterrupted()) {
@@ -160,7 +179,7 @@ public final class OpencodeEventStream {
             try {
                 connectionListener.accept(value);
             } catch (Exception e) {
-                ClientLog.warning("opencode /event listener failed: " + e.getMessage());
+                ClientLog.warning("opencode " + path + " listener failed: " + e.getMessage());
             }
         }
     }
@@ -174,7 +193,7 @@ public final class OpencodeEventStream {
             if (event != null) {
                 sink.accept(event);
             } else {
-                ClientLog.warning("opencode /event: skipped malformed frame (" + truncate(json, 160) + ")");
+                ClientLog.warning("opencode " + path + ": skipped malformed frame (" + truncate(json, 160) + ")");
             }
         });
     }

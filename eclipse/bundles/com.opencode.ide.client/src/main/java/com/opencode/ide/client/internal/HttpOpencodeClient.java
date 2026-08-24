@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -28,6 +29,7 @@ import com.opencode.ide.client.McpRequests;
 import com.opencode.ide.client.McpServerConfig;
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.OpencodeConnectionException;
+import com.opencode.ide.client.OpencodeEventStream;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
@@ -35,9 +37,12 @@ import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.ConfigInfo;
 import com.opencode.ide.client.model.FileDiff;
 import com.opencode.ide.client.model.FileNode;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProjectSummary;
+import com.opencode.ide.client.model.ProviderAuth;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.client.model.SearchMatch;
 import com.opencode.ide.client.model.Session;
@@ -62,8 +67,10 @@ public final class HttpOpencodeClient implements OpencodeClient {
     private final HttpClient http;
     private final URI baseUri;
     private final String authHeader;
+    private final ConnectionConfig config;
 
     public HttpOpencodeClient(ConnectionConfig config) {
+        this.config = config;
         this.baseUri = config.baseUrl();
         this.authHeader = Auth.basicHeader(config.username(), config.password());
         this.http = HttpClient.newBuilder()
@@ -130,7 +137,7 @@ public final class HttpOpencodeClient implements OpencodeClient {
 
     @Override
     public List<McpServerInfo> getMcpServers() throws OpencodeException {
-        HttpResponse<String> response = request("GET", "/mcp", null);
+        HttpResponse<String> response = send("GET", "/mcp", null, Duration.ofSeconds(30));
         if (response.statusCode() == 404) {
             return List.of();
         }
@@ -173,7 +180,7 @@ public final class HttpOpencodeClient implements OpencodeClient {
      * older opencode builds and an empty section beats a broken view.
      */
     private <T> List<T> getListOrEmptyOn404(String path, Class<T> elementType) throws OpencodeException {
-        HttpResponse<String> response = request("GET", path, null);
+        HttpResponse<String> response = send("GET", path, null, Duration.ofSeconds(30));
         if (response.statusCode() == 404) {
             return List.of();
         }
@@ -419,6 +426,100 @@ public final class HttpOpencodeClient implements OpencodeClient {
             return false; // no TUI client attached is an expected outcome, not an error
         }
         return true;
+    }
+
+    // ---------- H5 remainder ----------
+
+    @Override
+    public List<FileStatus> getFileStatus() throws OpencodeException {
+        return getListOrEmptyOn404("/file/status", FileStatus.class);
+    }
+
+    @Override
+    public String getFileContent(String path) throws OpencodeException {
+        String target = "/file/content?path=" + URLEncoder.encode(path, StandardCharsets.UTF_8).replace("+", "%20");
+        HttpResponse<String> response = send("GET", target, null, Duration.ofSeconds(30));
+        if (response.statusCode() == 404) {
+            return null;
+        }
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            // lenient envelope: {"type":"text","content":"…"} (content is base64 for binary)
+            return stringOf(JsonParser.parseString(body).getAsJsonObject(), "content");
+        } catch (JsonParseException | IllegalStateException e) {
+            ClientLog.warning("opencode GET " + target + ": malformed body; treating as empty: " + truncate(body, 120));
+            return null;
+        }
+    }
+
+    @Override
+    public List<ProviderAuth> getProviderAuths() throws OpencodeException {
+        HttpResponse<String> response = send("GET", "/provider/auth", null, Duration.ofSeconds(30));
+        if (response.statusCode() == 404) {
+            return List.of();
+        }
+        String body = response.body();
+        if (body == null || body.isBlank()) {
+            return List.of();
+        }
+        try {
+            // live v1.18 shape: {"<providerID>": [{"type":"oauth","label":"…"}, …], …} — a MAP of method lists
+            JsonElement element = JsonParser.parseString(body);
+            if (!element.isJsonObject()) {
+                ClientLog.warning("opencode GET /provider/auth: unexpected shape (not a JSON object); "
+                        + "treating as empty");
+                return List.of();
+            }
+            List<ProviderAuth> out = new ArrayList<>();
+            for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+                if (!entry.getValue().isJsonArray()) {
+                    continue;
+                }
+                for (JsonElement method : entry.getValue().getAsJsonArray()) {
+                    if (!method.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject object = method.getAsJsonObject();
+                    out.add(new ProviderAuth(entry.getKey(), stringOf(object, "type"), stringOf(object, "label")));
+                }
+            }
+            return out;
+        } catch (JsonParseException e) {
+            ClientLog.warning("opencode GET /provider/auth: malformed body; treating as empty: " + truncate(body, 120));
+            return List.of();
+        }
+    }
+
+    @Override
+    public boolean startProviderOauth(String providerId) throws OpencodeException {
+        JsonObject body = new JsonObject();
+        body.addProperty("method", 0);
+        String path = "/provider/" + providerId + "/oauth/authorize";
+        HttpResponse<String> response = send("POST", path, body.toString(), Duration.ofSeconds(30));
+        if (response.statusCode() >= 400) {
+            ClientLog.warning("opencode POST " + path + " returned HTTP " + response.statusCode()
+                    + ": " + truncate(response.body(), 200));
+            return false; // no OAuth method / validation error - the caller can surface the flow as unavailable
+        }
+        String responseBody = response.body();
+        if (responseBody == null || responseBody.isBlank()) {
+            return false; // method index 0 was not an OAuth flow - nothing started
+        }
+        try {
+            return stringOf(JsonParser.parseString(responseBody).getAsJsonObject(), "url") != null;
+        } catch (JsonParseException | IllegalStateException e) {
+            ClientLog.warning("opencode POST " + path + ": malformed body; treating as failure: "
+                    + truncate(responseBody, 120));
+            return false;
+        }
+    }
+
+    @Override
+    public OpencodeEventStream getGlobalEvents(Consumer<OpencodeEvent> sink, Consumer<Boolean> connectionListener) {
+        return OpencodeEventStream.global(config, sink, connectionListener);
     }
 
     private static String stringOf(JsonObject object, String member) {

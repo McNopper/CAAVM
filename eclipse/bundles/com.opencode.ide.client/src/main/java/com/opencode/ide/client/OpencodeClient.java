@@ -3,6 +3,7 @@ package com.opencode.ide.client;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
@@ -10,9 +11,12 @@ import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.ConfigInfo;
 import com.opencode.ide.client.model.FileDiff;
 import com.opencode.ide.client.model.FileNode;
+import com.opencode.ide.client.model.FileStatus;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.McpServerInfo;
+import com.opencode.ide.client.model.OpencodeEvent;
 import com.opencode.ide.client.model.ProjectSummary;
+import com.opencode.ide.client.model.ProviderAuth;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.client.model.SearchMatch;
 import com.opencode.ide.client.model.SkillInfo;
@@ -271,5 +275,57 @@ public interface OpencodeClient {
      */
     default boolean tuiAction(String action, Map<String, Object> body) throws OpencodeException {
         throw new UnsupportedOperationException("tuiAction");
+    }
+
+    // ---------- H5 remainder (opencode v1.18.21): file status/content, provider auth, global events ----------
+
+    /**
+     * {@code GET /file/status} - the git status of all changed files in the
+     * project. Default returns empty so test fakes and partial
+     * implementations stay compiling.
+     */
+    default List<FileStatus> getFileStatus() throws OpencodeException {
+        return List.of();
+    }
+
+    /**
+     * {@code GET /file/content?path=…} - a file's content. The server answers
+     * with a {@code {"type":"text"|"binary","content":…}} envelope; this
+     * returns the {@code content} string ({@code base64} when the file is
+     * binary). {@code null} when the file does not exist (404).
+     */
+    default String getFileContent(String path) throws OpencodeException {
+        return null;
+    }
+
+    /**
+     * {@code GET /provider/auth} - the available auth methods, flattened into
+     * one {@link ProviderAuth} per method. Default returns empty so test fakes
+     * and partial implementations stay compiling.
+     */
+    default List<ProviderAuth> getProviderAuths() throws OpencodeException {
+        return List.of();
+    }
+
+    /**
+     * {@code POST /provider/:id/oauth/authorize} - start the provider's first
+     * auth method's OAuth flow (body {@code {"method":0}}). Success means the
+     * server answered with an authorization URL; a 4xx (e.g. the method is
+     * not OAuth) yields {@code false}, transport errors still throw.
+     */
+    default boolean startProviderOauth(String providerId) throws OpencodeException {
+        throw new UnsupportedOperationException("startProviderOauth");
+    }
+
+    /**
+     * {@code GET /global/event} - the SSE stream of events across all
+     * projects. Frames wrap the per-project event in a {@code payload}
+     * envelope which the stream unwraps, so the sink receives the same
+     * {@code {type, properties}} events as {@code /event}. Returns a
+     * not-yet-started {@link OpencodeEventStream}; the caller owns
+     * {@code start()} and {@code stop()}.
+     */
+    default OpencodeEventStream getGlobalEvents(Consumer<OpencodeEvent> sink, Consumer<Boolean> connectionListener) {
+        throw new UnsupportedOperationException("getGlobalEvents");
     }
 }

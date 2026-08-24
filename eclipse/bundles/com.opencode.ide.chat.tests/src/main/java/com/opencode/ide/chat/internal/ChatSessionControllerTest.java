@@ -25,6 +25,7 @@ import com.opencode.ide.client.model.Agent;
 import com.opencode.ide.client.model.ChatEntry;
 import com.opencode.ide.client.model.ChatMessageInfo;
 import com.opencode.ide.client.model.ChatPart;
+import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.ConfigInfo;
 import com.opencode.ide.client.model.HealthStatus;
 import com.opencode.ide.client.model.Model;
@@ -37,8 +38,8 @@ import com.opencode.ide.client.model.SessionStatus;
 /**
  * Unit tests for the session logic extracted from the (formerly ~700-line)
  * ChatView: sending (session creation, model fallback, final render, failure
- * notices), resume, live deltas, and disposal - against fake
- * connection/renderer/host collaborators, with inline executors.
+ * notices), slash-command execution, resume, live deltas, and disposal -
+ * against fake connection/renderer/host collaborators, with inline executors.
  */
 public class ChatSessionControllerTest {
 
@@ -148,6 +149,87 @@ public class ChatSessionControllerTest {
         assertFalse(controller.isSending());
         assertEquals(1, connection.client.requests.size());
         assertEquals("first", connection.client.requests.get(0).text());
+    }
+
+    // ---------- slash commands ----------
+
+    @Test
+    public void sendCommandCreatesSessionEchoesAndRunsTheCommand() {
+        controller.sendCommand(commandSelection("/build debug it", "build", List.of("debug it")));
+
+        assertEquals(List.of("/build debug it"), renderer.users);
+        assertEquals(List.of(new FakeClient.CommandCall("ses_1", "build", List.of("debug it"))),
+                connection.client.commandCalls);
+        assertTrue("final render expected, got: " + renderer.assistants,
+                renderer.assistants.contains("final:msg_1:done||prov/mod|"));
+        assertEquals(List.of("Session ses_1"), host.statuses);
+        assertTrue(host.jobs.contains("Running opencode command build"));
+        assertFalse(controller.isSending());
+    }
+
+    @Test
+    public void sendCommandWithoutEchoTextEchoesReconstructedSlashText() {
+        controller.sendCommand(commandSelection(" ", "build", List.of("now")));
+
+        assertEquals(List.of("/build now"), renderer.users);
+    }
+
+    @Test
+    public void secondCommandIsIgnoredWhileOneIsInFlight() {
+        host.holdBackground = true;
+        controller.sendCommand(commandSelection("/build one", "build", List.of("one")));
+        assertTrue(controller.isSending());
+
+        controller.sendCommand(commandSelection("/build two", "build", List.of("two")));
+        assertEquals(List.of("/build one"), renderer.users);
+
+        host.holdBackground = false;
+        host.queuedBackground.forEach(Runnable::run);
+        assertEquals(1, connection.client.commandCalls.size());
+        assertFalse(controller.isSending());
+        assertEquals(Boolean.FALSE, host.sendingStates.get(host.sendingStates.size() - 1));
+    }
+
+    @Test
+    public void sendCommandFailureShowsNoticeAndStopsSending() {
+        connection.client.commandFailure = new OpencodeException("boom");
+        controller.sendCommand(commandSelection("/build", "build", List.of()));
+
+        assertTrue(renderer.notices.contains("⚠ Command failed: boom"));
+        assertFalse(controller.isSending());
+    }
+
+    @Test
+    public void sendCommandIgnoresNullAndNonCommandSelections() {
+        controller.sendCommand(null);
+        controller.sendCommand(new CommandComposer.CommandSelection(
+                CommandComposer.Kind.MESSAGE, null, List.of(), "hi"));
+
+        assertTrue(renderer.users.isEmpty());
+        assertTrue(connection.client.commandCalls.isEmpty());
+        assertFalse(controller.isSending());
+    }
+
+    @Test
+    public void commandReplySettlesTheStreamedBubble() {
+        controller.subscribe();
+        controller.send(new ChatSessionController.OutgoingMessage(
+                null, "prov", "m1", null, null, "hello")); // creates ses_1, completes
+        host.holdBackground = true;
+        controller.sendCommand(commandSelection("/build now", "build", List.of("now")));
+        connection.fire(deltaEvent(
+                "{\"sessionID\":\"ses_1\",\"messageID\":\"msg_stream\",\"field\":\"text\",\"delta\":\"par\"}"));
+        host.queuedBackground.forEach(Runnable::run);
+
+        assertTrue("final render must target the streamed mid, got: " + renderer.assistants,
+                renderer.assistants.stream().anyMatch(a -> a.startsWith("final:msg_stream:")));
+        assertTrue(renderer.assistants.contains("stop:msg_stream"));
+    }
+
+    private static CommandComposer.CommandSelection commandSelection(String text, String name,
+            List<String> arguments) {
+        return new CommandComposer.CommandSelection(CommandComposer.Kind.COMMAND,
+                new CommandInfo(name, null), arguments, text);
     }
 
     // ---------- abort ----------
@@ -645,15 +727,20 @@ public class ChatSessionControllerTest {
     }
 
     private static final class FakeClient implements OpencodeClient {
+        record CommandCall(String sessionId, String command, List<String> arguments) {
+        }
+
         final List<ChatRequest> requests = new ArrayList<>();
         final List<String> createdSessions = new ArrayList<>();
         final List<String> abortCalls = new ArrayList<>();
+        final List<CommandCall> commandCalls = new ArrayList<>();
         int sessionCounter;
         List<Agent> agents = List.of();
         OpencodeException agentsFailure;
         ProviderList providers = new ProviderList(List.of(), Map.of());
         ChatEntry reply = entry("msg_1", "assistant", "done");
         OpencodeException sendFailure;
+        OpencodeException commandFailure;
         List<ChatEntry> history = List.of();
         OpencodeException historyFailure;
         OpencodeException abortFailure;
@@ -730,6 +817,16 @@ public class ChatSessionControllerTest {
             if (abortFailure != null) {
                 throw abortFailure;
             }
+        }
+
+        @Override
+        public ChatEntry runCommand(String sessionId, String command, List<String> arguments)
+                throws OpencodeException {
+            commandCalls.add(new CommandCall(sessionId, command, arguments));
+            if (commandFailure != null) {
+                throw commandFailure;
+            }
+            return reply;
         }
 
         @Override

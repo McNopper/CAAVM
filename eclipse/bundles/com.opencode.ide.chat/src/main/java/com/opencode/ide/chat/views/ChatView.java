@@ -28,11 +28,13 @@ import com.opencode.ide.chat.internal.ChatLog;
 import com.opencode.ide.chat.internal.ChatPage;
 import com.opencode.ide.chat.internal.ChatServerConnection;
 import com.opencode.ide.chat.internal.ChatSessionController;
+import com.opencode.ide.chat.internal.CommandComposer;
 import com.opencode.ide.client.ChatCapabilities;
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.OpencodeEventListener;
 import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.client.model.Agent;
+import com.opencode.ide.client.model.CommandInfo;
 import com.opencode.ide.client.model.Provider;
 import com.opencode.ide.client.model.ProviderList;
 import com.opencode.ide.core.OpencodeConnection;
@@ -62,14 +64,25 @@ public class ChatView extends ViewPart {
     /** "(default)" entry of the variant combo - means "do not send a variant". */
     private static final String VARIANT_DEFAULT = "(default)";
 
+    /** Visible rows of the slash-command picker (it shows up to 8 proposals). */
+    private static final int PICKER_ROWS = 5;
+
     private ChatPage page;
     private ChatSessionController controller;
+    private CommandComposer composer;
     private Text input;
     private Button sendButton;
     private Action abortAction;
     private Combo agentCombo;
     private Combo modelCombo;
     private Combo variantCombo;
+    private org.eclipse.swt.widgets.List commandPicker;
+
+    /** Current picker proposals (empty = picker hidden). */
+    private List<CommandInfo> pickerMatches = List.of();
+
+    /** Escape dismissed the picker until the input text changes again. */
+    private boolean pickerDismissed;
 
     /** provider/model -> its variant names, for the variant combo. */
     private final Map<String, List<String>> variantsByModel = new HashMap<>();
@@ -149,6 +162,7 @@ public class ChatView extends ViewPart {
             return; // fallback label already shown; no chat UI without the browser
         }
         controller = new ChatSessionController(connection, page, host);
+        composer = new CommandComposer(connection);
         ChatLog.info("chat view created (browser: " + page.browserType() + ", secondary id: "
                 + getViewSite().getSecondaryId() + ")");
 
@@ -173,6 +187,14 @@ public class ChatView extends ViewPart {
         variantCombo.setToolTipText("Reasoning effort (model variant) - as in opencode");
         variantCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, false, false));
 
+        // row 1.5: slash-command proposals (inline above the input; excluded
+        // from the layout until a "/" trigger shows it)
+        commandPicker = new org.eclipse.swt.widgets.List(outer, SWT.BORDER | SWT.V_SCROLL);
+        GridData pickerData = new GridData(GridData.FILL, GridData.CENTER, true, false);
+        pickerData.exclude = true;
+        commandPicker.setLayoutData(pickerData);
+        commandPicker.setVisible(false);
+
         // row 2: prompt input + send button (separate row below the transcript)
         Composite inputRow = new Composite(outer, SWT.NONE);
         GridLayout inputLayout = new GridLayout(2, false);
@@ -182,14 +204,29 @@ public class ChatView extends ViewPart {
         inputRow.setLayoutData(new GridData(GridData.FILL, GridData.CENTER, true, false));
 
         input = new Text(inputRow, SWT.MULTI | SWT.WRAP | SWT.BORDER);
-        input.setToolTipText("Prompt (ENTER sends, Shift+ENTER newline)");
+        input.setToolTipText("Prompt (ENTER sends, Shift+ENTER newline, / commands)");
         GridData inputData = new GridData(SWT.FILL, SWT.CENTER, true, false);
         inputData.heightHint = 52;
         input.setLayoutData(inputData);
+        input.addModifyListener(e -> {
+            pickerDismissed = false;
+            updateCommandPicker();
+        });
         input.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
-                if (e.character == SWT.CR && (e.stateMask & SWT.SHIFT) == 0) {
+                boolean plainEnter = e.character == SWT.CR && (e.stateMask & SWT.SHIFT) == 0;
+                if (plainEnter && pickerHasMatches()) {
+                    e.doit = false;
+                    sendSelection(composer.select(pickerMatches.get(0), input.getText()));
+                } else if (e.character == SWT.TAB && pickerHasMatches()) {
+                    e.doit = false;
+                    completeTopMatch();
+                } else if (e.character == SWT.ESC && pickerHasMatches()) {
+                    e.doit = false;
+                    pickerDismissed = true;
+                    updateCommandPicker();
+                } else if (plainEnter) {
                     e.doit = false;
                     send();
                 }
@@ -205,6 +242,7 @@ public class ChatView extends ViewPart {
         page.load();
         controller.subscribe();
         loadSelectors();
+        host.runInBackground("Loading opencode commands", composer::loadCommands);
         maybeResumeFromSecondaryId();
     }
 
@@ -438,6 +476,51 @@ public class ChatView extends ViewPart {
         return null;
     }
 
+    // ---------- slash-command picker ----------
+
+    /** @return true while the picker shows proposals. */
+    private boolean pickerHasMatches() {
+        return !pickerMatches.isEmpty();
+    }
+
+    /** Recomputes the proposals for the current input text and shows/hides the picker. */
+    private void updateCommandPicker() {
+        if (composer == null || commandPicker == null || commandPicker.isDisposed()
+                || input == null || input.isDisposed()) {
+            return;
+        }
+        String text = input.getText();
+        pickerMatches = !pickerDismissed && composer.isPickerTrigger(text)
+                ? composer.matches(text)
+                : List.of();
+        boolean show = !pickerMatches.isEmpty();
+        if (show) {
+            commandPicker.removeAll();
+            for (CommandInfo match : pickerMatches) {
+                String description = match.description();
+                commandPicker.add("/" + match.name()
+                        + (description == null || description.isBlank() ? "" : " - " + description));
+            }
+            commandPicker.setSelection(0);
+            int itemHeight = Math.max(commandPicker.getItemHeight(), 18);
+            ((GridData) commandPicker.getLayoutData()).heightHint =
+                    Math.min(pickerMatches.size(), PICKER_ROWS) * itemHeight + 4;
+        }
+        if (show == commandPicker.isVisible()) {
+            return;
+        }
+        commandPicker.setVisible(show);
+        ((GridData) commandPicker.getLayoutData()).exclude = !show;
+        commandPicker.getParent().layout(true);
+    }
+
+    /** Tab: completes the input to the top match and puts the caret after it. */
+    private void completeTopMatch() {
+        CommandInfo top = pickerMatches.get(0);
+        input.setText("/" + top.name() + " ");
+        input.setSelection(input.getText().length());
+    }
+
     // ---------- sending ----------
 
     private void send() {
@@ -448,8 +531,20 @@ public class ChatView extends ViewPart {
         if (text.isEmpty()) {
             return;
         }
-        input.setText("");
-        controller.send(outgoingMessage(text));
+        sendSelection(composer.resolve(text));
+    }
+
+    /** Clears the input and routes one resolved submission: command or message. */
+    private void sendSelection(CommandComposer.CommandSelection selection) {
+        if (controller.isSending() || selection == null) {
+            return;
+        }
+        input.setText(""); // fires the modify listener, hiding the picker
+        if (selection.kind() == CommandComposer.Kind.COMMAND) {
+            controller.sendCommand(selection);
+        } else {
+            controller.send(outgoingMessage(selection.message()));
+        }
     }
 
     private ChatSessionController.OutgoingMessage outgoingMessage(String text) {

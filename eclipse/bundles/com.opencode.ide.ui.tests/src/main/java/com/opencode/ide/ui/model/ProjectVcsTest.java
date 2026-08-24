@@ -1,0 +1,255 @@
+package com.opencode.ide.ui.model;
+
+import static org.junit.Assert.assertEquals;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.Test;
+
+import com.opencode.ide.client.ChatRequest;
+import com.opencode.ide.client.OpencodeClient;
+import com.opencode.ide.client.OpencodeException;
+import com.opencode.ide.client.model.Agent;
+import com.opencode.ide.client.model.ChatEntry;
+import com.opencode.ide.client.model.ConfigInfo;
+import com.opencode.ide.client.model.HealthStatus;
+import com.opencode.ide.client.model.ProjectSummary;
+import com.opencode.ide.client.model.ProviderList;
+import com.opencode.ide.client.model.Session;
+import com.opencode.ide.client.model.SessionStatus;
+import com.opencode.ide.client.model.VcsInfo;
+
+/**
+ * Unit tests for the SWT-free {@link ProjectVcs} project/VCS header model of
+ * the Server view: cwd→project resolution with the first-project fallback,
+ * the lenient merge with {@code GET /vcs}, graceful degradation to
+ * {@link ProjectVcs#UNKNOWN}, and the {@code summary()}/{@code tooltip()}
+ * renderings (dirty/changed-count rendering via the pure {@code of} factory —
+ * the committed client surface carries no dirty indicator yet).
+ */
+public class ProjectVcsTest {
+
+    // ---------- fixtures ----------
+
+    private static ProjectSummary project(String worktree, String branch, String repository) {
+        return new ProjectSummary(worktree, branch, repository);
+    }
+
+    /** Only the project/VCS endpoints work; everything else is never touched. */
+    private static final class FakeClient implements OpencodeClient {
+        List<ProjectSummary> projects = List.of();
+        VcsInfo vcs = new VcsInfo(null, null);
+        boolean throwOnProjects;
+        boolean throwOnVcs;
+
+        @Override
+        public List<ProjectSummary> getProjects() throws OpencodeException {
+            if (throwOnProjects) {
+                throw new OpencodeException("project endpoint gone");
+            }
+            return projects;
+        }
+
+        @Override
+        public VcsInfo getVcsInfo() throws OpencodeException {
+            if (throwOnVcs) {
+                throw new OpencodeException("vcs endpoint gone");
+            }
+            return vcs;
+        }
+
+        @Override
+        public HealthStatus getHealth() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Agent> getAgents() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ProviderList getProviders() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ConfigInfo getConfig() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Session> getSessions() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Map<String, SessionStatus> getSessionStatus() throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Session createSession(String title, Path directory) throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void registerMcp(String name, com.opencode.ide.client.McpServerConfig config)
+                throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<ChatEntry> getMessages(String sessionId) throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ChatEntry sendMessage(ChatRequest request) throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void log(String service, String level, String message, Map<String, Object> extra)
+                throws OpencodeException {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    // ---------- project resolution ----------
+
+    @Test
+    public void matchedCwdProjectRendersCleanSummary() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/other", "dev", null), project("/w/hephaestus", "main", null));
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/hephaestus");
+
+        assertEquals("hephaestus · branch main", vcs.summary());
+        assertEquals("Project: /w/hephaestus\nBranch: main", vcs.tooltip());
+    }
+
+    @Test
+    public void cwdMatchIgnoresTrailingSeparators() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("C:\\w\\foo", "main", null));
+
+        assertEquals("foo · branch main", ProjectVcs.load(client, "C:\\w\\foo\\").summary());
+        assertEquals("foo · branch main", ProjectVcs.load(client, "C:\\w\\foo/").summary());
+    }
+
+    @Test
+    public void cwdMissFallsBackToFirstProject() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/first", "main", null), project("/w/second", "dev", null));
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/nowhere");
+
+        assertEquals("first · branch main", vcs.summary());
+        assertEquals("Project: /w/first\nBranch: main", vcs.tooltip());
+    }
+
+    @Test
+    public void nullCwdUsesFirstProject() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/first", "main", null));
+
+        assertEquals("first · branch main", ProjectVcs.load(client, null).summary());
+    }
+
+    @Test
+    public void projectWithoutVcsFieldsFallsBackToVcsEndpoint() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", " ", null));   // blank branch
+        client.vcs = new VcsInfo("dev", "git@github.com:x/y.git");
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch dev", vcs.summary());
+        assertEquals("Project: /w/foo\nBranch: dev\nRepository: git@github.com:x/y.git", vcs.tooltip());
+    }
+
+    @Test
+    public void noProjectsWithCwdUseVcsAndCwdName() {
+        FakeClient client = new FakeClient();
+        client.vcs = new VcsInfo("main", null);
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("foo · branch main", vcs.summary());
+        assertEquals("Project: /w/foo\nBranch: main", vcs.tooltip());
+    }
+
+    // ---------- graceful degradation ----------
+
+    @Test
+    public void noProjectsNoCwdDegradesToUnknown() {
+        FakeClient client = new FakeClient();
+
+        ProjectVcs vcs = ProjectVcs.load(client, null);
+
+        assertEquals("", vcs.summary());
+        assertEquals("", vcs.tooltip());
+    }
+
+    @Test
+    public void failingVcsEndpointKeepsProjectBranch() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", "main", null));
+        client.throwOnVcs = true;
+
+        assertEquals("foo · branch main", ProjectVcs.load(client, "/w/foo").summary());
+    }
+
+    @Test
+    public void failingProjectEndpointDegradesGracefully() {
+        FakeClient client = new FakeClient();
+        client.throwOnProjects = true;
+
+        assertEquals("", ProjectVcs.load(client, null).summary());      // no cwd: nothing derivable
+        assertEquals("Project: /w/foo", ProjectVcs.load(client, "/w/foo").tooltip());   // cwd keeps the path
+    }
+
+    @Test
+    public void projectWithoutAnyVcsRendersEmptySummary() {
+        FakeClient client = new FakeClient();
+        client.projects = List.of(project("/w/foo", null, null));
+
+        ProjectVcs vcs = ProjectVcs.load(client, "/w/foo");
+
+        assertEquals("", vcs.summary());
+        assertEquals("Project: /w/foo", vcs.tooltip());
+    }
+
+    @Test
+    public void unknownInstanceRendersEmpty() {
+        assertEquals("", ProjectVcs.UNKNOWN.summary());
+        assertEquals("", ProjectVcs.UNKNOWN.tooltip());
+    }
+
+    // ---------- renderings beyond today's client surface (pure factory) ----------
+
+    @Test
+    public void dirtyRendersSuffix() {
+        ProjectVcs vcs = ProjectVcs.of("/w/foo", null, "main", null, true, -1);
+
+        assertEquals("foo · branch main · dirty", vcs.summary());
+    }
+
+    @Test
+    public void repositoryOnlyRendersRepository() {
+        ProjectVcs vcs = ProjectVcs.of("/w/foo", null, null, "git@github.com:x/y.git", false, -1);
+
+        assertEquals("foo · git@github.com:x/y.git", vcs.summary());
+    }
+
+    @Test
+    public void tooltipListsWorktreeAndChangesWhenKnown() {
+        ProjectVcs vcs = ProjectVcs.of("/w/foo", "/w/root", "main", "git@github.com:x/y.git", true, 3);
+
+        assertEquals("Project: /w/foo\nWorktree: /w/root\nBranch: main\n"
+                + "Repository: git@github.com:x/y.git\nChanges: 3", vcs.tooltip());
+    }
+}
