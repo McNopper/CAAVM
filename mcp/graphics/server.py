@@ -1,10 +1,11 @@
 """graphics MCP server — window capture, RenderDoc capture, and render comparison.
 
-Tools:
-  graphics_screenshot        capture a window / region to a PNG
-  graphics_renderdoc_capture capture a frame with RenderDoc (renderdoccmd)
-  graphics_renderdoc_frame   extract a PNG frame from a .rdc capture
-  graphics_compare_renders   diff two rendered images + PSNR/SSIM/FLIP metrics
+Tools (opencode namespaces them as ``<serverKey>_<toolName>``, so with the
+``graphics`` server key they are exposed as ``graphics_screenshot`` etc.):
+  screenshot        capture a window / region to a PNG
+  renderdoc_capture capture a frame with RenderDoc (renderdoccmd)
+  renderdoc_frame   extract a PNG frame from a .rdc capture
+  compare_renders   diff two rendered images + PSNR/SSIM/FLIP metrics
 
 The capture commands are pluggable via environment variables so the server works
 across setups: GRAPHICS_SCREENSHOT_CMD, RENDERDOC_CMD. Comparison is local
@@ -237,13 +238,13 @@ def _flip(a: "np.ndarray", b: "np.ndarray") -> Tuple[Optional[float], bool]:
 # MCP wiring
 # ----------------------------------------------------------------------------
 TOOLS = {
-    "graphics_screenshot": screenshot,
-    "graphics_renderdoc_capture": renderdoc_capture,
-    "graphics_renderdoc_frame": renderdoc_frame,
-    "graphics_compare_renders": compare_renders,
+    "screenshot": screenshot,
+    "renderdoc_capture": renderdoc_capture,
+    "renderdoc_frame": renderdoc_frame,
+    "compare_renders": compare_renders,
 }
 TOOL_SCHEMAS = {
-    "graphics_screenshot": {
+    "screenshot": {
         "description": "Capture a window or region to a PNG (pluggable command).",
         "inputSchema": {
             "type": "object",
@@ -255,7 +256,7 @@ TOOL_SCHEMAS = {
             "required": ["output"],
         },
     },
-    "graphics_renderdoc_capture": {
+    "renderdoc_capture": {
         "description": "Capture one frame of an executable into a .rdc with RenderDoc.",
         "inputSchema": {
             "type": "object",
@@ -267,7 +268,7 @@ TOOL_SCHEMAS = {
             "required": ["executable", "output"],
         },
     },
-    "graphics_renderdoc_frame": {
+    "renderdoc_frame": {
         "description": "Extract a PNG frame from a .rdc capture.",
         "inputSchema": {
             "type": "object",
@@ -279,7 +280,7 @@ TOOL_SCHEMAS = {
             "required": ["rdc", "output"],
         },
     },
-    "graphics_compare_renders": {
+    "compare_renders": {
         "description": "Compare a reference render to candidate(s): diff image + PSNR/SSIM/FLIP.",
         "inputSchema": {
             "type": "object",

@@ -124,6 +124,8 @@ function extractMath(text) {
   const spans = [];
   let out = "";
   let i = 0;
+  // Strip stray markers from the input so model text can never forge one.
+  text = String(text == null ? "" : text).split(MATH_OPEN).join("").split(MATH_CLOSE).join("");
   const mark = (tex, display) => {
     spans.push({ tex: tex, display: display });
     return MATH_OPEN + (spans.length - 1) + MATH_CLOSE;
@@ -159,11 +161,17 @@ function extractMath(text) {
   return { source: out, spans: spans };
 }
 
-/** Puts the KaTeX-rendered math back into the markdown HTML. */
+/**
+ * Puts the KaTeX-rendered math back into the markdown HTML. The alternation
+ * matches whole tags first, so a marker that ended up inside an attribute
+ * value (markdown-it copies alt/title text verbatim) is left alone instead of
+ * having quote-bearing KaTeX HTML spliced into the attribute.
+ */
 function restoreMath(html, spans) {
   if (spans.length === 0) return html;
-  const pattern = new RegExp(MATH_OPEN + "(\\d+)" + MATH_CLOSE, "g");
+  const pattern = new RegExp("<[^>]*>|" + MATH_OPEN + "(\\d+)" + MATH_CLOSE, "g");
   return html.replace(pattern, (match, index) => {
+    if (match.charAt(0) === "<") return match; // a tag: never rewrite attributes
     const span = spans[Number(index)];
     if (!span) return match;
     try {
@@ -393,6 +401,10 @@ window.__appendDelta = guard("__appendDelta", function (json) {
   let node = findAssistant(p.mid);
   if (!node) { addAssistant(p.mid, null); node = findAssistant(p.mid); }
   if (!node) return true;
+  // A finalized bubble (abort / authoritative render) must never be re-opened:
+  // its .stream-raw is gone, so appending would blank the rendered answer and
+  // replace it with the single late chunk.
+  if (node.classList.contains("stream-done")) return true;
   let body = node.querySelector(".body");
   let raw = body.querySelector(".stream-raw");
   if (!raw) { body.innerHTML = ""; raw = document.createElement("div"); raw.className = "stream-raw"; body.appendChild(raw); }
@@ -413,6 +425,10 @@ window.__setAssistantText = guard("__setAssistantText", function (json) {
   const body = node.querySelector(".body");
   body.innerHTML = "";
   renderMarkdown(body, text);
+  // The authoritative render closes the bubble: a delta still in flight must
+  // not overwrite it (see __appendDelta's stream-done guard).
+  node.classList.add("stream-done");
+  node.querySelectorAll(".cursor").forEach(c => c.remove());
   // re-render tool lines (a second authoritative render must not duplicate them)
   node.querySelectorAll(".tool-line").forEach(l => l.remove());
   const bubble = node.querySelector(".bubble");

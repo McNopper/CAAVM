@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -80,18 +79,23 @@ public final class ChatWebServer {
             respond(exchange, 400, "bad request".getBytes(StandardCharsets.UTF_8), "text/plain");
             return;
         }
+        // getPath() is already percent-decoded, so this is the ONLY decode: a
+        // second one would turn %252e%252e%2f into ../ past the guard above.
         String relative = path.startsWith("/") ? path.substring(1) : path;
         if (relative.isEmpty()) {
             relative = "chat.html";
         }
-        relative = URLDecoder.decode(relative, StandardCharsets.UTF_8);
 
+        byte[] body;
         try (InputStream in = resolver.open(relative)) {
-            byte[] body = in.readAllBytes();
-            respond(exchange, 200, body, mimeFor(relative));
+            body = in.readAllBytes();
         } catch (IOException notFound) {
             respond(exchange, 404, "not found".getBytes(StandardCharsets.UTF_8), "text/plain");
+            return;
         }
+        // Outside the try: a write failure on a committed 200 must not be
+        // mistaken for "not found" and answered again.
+        respond(exchange, 200, body, mimeFor(relative));
     }
 
     private static void respond(HttpExchange exchange, int status, byte[] body, String mime)

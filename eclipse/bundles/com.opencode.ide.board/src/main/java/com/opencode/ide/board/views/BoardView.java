@@ -587,6 +587,13 @@ public class BoardView extends ViewPart {
                 projectText.setToolTipText("Task store project (subdirectory of the root)");
                 projectText.setTextLimit(60);
                 projectText.setLayoutData(fixedSize(80));
+                // The workbench builds toolbar contributions AFTER createPartControl
+                // returns, so loadSettings() ran while these fields were still null.
+                // Seed them here (like modeCombo below) - otherwise they render empty
+                // and the first applyInputs() would persist that emptiness over the
+                // stored store root / project.
+                rootText.setText(rootOverride == null ? "" : rootOverride);
+                projectText.setText(projectName == null ? BoardModel.DEFAULT_PROJECT : projectName);
                 hookApply(rootText);
                 hookApply(projectText);
                 return box;
@@ -796,7 +803,8 @@ public class BoardView extends ViewPart {
     }
 
     private void applyInputs() {
-        if (model == null || projectText == null || projectText.isDisposed()) {
+        if (model == null || projectText == null || projectText.isDisposed()
+                || rootText == null || rootText.isDisposed()) {
             return;
         }
         String newProject = projectText.getText().trim();
@@ -1212,7 +1220,7 @@ public class BoardView extends ViewPart {
         }
         stopDispatchLoop(null);
         dispatchScheduler = new DispatchScheduler(dispatchPolicy(model.costOverview()), model::sprintTasks,
-                model::costOverview, BoardView::runningTaskIds,
+                model::projectTasks, model::costOverview, BoardView::runningTaskIds,
                 id -> launcher.launch(model.project(), id), Clock.systemDefaultZone());
         dispatchScheduler.start(AUTO_DISPATCH_PERIOD);
         statusMessage("Auto-dispatch loop started \u2014 every "

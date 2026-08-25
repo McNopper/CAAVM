@@ -136,59 +136,71 @@
   "buildPresets": [
     {
       "name": "default",
-      "configurePreset": "default"
+      "configurePreset": "default",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "release",
-      "configurePreset": "release"
+      "configurePreset": "release",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "clang64",
-      "configurePreset": "clang64"
+      "configurePreset": "clang64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "mingw64",
-      "configurePreset": "mingw64"
+      "configurePreset": "mingw64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "windows",
       "configurePreset": "windows",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "linux",
-      "configurePreset": "linux"
+      "configurePreset": "linux",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
     },
     {
       "name": "verify",
       "configurePreset": "default",
-      "targets": ["verify"]
+      "targets": ["verify"],
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "verify-full",
       "configurePreset": "default",
-      "targets": ["verify-full"]
+      "targets": ["verify-full"],
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "tidy",
       "configurePreset": "analysis",
-      "targets": ["tidy"]
+      "targets": ["tidy"],
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "cppcheck-xml",
       "configurePreset": "analysis",
-      "targets": ["cppcheck-xml"]
+      "targets": ["cppcheck-xml"],
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
     {
       "name": "docs",
       "configurePreset": "analysis",
-      "targets": ["docs"]
+      "targets": ["docs"],
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "output": {
         "outputOnFailure": true
       }
@@ -196,6 +208,7 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "output": {
         "outputOnFailure": true
       }
@@ -203,6 +216,7 @@
     {
       "name": "clang64",
       "configurePreset": "clang64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "output": {
         "outputOnFailure": true
       }
@@ -210,6 +224,7 @@
     {
       "name": "mingw64",
       "configurePreset": "mingw64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "output": {
         "outputOnFailure": true
       }
@@ -218,6 +233,7 @@
       "name": "windows",
       "configurePreset": "windows",
       "configuration": "Debug",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "output": {
         "outputOnFailure": true
       }
@@ -225,6 +241,7 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "output": {
         "outputOnFailure": true
       }

@@ -57,6 +57,9 @@ import com.google.gson.JsonSyntaxException;
  *       tool-owned; empty sections are omitted on write.</li>
  *   <li>Unknown frontmatter keys and unknown body sections are preserved
  *       verbatim on rewrite (whole-file rewrite, round-trip stable).</li>
+ *   <li>{@code id} must be a single safe path segment ({@link #isValidId}) -
+ *       it doubles as the file name, so a hand-edited {@code ../..} id must
+ *       never be able to steer a write out of the project directory.</li>
  *   <li>Output pins LF endings and UTF-8 (no BOM); the parser tolerates CRLF
  *       and a leading BOM so hand-edited and git-CRLF-normalized files load.</li>
  *   <li>Section payloads are strict: a malformed line fails the whole file
@@ -75,12 +78,29 @@ public final class TaskFileCodec {
 
     private static final Pattern TODO_LINE = Pattern.compile("^- \\[([ xX])] (.*)$");
     private static final Pattern FRONTMATTER_LINE = Pattern.compile("^([A-Za-z0-9_]+): ?(.*)$");
+    /**
+     * Ticket ids double as file names ({@code <id>.md} resolved against the
+     * project directory), so they must stay a single safe path segment: no
+     * separators, no drive letters, no {@code ..}. Minted ids
+     * ({@code <prefix>-<nnn>}) always match.
+     */
+    private static final Pattern ID_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]*");
     private static final Gson GSON = new Gson();
 
     /** The managed body sections, in canonical write order. */
     static final List<String> SECTIONS = List.of("Todos", "Artifacts", "Comments", "History");
 
     private TaskFileCodec() {
+    }
+
+    /**
+     * True when {@code id} is usable as a ticket id: a single safe path
+     * segment, because the store persists a ticket to {@code <id>.md} inside
+     * the project directory. Rejects {@code null}, blanks, separators,
+     * {@code ..} and anything else that could escape the project directory.
+     */
+    public static boolean isValidId(String id) {
+        return id != null && ID_PATTERN.matcher(id).matches();
     }
 
     /** Parses one file's content into a {@link Task}. */
@@ -264,6 +284,10 @@ public final class TaskFileCodec {
         t.id = scalarString(raw.remove("id"));
         if (t.id == null || t.id.isBlank()) {
             throw new FormatException("frontmatter is missing a non-empty 'id'");
+        }
+        if (!isValidId(t.id)) {
+            throw new FormatException("invalid ticket id '" + t.id
+                    + "': ids double as file names and must match " + ID_PATTERN.pattern());
         }
         t.title = orEmpty(scalarString(raw.remove("title")));
         t.description = ""; // body-owned

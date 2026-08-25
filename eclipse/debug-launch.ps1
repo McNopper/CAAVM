@@ -3,19 +3,21 @@
 # shuts it down. Uses a throwaway workspace so the user's real workspace is untouched.
 param(
     [int]$Port = 14923,
-    [int]$UpSeconds = 35
+    [int]$UpSeconds = 35,
+    [int]$SettleSeconds = 35,
+    [string]$EclipseRoot = $(if ($env:ECLIPSE_HOME) { $env:ECLIPSE_HOME } else { "C:\eclipse-cpp" })
 )
 $ErrorActionPreference = "Continue"
-$eclipse = "C:\eclipse-cpp\eclipsec.exe"
+$eclipse = Join-Path $EclipseRoot "eclipsec.exe"
 $ocTemp  = Join-Path $env:TEMP "opencode"
 $ws      = Join-Path $ocTemp "eclipse-ws"
 $log     = Join-Path $ocTemp "eclipse-console.log"
 
-if (-not (Test-Path $eclipse)) { throw "eclipsec.exe not found at $eclipse" }
+if (-not (Test-Path -LiteralPath $eclipse)) { throw "eclipsec.exe not found at $eclipse (set -EclipseRoot or ECLIPSE_HOME)" }
 New-Item -ItemType Directory -Path $ocTemp -Force | Out-Null
-Remove-Item $log -ErrorAction SilentlyContinue
-Remove-Item "$log.err" -ErrorAction SilentlyContinue
-if (-not (Test-Path $ws)) { New-Item -ItemType Directory -Path $ws -Force | Out-Null }
+Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath "$log.err" -ErrorAction SilentlyContinue
+if (-not (Test-Path -LiteralPath $ws)) { New-Item -ItemType Directory -Path $ws -Force | Out-Null }
 
 # warn if an eclipse is already running (would lock the shared configuration)
 $existing = Get-Process -Name eclipse,eclipsec -ErrorAction SilentlyContinue
@@ -24,8 +26,10 @@ if ($existing) {
 }
 
 Write-Host "[debug] launching eclipse-cpp (console port $Port, workspace $ws)..." -ForegroundColor Cyan
+# -ArgumentList joins with a bare space WITHOUT quoting, so the workspace path
+# (which sits under $env:TEMP and may contain spaces) must be quoted here.
 $proc = Start-Process -FilePath $eclipse `
-    -ArgumentList "-console","$Port","-consoleLog","-data",$ws `
+    -ArgumentList "-console","$Port","-consoleLog","-data","`"$ws`"" `
     -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
 Write-Host "[debug] eclipse pid=$($proc.Id)"
 
@@ -53,22 +57,23 @@ function Invoke-Osgi($client, $cmd, [int]$wait = 3) {
 }
 
 $connected = $false
-$attempts = 0
+$elapsed = 0
 for ($i = 0; $i -lt 150; $i++) {
     Start-Sleep -Seconds 1
+    $elapsed = $i + 1
     try {
         $test = New-Object System.Net.Sockets.TcpClient
         $test.Connect("127.0.0.1", $Port)
         $test.Close()
-        $connected = $true; $attempts = $i; break
+        $connected = $true; break
     } catch { }
 }
-Write-Host "[debug] console port up=$connected after ${attempts}s" -ForegroundColor Cyan
+Write-Host "[debug] console port up=$connected after ${elapsed}s" -ForegroundColor Cyan
 
 if ($connected) {
     # let the workbench finish starting (and the opencode bundles start) before querying
-    Write-Host "[debug] waiting 35s for workbench to settle..." -ForegroundColor Cyan
-    Start-Sleep -Seconds 35
+    Write-Host "[debug] waiting ${SettleSeconds}s for workbench to settle..." -ForegroundColor Cyan
+    Start-Sleep -Seconds $SettleSeconds
 
     $client = New-Object System.Net.Sockets.TcpClient("127.0.0.1", $Port)
     [void](Read-Stream $client.GetStream() 3)  # drain banner/prompt
@@ -87,9 +92,24 @@ if ($connected) {
 Write-Host "[debug] letting workbench run ${UpSeconds}s to capture startup logs..." -ForegroundColor Cyan
 Start-Sleep -Seconds $UpSeconds
 
+# eclipsec.exe may spawn the JVM as a child; System.Diagnostics.Process has no
+# Descendants(), so walk the process tree ourselves - otherwise a child keeps
+# running and holds the throwaway workspace lock. Collect BEFORE killing the
+# parent: once it dies its children are re-parented and no longer match.
+function Get-DescendantIds([int]$parentId) {
+    $ids = @()
+    foreach ($child in @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentId" -ErrorAction SilentlyContinue)) {
+        $ids += [int]$child.ProcessId
+        $ids += Get-DescendantIds ([int]$child.ProcessId)
+    }
+    return $ids
+}
+$descendants = @()
+try { $descendants = @(Get-DescendantIds $proc.Id) } catch { Write-Host "[debug] child scan failed: $_" }
+
 try { Stop-Process -Id $proc.Id -Force -ErrorAction Stop; Write-Host "[debug] stopped eclipse pid=$($proc.Id)" }
 catch { Write-Host "[debug] stop failed: $_" }
-try { $proc.Descendants() | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } } catch {}
+foreach ($id in $descendants) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
 
 Write-Host "`n========== platform log: opencode/error/perspective lines ==========" -ForegroundColor Yellow
 if (Test-Path $log) {

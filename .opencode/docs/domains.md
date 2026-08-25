@@ -130,7 +130,7 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 | `pm-` | Project management | tickets, sprints, routing, costing (estimates + live actuals), traceability, doc standards | `project-manager-operating-model`, `project-manager-orchestrate-execution`, `project-manager-route-request`, `project-manager-audit-traceability`, `project-manager-estimate-costs`, `project-manager-gather-intelligence`, `project-manager-create-ticket`, `project-manager-doc-about` |
 | `cpp-` | C++ execution utility | methodology for the `cpp-tools` agent | `cpp-tools` |
 | `graphics-` | Graphics utility (thin) | methodology; heavy work is `mcp.graphics` | `graphics-render-comparison` |
-| `code-` | Code analysis | package/namespace dependency map; emits Mermaid block diagram; third-party license audit → compatibility table + remediation | `code-dependency`, `code-licenses` |
+| `code-` | Code analysis | package/namespace dependency map; emits Mermaid block diagram; third-party license audit → compatibility table + remediation; probe-don't-read repository orientation map | `code-dependency`, `code-licenses`, `code-repo-map` |
 
 ## Coordination agents (unprefixed) and domain agents (prefixed)
 

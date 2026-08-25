@@ -84,7 +84,7 @@ public final class ArtifactResolver {
         if (!Files.isDirectory(resolved)) {
             String name = resolved.getFileName().toString();
             int dot = name.lastIndexOf('.');
-            String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase();
+            String extension = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
             if (UNSAFE_EXTENSIONS.contains(extension)) {
                 return Result.refuse("Refusing to open executable file type:\n" + resolved);
             }

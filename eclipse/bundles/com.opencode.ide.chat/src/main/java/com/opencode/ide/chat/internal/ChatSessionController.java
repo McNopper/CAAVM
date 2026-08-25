@@ -210,8 +210,16 @@ public final class ChatSessionController {
 
     // ---------- sessions ----------
 
-    /** Drops the current session; the next message starts a fresh one. */
+    /**
+     * Drops the current session; the next message starts a fresh one.
+     * Refused while a send is in flight: the running job would settle the OLD
+     * reply into the NEW, empty transcript. Abort first, then start fresh.
+     */
     public void startNewSession() {
+        if (sending) {
+            renderer.notice("\u26A0 A reply is still streaming - abort it before starting a new session.");
+            return;
+        }
         sessionId = null;
         renderer.clear();
         host.statusChanged("New session (created on first message)");

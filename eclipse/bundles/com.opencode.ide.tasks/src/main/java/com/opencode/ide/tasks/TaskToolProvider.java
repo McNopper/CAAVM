@@ -159,7 +159,7 @@ public final class TaskToolProvider implements ToolProvider {
                         optStr(a, "by", null)).toJson());
             case "task_add_todo":
                 return json(store.addTodo(reqStr(a, "project"), reqStr(a, "ticket_id"),
-                        reqStr(a, "text"), a.has("done") && a.get("done").getAsBoolean(),
+                        reqStr(a, "text"), optBool(a, "done", false),
                         optStr(a, "by", null)).toJson());
             case "task_toggle_todo":
                 return json(store.toggleTodo(reqStr(a, "project"), reqStr(a, "ticket_id"),
@@ -237,7 +237,24 @@ public final class TaskToolProvider implements ToolProvider {
 
     private static String optStr(JsonObject a, String key, String dflt) {
         JsonElement e = a.get(key);
-        return e == null || e.isJsonNull() ? dflt : e.getAsString();
+        if (e == null || e.isJsonNull()) {
+            return dflt;
+        }
+        if (!e.isJsonPrimitive()) {
+            throw new ParamError("parameter '" + key + "' must be a string");
+        }
+        return e.getAsString();
+    }
+
+    private static boolean optBool(JsonObject a, String key, boolean dflt) {
+        JsonElement e = a.get(key);
+        if (e == null || e.isJsonNull()) {
+            return dflt;
+        }
+        if (!e.isJsonPrimitive()) {
+            throw new ParamError("parameter '" + key + "' must be a boolean");
+        }
+        return e.getAsBoolean();
     }
 
     private static int reqInt(JsonObject a, String key) {
@@ -270,7 +287,11 @@ public final class TaskToolProvider implements ToolProvider {
             throw new ParamError("parameter '" + key + "' must be an array of strings");
         }
         for (JsonElement item : e.getAsJsonArray()) {
-            out.add(item.isJsonNull() ? null : item.getAsString());
+            if (!item.isJsonPrimitive()) {
+                throw new ParamError("parameter '" + key + "' must be an array of strings"
+                        + " (null and nested items are rejected)");
+            }
+            out.add(item.getAsString());
         }
         return out;
     }

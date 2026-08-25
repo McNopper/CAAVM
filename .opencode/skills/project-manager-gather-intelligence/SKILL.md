@@ -13,7 +13,7 @@ description: >
 ## About this document
 - **Kind:** skill (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent matching its description; **written by:** maintainers
-- **Related:** part of the `pm-*` domain set; the measured counterpart of `project-manager-estimate-costs`
+- **Related:** part of the `project-manager-*` domain set; the measured counterpart of `project-manager-estimate-costs`
   (a-priori estimates) and the data source for its calibration; works with the task store
   (`task_*` tools). Market-side model intelligence (intelligence index, cost per task,
   context windows) comes from `research-artificial-analysis-models` — together the three

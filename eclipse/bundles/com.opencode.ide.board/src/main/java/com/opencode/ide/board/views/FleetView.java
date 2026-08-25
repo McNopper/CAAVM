@@ -384,7 +384,10 @@ public class FleetView extends ViewPart {
         boolean empty = jobs.isEmpty();
         setLaidOut(tableComposite, !empty);
         setLaidOut(emptyLabel, empty);
-        viewer.getControl().getParent().layout();
+        // Both exclude flags live on children of tableComposite's PARENT, so that
+        // is the composite whose layout must be recomputed (the viewer's own
+        // parent is tableComposite itself, laid out by a TableColumnLayout).
+        tableComposite.getParent().layout(true, true);
         updateActionEnablement();
         updatePermissionsAction();
     }

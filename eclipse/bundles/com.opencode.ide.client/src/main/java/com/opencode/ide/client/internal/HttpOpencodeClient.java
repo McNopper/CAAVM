@@ -406,10 +406,12 @@ public final class HttpOpencodeClient implements OpencodeClient {
 
     @Override
     public List<FileNode> listFiles(String path) throws OpencodeException {
-        String target = "/file";
-        if (path != null && !path.isBlank() && !".".equals(path)) {
-            target += "?path=" + URLEncoder.encode(path, StandardCharsets.UTF_8).replace("+", "%20");
-        }
+        // The server REQUIRES the `path` query key - omitting it for the root
+        // answers HTTP 400 {"name":"BadRequest","message":"Missing key at [\"path\"]"}.
+        // "." is the workspace root; the server accepts both / and \ separators.
+        String effective = (path == null || path.isBlank()) ? "." : path;
+        String target = "/file?path="
+                + URLEncoder.encode(effective, StandardCharsets.UTF_8).replace("+", "%20");
         return getListOrEmptyOn404(target, FileNode.class);
     }
 

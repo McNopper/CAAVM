@@ -190,7 +190,18 @@ public final class TaskFleet {
                 bootstrap,
                 baseWorktree);
 
-        FleetJob job = runner.submit(task);
+        FleetJob job;
+        try {
+            job = runner.submit(task);
+        } catch (RuntimeException e) {
+            // The ticket is already claimed (in-progress/assignee) at this point.
+            // A submit that throws (worktree/branch already exists, git failure)
+            // must not leave it claimed-but-not-blocked, contradicting this
+            // class's "blocked with a concrete reason on failure" contract.
+            FleetJob failed = new FleetJob(taskId, null, null, FleetJob.State.FAILED, e.getMessage());
+            LOG.log(Level.WARNING, "fleet submit of ticket " + taskId + " failed before the session started", e);
+            return blocked(failed, project, taskId, "fleet: " + e.getMessage());
+        }
         jobsByTask.put(taskId, job);
         // The prompt call inside submit blocks while an unattended session
         // waits for a permission answer - watching starts at session creation

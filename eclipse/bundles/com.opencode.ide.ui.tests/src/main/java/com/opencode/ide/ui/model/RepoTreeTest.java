@@ -48,6 +48,24 @@ public class RepoTreeTest {
 
     // ---------- parentPath ----------
 
+    /**
+     * The opencode server answers with Windows separators and a trailing one
+     * ({@code "cpp\\build\\"}); those must fold to the canonical form or the
+     * cache keys and parent lookups diverge from the forward-slash ones.
+     */
+    @Test
+    public void normalizeFoldsWindowsSeparators() {
+        assertEquals("a/b", RepoTree.normalize("a\\b"));
+        assertEquals("a/b", RepoTree.normalize("a\\b\\"));
+        assertEquals("cpp/build-clang64", RepoTree.normalize("cpp\\build-clang64\\"));
+        assertEquals("a/b", RepoTree.normalize(".\\a\\b"));
+        assertEquals(RepoTree.ROOT, RepoTree.normalize("\\"));
+        assertEquals(RepoTree.ROOT, RepoTree.normalize(".\\"));
+        assertEquals("a", RepoTree.parentPath("a\\b"));
+        assertEquals("a/b", RepoTree.parentPath("a\\b\\c"));
+        assertTrue(RepoTree.isAncestorOrSelf("a", "a\\b\\c"));
+    }
+
     @Test
     public void parentPathOfTopLevelIsRootAndOfNestedIsThePrefix() {
         assertEquals(RepoTree.ROOT, RepoTree.parentPath("a"));

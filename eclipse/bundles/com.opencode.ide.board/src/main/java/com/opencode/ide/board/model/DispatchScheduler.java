@@ -57,6 +57,7 @@ public final class DispatchScheduler {
 
     private final AutoDispatch policy;
     private final Supplier<List<Task>> sprintTasks;
+    private final Supplier<List<Task>> readinessTasks;
     private final Supplier<CostOverview> cost;
     private final Supplier<Set<String>> runningTaskIds;
     private final Consumer<String> launch;
@@ -69,9 +70,28 @@ public final class DispatchScheduler {
     private volatile boolean running;
 
     /**
+     * Readiness-scope-less convenience: readiness is evaluated over the
+     * sprint list itself. Only correct when every ticket proves its upstream
+     * through its own advance history — an epic parent outside the sprint is
+     * invisible and its children read as WAIT_UPSTREAM forever. Prefer
+     * {@link #DispatchScheduler(AutoDispatch, Supplier, Supplier, Supplier, Supplier, Consumer, Clock)}.
+     */
+    public DispatchScheduler(AutoDispatch policy, Supplier<List<Task>> sprintTasks,
+            Supplier<CostOverview> cost, Supplier<Set<String>> runningTaskIds,
+            Consumer<String> launch, Clock clock) {
+        this(policy, sprintTasks, sprintTasks, cost, runningTaskIds, launch, clock);
+    }
+
+    /**
      * @param policy          the dispatch policy ticked each round
      * @param sprintTasks     the CURRENT sprint's tickets (already
-     *                        sprint-scoped by the caller — the guardrail);
+     *                        sprint-scoped by the caller — the guardrail:
+     *                        only these are ever admitted); re-read every tick
+     * @param readinessTasks  the tickets readiness is evaluated over — the
+     *                        WHOLE project, because
+     *                        {@link StageReadiness#evaluate(List)} resolves
+     *                        upstream evidence through the epic chain and an
+     *                        epic parent usually sits outside the sprint;
      *                        re-read every tick
      * @param cost            the cost overview the budget counts; re-read
      *                        every tick
@@ -83,10 +103,11 @@ public final class DispatchScheduler {
      *                        {@code null} reads as the system clock
      */
     public DispatchScheduler(AutoDispatch policy, Supplier<List<Task>> sprintTasks,
-            Supplier<CostOverview> cost, Supplier<Set<String>> runningTaskIds,
-            Consumer<String> launch, Clock clock) {
+            Supplier<List<Task>> readinessTasks, Supplier<CostOverview> cost,
+            Supplier<Set<String>> runningTaskIds, Consumer<String> launch, Clock clock) {
         this.policy = Objects.requireNonNull(policy, "policy");
         this.sprintTasks = Objects.requireNonNull(sprintTasks, "sprintTasks");
+        this.readinessTasks = Objects.requireNonNull(readinessTasks, "readinessTasks");
         this.cost = Objects.requireNonNull(cost, "cost");
         this.runningTaskIds = Objects.requireNonNull(runningTaskIds, "runningTaskIds");
         this.launch = Objects.requireNonNull(launch, "launch");
@@ -95,10 +116,10 @@ public final class DispatchScheduler {
 
     /**
      * One dispatch wave, never throws: evaluates readiness over the
-     * sprint supplier's tickets, delegates to
+     * readiness-scope supplier's tickets (the whole project), delegates to
      * {@link AutoDispatch#plan(List, Map, CostOverview, Set)} with the
-     * current running set, holds back recently launched ids, then
-     * launches the rest through the consumer.
+     * sprint-scoped candidates and the current running set, holds back
+     * recently launched ids, then launches the rest through the consumer.
      *
      * @return the plan as executed — {@code launch} lists what really
      *         went out this tick, {@code skipped} everyone else with a
@@ -106,10 +127,12 @@ public final class DispatchScheduler {
      */
     public AutoDispatch.DispatchPlan tick() {
         List<Task> sprint;
+        List<Task> scope;
         CostOverview overview;
         Set<String> runningIds;
         try {
             sprint = sprintTasks.get();
+            scope = readinessTasks.get();
             overview = cost.get();
             runningIds = runningTaskIds.get();
         } catch (RuntimeException e) {
@@ -117,7 +140,7 @@ public final class DispatchScheduler {
             return new AutoDispatch.DispatchPlan(List.of(), List.of());
         }
         AutoDispatch.DispatchPlan planned =
-                policy.plan(sprint, StageReadiness.evaluate(sprint), overview, runningIds);
+                policy.plan(sprint, StageReadiness.evaluate(scope), overview, runningIds);
         Instant now = clock.instant();
         pruneLaunched(now);
         List<String> launchedNow = new ArrayList<>();

@@ -1,10 +1,10 @@
 package com.opencode.ide.fleet;
 
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,7 +38,11 @@ public class FleetRunner {
     private final OpencodeClient client;
     private final WorktreeManager worktrees;
     private final Runnable sleeper;
-    private final Map<String, FleetTask> tasks = new HashMap<>();
+    /**
+     * Submitted tasks by id, needed again at merge-back. Concurrent: one
+     * runner is shared by every parallel launch thread of a fleet.
+     */
+    private final Map<String, FleetTask> tasks = new ConcurrentHashMap<>();
 
     public FleetRunner(OpencodeClient client, WorktreeManager worktrees) {
         this(client, worktrees, FleetRunner::sleepPollInterval);
@@ -60,18 +64,22 @@ public class FleetRunner {
      * optional {@link Bootstrap} command, and sends the prompt. On client
      * failure after worktree creation the returned job is {@code FAILED}; the
      * worktree is deliberately kept (see {@link FleetJob#worktree}) for
-     * post-mortem inspection.
+     * post-mortem inspection. A FAILED job still carries the session id when
+     * the session was already created, so the caller can wind that session
+     * down (permission watches, telemetry) instead of leaking it.
      */
     public FleetJob submit(FleetTask task) {
         Worktree worktree = worktrees.create(task.baseWorktree(), task.taskId());
+        String sessionId = null;
         try {
             Session session = client.createSession(task.title(), worktree.path());
-            runBootstrap(session.id(), task.bootstrap());
-            client.sendMessage(chatRequest(session.id(), task));
+            sessionId = session.id();
+            runBootstrap(sessionId, task.bootstrap());
+            client.sendMessage(chatRequest(sessionId, task));
             tasks.put(task.taskId(), task);
-            return new FleetJob(task.taskId(), session.id(), worktree.path(), FleetJob.State.RUNNING, null);
+            return new FleetJob(task.taskId(), sessionId, worktree.path(), FleetJob.State.RUNNING, null);
         } catch (OpencodeException e) {
-            return new FleetJob(task.taskId(), null, worktree.path(), FleetJob.State.FAILED, e.getMessage());
+            return new FleetJob(task.taskId(), sessionId, worktree.path(), FleetJob.State.FAILED, e.getMessage());
         }
     }
 
@@ -167,6 +175,7 @@ public class FleetRunner {
             throw new IllegalStateException("unknown task " + job.taskId());
         }
         MergeResult result = worktrees.mergeBack(task.baseWorktree(), job.taskId());
+        tasks.remove(job.taskId());
         if (result.merged()) {
             return withState(job, FleetJob.State.MERGED, null);
         }

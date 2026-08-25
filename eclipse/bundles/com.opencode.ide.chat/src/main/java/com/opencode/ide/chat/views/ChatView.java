@@ -194,6 +194,10 @@ public class ChatView extends ViewPart {
         pickerData.exclude = true;
         commandPicker.setLayoutData(pickerData);
         commandPicker.setVisible(false);
+        // Double-click / Enter inside the list commits the highlighted proposal;
+        // without this the list would be decorative (Enter in the input always
+        // took the first match).
+        commandPicker.addListener(SWT.DefaultSelection, e -> commitPickerSelection());
 
         // row 2: prompt input + send button (separate row below the transcript)
         Composite inputRow = new Composite(outer, SWT.NONE);
@@ -218,14 +222,18 @@ public class ChatView extends ViewPart {
                 boolean plainEnter = e.character == SWT.CR && (e.stateMask & SWT.SHIFT) == 0;
                 if (plainEnter && pickerHasMatches()) {
                     e.doit = false;
-                    sendSelection(composer.select(pickerMatches.get(0), input.getText()));
+                    commitPickerSelection();
                 } else if (e.character == SWT.TAB && pickerHasMatches()) {
                     e.doit = false;
-                    completeTopMatch();
+                    completeSelectedMatch();
                 } else if (e.character == SWT.ESC && pickerHasMatches()) {
                     e.doit = false;
                     pickerDismissed = true;
                     updateCommandPicker();
+                } else if ((e.keyCode == SWT.ARROW_DOWN || e.keyCode == SWT.ARROW_UP)
+                        && pickerHasMatches()) {
+                    e.doit = false;
+                    movePickerSelection(e.keyCode == SWT.ARROW_DOWN ? 1 : -1);
                 } else if (plainEnter) {
                     e.doit = false;
                     send();
@@ -506,17 +514,48 @@ public class ChatView extends ViewPart {
             ((GridData) commandPicker.getLayoutData()).heightHint =
                     Math.min(pickerMatches.size(), PICKER_ROWS) * itemHeight + 4;
         }
-        if (show == commandPicker.isVisible()) {
-            return;
-        }
+        boolean visibilityChanged = show != commandPicker.isVisible();
         commandPicker.setVisible(show);
         ((GridData) commandPicker.getLayoutData()).exclude = !show;
-        commandPicker.getParent().layout(true);
+        if (show || visibilityChanged) {
+            // Also re-layout while the picker STAYS visible: the row count (and
+            // with it heightHint) changes as the user keeps typing.
+            commandPicker.getParent().layout(true);
+        }
     }
 
-    /** Tab: completes the input to the top match and puts the caret after it. */
-    private void completeTopMatch() {
-        CommandInfo top = pickerMatches.get(0);
+    /** The highlighted proposal, defaulting to the first one. */
+    private CommandInfo selectedMatch() {
+        int index = commandPicker == null || commandPicker.isDisposed()
+                ? 0 : commandPicker.getSelectionIndex();
+        if (index < 0 || index >= pickerMatches.size()) {
+            index = 0;
+        }
+        return pickerMatches.get(index);
+    }
+
+    /** Moves the picker highlight by {@code delta}, clamped to the match list. */
+    private void movePickerSelection(int delta) {
+        int index = commandPicker.getSelectionIndex();
+        if (index < 0) {
+            index = 0;
+        }
+        int next = Math.max(0, Math.min(pickerMatches.size() - 1, index + delta));
+        commandPicker.setSelection(next);
+        commandPicker.showSelection();
+    }
+
+    /** Commits the highlighted proposal (Enter in the input, click/Enter in the list). */
+    private void commitPickerSelection() {
+        if (!pickerHasMatches()) {
+            return;
+        }
+        sendSelection(composer.select(selectedMatch(), input.getText()));
+    }
+
+    /** Tab: completes the input to the highlighted match and puts the caret after it. */
+    private void completeSelectedMatch() {
+        CommandInfo top = selectedMatch();
         input.setText("/" + top.name() + " ");
         input.setSelection(input.getText().length());
     }

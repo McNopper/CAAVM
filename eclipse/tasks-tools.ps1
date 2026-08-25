@@ -24,8 +24,11 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # 1) java
 $java = (Get-Command java -ErrorAction SilentlyContinue)?.Source
-if (-not $java -and $env:JAVA_HOME) { $java = Join-Path $env:JAVA_HOME "bin\java.exe" }
-if (-not $java) { throw "java not found on PATH and JAVA_HOME is not set. A JDK 17+ is required." }
+if (-not $java -and $env:JAVA_HOME) {
+    $candidate = Join-Path $env:JAVA_HOME "bin\java.exe"
+    if (Test-Path -LiteralPath $candidate) { $java = $candidate }
+}
+if (-not $java) { throw "java not found on PATH and JAVA_HOME does not point at a JDK. A JDK 17+ is required." }
 
 # 2) the built bundles (newest jar wins; build with: cd eclipse; .\build.ps1 -pl bundles/com.opencode.ide.tasks -pl bundles/com.opencode.ide.tools clean package)
 function Find-BuiltJar([string]$bundle) {
@@ -53,5 +56,7 @@ if (-not $gsonJar) {
     throw "gson jar not found (looked in the Tycho p2 cache ~/.m2/repository/p2/osgi/bundle and Eclipse plugins/). Run one eclipse build first."
 }
 
-$cp = "$($tasksJar.FullName);$($toolsJar.FullName);$($gsonJar.FullName)"
+$cp = ($tasksJar.FullName, $toolsJar.FullName, $gsonJar.FullName) -join [IO.Path]::PathSeparator
 & $java -cp $cp "-Dfile.encoding=UTF-8" com.opencode.ide.tasks.TasksStdioMain --root $Root
+# Propagate the JVM's exit code: opencode must see a crashed MCP server as a failure.
+exit $LASTEXITCODE

@@ -14,7 +14,7 @@ description: >
 ## About this document
 - **Kind:** `skill` (reusable capability, auto-loaded by opencode)
 - **Read by:** any agent that creates or rewrites a Markdown file; also humans authoring docs; **written by:** maintainers
-- **Related:** part of the `pm-*` domain set; standalone (no lifecycle pair) — works independently of the PM/ticket system.
+- **Related:** part of the `project-manager-*` domain set; standalone (no lifecycle pair) — works independently of the PM/ticket system.
 
 You are the **documentation clarity** guide for Hephaestus. In an agentic workflow a repo
 accumulates many Markdown files whose meaning is otherwise inferred from the *filename*.

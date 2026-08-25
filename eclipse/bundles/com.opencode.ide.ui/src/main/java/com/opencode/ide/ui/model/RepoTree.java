@@ -38,13 +38,17 @@ public final class RepoTree {
      * @return the canonical form of a workspace-relative path: {@code null},
      *         blank, {@code "."} and {@code "./"} all map to the root
      *         {@code ""}; surrounding whitespace, a leading {@code "./"} and
-     *         trailing slashes are stripped.
+     *         trailing slashes are stripped. Windows separators are folded to
+     *         {@code "/"} - the server answers with backslash paths
+     *         ({@code "cpp\\build\\"}) and accepts either separator, so one
+     *         canonical form keeps the cache keys and {@link #parentPath}
+     *         consistent.
      */
     public static String normalize(String path) {
         if (path == null) {
             return ROOT;
         }
-        String p = path.trim();
+        String p = path.trim().replace('\\', '/');
         if (p.isEmpty() || ".".equals(p)) {
             return ROOT;
         }

@@ -13,10 +13,11 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * Migration parity: the retired Python pm store's real fixture
- * ({@code mcp/pm/data/test.json}, kept verbatim as a test resource) imports
- * losslessly - all five tasks, their todos/history ordering, per-prefix
- * counters (so new ids continue, never reuse) and field values.
+ * Migration parity: the retired Python pm store's real fixture (originally
+ * {@code mcp/pm/data/test.json}, now vendored verbatim as the test resource
+ * {@code fixtures/pm-test.json}) imports losslessly - all five tasks, their
+ * todos/history ordering, per-prefix counters (so new ids continue, never
+ * reuse) and field values.
  */
 public class PmImportTest {
 

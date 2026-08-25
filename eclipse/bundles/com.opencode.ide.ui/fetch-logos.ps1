@@ -74,6 +74,9 @@ try {
         foreach ($size in 16, 32) {
             $png = Join-Path $providersDir "${slug}_$size.png"
             python -m cairosvg $svg -o $png --output-width $size --output-height $size
+            if ($LASTEXITCODE -ne 0) {
+                throw "cairosvg failed for $slug at ${size}px (exit $LASTEXITCODE). Install it with: python -m pip install cairosvg"
+            }
             Write-Host "PNG     $(Split-Path $png -Leaf)"
         }
     }

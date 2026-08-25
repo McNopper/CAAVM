@@ -151,6 +151,8 @@ public final class TaskStore {
         if (stage != null && !VStages.isValid(stage)) {
             throw new Invalid("stage must be one of " + VStages.STAGES + " (or null), got '" + stage + "'");
         }
+        requireNoNullItems(spec.acceptanceCriteria(), "acceptance_criteria");
+        requireNoNullItems(spec.labels(), "labels");
         return transaction(project, data -> {
             String id = nextId(data, spec.idPrefix() == null ? "T" : spec.idPrefix());
             Task t = new Task();
@@ -240,7 +242,7 @@ public final class TaskStore {
                     }
                     case "status" -> {
                         String status = string(e.getValue());
-                        if (!Task.VALID_STATUSES.contains(status)) {
+                        if (status == null || !Task.VALID_STATUSES.contains(status)) {
                             throw new Invalid("status must be one of " + Task.VALID_STATUSES);
                         }
                         t.status = status;
@@ -715,12 +717,20 @@ public final class TaskStore {
      * metadata; returns the number of imported tasks.
      */
     public int importPmJson(String project, String pmJson) {
-        JsonObject doc = JsonParser.parseString(pmJson).getAsJsonObject();
+        JsonElement parsed = JsonParser.parseString(pmJson);
+        if (!parsed.isJsonObject()) {
+            throw new Invalid("pm export must be a JSON object");
+        }
+        JsonObject doc = parsed.getAsJsonObject();
         return transaction(project, data -> {
             int count = 0;
             if (doc.has("tickets") && doc.getAsJsonObject("tickets").size() > 0) {
                 for (Map.Entry<String, JsonElement> e : doc.getAsJsonObject("tickets").entrySet()) {
                     Task t = fromPmTicket(e.getValue().getAsJsonObject());
+                    if (!TaskFileCodec.isValidId(t.id)) {
+                        throw new Invalid("ticket '" + e.getKey() + "' has an unusable id '" + t.id
+                                + "'; ids double as file names");
+                    }
                     data.tasks.put(t.id, t);
                     data.changed.add(t.id);
                     count++;
@@ -903,6 +913,11 @@ public final class TaskStore {
     private void persist(ProjectData data) throws IOException {
         for (String id : data.changed) {
             Task t = data.tasks.get(id);
+            if (!TaskFileCodec.isValidId(id)) {
+                // Defence in depth: the id is the file name, so an id that is not a
+                // single safe path segment could steer the write out of the project dir.
+                throw new Invalid("refusing to write ticket with unsafe id '" + id + "'");
+            }
             Path target = data.dir.resolve(id + ".md");
             writeAtomic(target, TaskFileCodec.write(t));
         }
@@ -1018,15 +1033,35 @@ public final class TaskStore {
             for (JsonElement item : e.getAsJsonArray()) {
                 out.add(item.isJsonNull() ? null : item.getAsString());
             }
+        } else if (v instanceof JsonElement e && e.isJsonNull()) {
+            return out; // explicit null clears the list
         } else if (v instanceof Iterable<?> it) {
             for (Object o : it) {
                 out.add(o == null ? null : String.valueOf(o));
             }
+        } else {
+            // Anything else (a bare string, number, object) used to silently
+            // clear the list - a plausible agent mistake that lost data.
+            throw new Invalid("expected an array of strings, got: " + v);
         }
         if (out.contains(null)) {
             throw new Invalid("list items must be non-null strings (a null item would corrupt the file format)");
         }
         return out;
+    }
+
+    /** Rejects null items up front so a create can never persist an unreadable file. */
+    private static void requireNoNullItems(List<String> items, String field) {
+        if (items == null) {
+            return;
+        }
+        // Note: List.of(...).contains(null) throws NPE, so iterate explicitly.
+        for (String item : items) {
+            if (item == null) {
+                throw new Invalid(field + " items must be non-null strings"
+                        + " (a null item would corrupt the file format)");
+            }
+        }
     }
 
     private static Task fromPmTicket(JsonObject o) {

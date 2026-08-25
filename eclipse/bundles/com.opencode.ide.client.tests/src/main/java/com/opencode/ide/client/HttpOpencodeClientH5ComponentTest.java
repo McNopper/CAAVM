@@ -42,6 +42,7 @@ public class HttpOpencodeClientH5ComponentTest {
 
     private static final AtomicReference<String> lastMethod = new AtomicReference<>();
     private static final AtomicReference<String> lastPath = new AtomicReference<>();
+    private static final AtomicReference<String> lastQuery = new AtomicReference<>();
     private static final AtomicReference<String> lastBody = new AtomicReference<>();
 
     @BeforeClass
@@ -50,6 +51,7 @@ public class HttpOpencodeClientH5ComponentTest {
         server.createContext("/", exchange -> {
             lastMethod.set(exchange.getRequestMethod());
             lastPath.set(exchange.getRequestURI().getPath());
+            lastQuery.set(exchange.getRequestURI().getRawQuery());
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] bytes = respond(exchange.getRequestURI().getPath());
             exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -195,6 +197,34 @@ public class HttpOpencodeClientH5ComponentTest {
         assertEquals(1, symbols.size());
         assertEquals("function", symbols.get(0).kind());
         assertEquals(3, symbols.get(0).lineNumber());
+    }
+
+    /**
+     * The server rejects {@code GET /file} without a {@code path} key with
+     * HTTP 400 ({@code Missing key at ["path"]}), which used to break the Repo
+     * view's very first (root) load. Every listing must carry the key.
+     */
+    @Test
+    public void listFilesAlwaysSendsThePathQueryKey() throws Exception {
+        client.listFiles(null);
+        assertEquals("/file", lastPath.get());
+        assertEquals("path=.", lastQuery.get());
+
+        client.listFiles("");
+        assertEquals("path=.", lastQuery.get());
+
+        client.listFiles("  ");
+        assertEquals("path=.", lastQuery.get());
+
+        client.listFiles(".");
+        assertEquals("path=.", lastQuery.get());
+
+        client.listFiles("cpp/src");
+        assertEquals("path=cpp%2Fsrc", lastQuery.get());
+
+        // the server answers with Windows separators; they must survive encoding
+        client.listFiles("cpp\\src\\");
+        assertEquals("path=cpp%5Csrc%5C", lastQuery.get());
     }
 
     @Test
