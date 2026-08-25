@@ -58,11 +58,12 @@ blocked = orthogonal flag (blocked:bool + blocker:str) at any active state
 `status`, `blocked` + `blocker`, `sprint` (S-XX | null), `story_points`,
 `role` (architect / developer / tester / pm / cpp-engineer / graphics-engineer),
 `priority`, `assignee`, `acceptance_criteria[]`, `labels[]`, `epic` (optional),
+`stage` (V-model stage | null), `artifacts[]`, `todos[]`,
 timestamps, append-only `history[]`, `comments[]`.
 
 > The `role` field says which **discipline** should pick the ticket up; `assignee`
-> says who actually took it. It is extensible (any string), validated against a
-> configurable list. A `cost` field can be added later without migration.
+> says who actually took it. It is extensible (any non-empty string; the store
+> does not reject unknown roles). A `cost` field can be added later without migration.
 
 ## Scrum events (you run these)
 

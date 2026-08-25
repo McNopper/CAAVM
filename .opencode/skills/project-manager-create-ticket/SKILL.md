@@ -44,9 +44,9 @@ breaks. This skill keeps every ticket claimable and verifiable.
 | role | owns | claims via | verifies via |
 |---|---|---|---|
 | `architect` | system / architecture structure | `software-system`, `software-architecture` | `test-software-architecture`, `test-software-system` |
-| `developer` | requirements / design / implementation | `software-*` definition skills | matching `test-software-*` |
+| `developer` | design / implementation | `software-design`, `software-implementation` | matching `test-software-*` |
 | `tester` | verification tickets | `test-software-*` | (itself) |
-| `pm` | estimation / traceability / ops | `project-manager-estimate-costs`, `project-manager-audit-traceability`, `project-manager-orchestrate-execution` | — |
+| `pm` | requirements / estimation / traceability / ops | `software-requirements`, `project-manager-estimate-costs`, `project-manager-audit-traceability`, `project-manager-orchestrate-execution` | — |
 | `cpp-engineer` | C++ build / format / static analysis | `cpp-tools` agent | `cpp-tools` agent |
 | `graphics-engineer` | render capture / compare | `mcp.graphics` tools (+ `graphics-expert`) | `graphics-render-comparison` |
 

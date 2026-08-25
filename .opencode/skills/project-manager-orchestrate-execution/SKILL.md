@@ -85,7 +85,7 @@ For each plan item, emit tickets with `role` set so the right agent claims them:
 
 | Work item | role | Skill/agent |
 |---|---|---|
-| Requirements | developer | `software-requirements` |
+| Requirements | pm | `software-requirements` |
 | System / external interfaces | architect | `software-system` |
 | Architecture / dependencies | architect | `software-architecture` |
 | Design / components | developer | `software-design` |

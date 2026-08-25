@@ -42,6 +42,7 @@ domain — the **domain is in the name**. Naming convention: `<domain>-<descript
 | `cpp-` | C++ execution utility | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` | Graphics utility (thin) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 | `code-` | Code analysis | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation), `code-repo-map` (probe-don't-read orientation map: layout, build/test entry points, module one-liners) |
+| `research-` | Live research utility | `research-artificial-analysis-models` (Artificial Analysis leaderboard → filtered, cost-sorted Markdown table) |
 
 Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-author`,
 `executor`, `reviewer`, `rubberduck`, `research`, `project-manager`); domain agents keep their prefix
@@ -53,7 +54,9 @@ The **task store** stores **tickets** and **sprints**, scoped per **project** (o
 subdirectory of `.opencode/tasks/` each, so several independent projects run at once).
 The store is served as `task_*` MCP tools — by the Eclipse harness's `eclipse-build`
 endpoint when Eclipse runs, and by the `tasks` stdio launcher (`eclipse/tasks-tools.ps1`,
-configured in `opencode.json`) for TUI-only sessions. States:
+configured in `opencode.json`) for TUI-only sessions; opencode prefixes them with the
+server name (`tasks_task_*` / `eclipse-build_task_*`) — the tool/wire names stay
+`task_*`. States:
 
 ```
 product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
@@ -63,7 +66,8 @@ stage = optional V-pipeline field: task_advance -> next stage's backlog; task_se
 ```
 
 Readiness machinery (H6 dataflow): `task_readiness` reports, per ticket, whether its
-stage is READY / WAIT_UPSTREAM / STALE / BLOCKED / RUNNING — upstream done AND inputs
+stage is READY / WAIT_UPSTREAM / STALE / BLOCKED / RUNNING / NOT_APPLICABLE (no stage,
+or already done with fresh inputs — never re-dispatched) — upstream done AND inputs
 unchanged since the last run — and the store records `inputs changed:` history markers
 when an upstream moves after a downstream ran. The PM agent can use it to ask "what's
 runnable right now"; the Eclipse Board mirrors it as an opt-in auto-dispatcher

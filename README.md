@@ -15,14 +15,17 @@ tree): skills and agents are flat under `.opencode/` and named `<domain>-<descri
 Project management is a concrete, Scrum-like **ticket/sprint** workflow over the
 **task store** (`.opencode/tasks/`, one Markdown file per ticket) served as `task_*`
 MCP tools by the Eclipse harness's `eclipse-build` endpoint and the stdio
-`tasks-tools` launcher; C++ and graphics are first-class **tools** (an agent and an
+`tasks-tools` launcher (opencode prefixes them with the server name — `tasks_task_*`
+in TUI sessions, `eclipse-build_task_*` in Eclipse; the tool/wire names stay `task_*`);
+C++ and graphics are first-class **tools** (an agent and an
 MCP server), not a separate lifecycle.
 
 Three ideas hold it together:
 
 - **Domains in names, not folders.** opencode discovers every `SKILL.md` under
   `.opencode/skills/*/`. Naming convention `<domain>-<descriptor>`
-  (`software-`, `test-software-`, `project-manager-`, `cpp-`, `graphics-`); coordination agents are
+  (`software-`, `test-software-`, `project-manager-`, `cpp-`, `graphics-`, `code-`,
+  `research-`); coordination agents are
   unprefixed.
 - **A concrete PM, not a metaphor.** The `project-manager` agent runs Scrum over tickets in the
   task store. Tickets carry a `role` (discipline), and workers **self-claim** by role
@@ -63,6 +66,7 @@ Three ideas hold it together:
 | `cpp-` (C++ utility) | `cpp-tools` (methodology; the `cpp-tools` agent runs the commands) |
 | `graphics-` (graphics utility) | `graphics-render-comparison` (the heavy lifting is the `mcp.graphics` tools) |
 | `code-` (code analysis) | `code-dependency` (package/namespace dependency map → Mermaid block diagram), `code-licenses` (third-party license audit → compatibility table + remediation), `code-repo-map` (probe-don't-read orientation map: layout, build/test entry points, module one-liners) |
+| `research-` (live research utility) | `research-artificial-analysis-models` (Artificial Analysis model leaderboard → filtered, cost-sorted Markdown table) |
 
 Verification maps by composition level: `test-software-implementation` ↔ `software-implementation`
 (unit), `test-software-design` ↔ `software-design` (component), `test-software-architecture`
@@ -182,7 +186,8 @@ resolve a tier; the `orchestrator` dispatches parallel subagents. Skills auto-lo
    stdio launcher and the `graphics` MCP server start from `opencode.json`.
 
 > **MCP scope:** the bundled servers implement a deliberately minimal JSON-RPC surface
-> (`initialize`, `tools/list`, `tools/call`). The `tasks` launcher (Java, stdio) and the
+> (`initialize`, `tools/list`, `tools/call`, plus `ping` on the Java `tasks`/`eclipse-build`
+> servers). The `tasks` launcher (Java, stdio) and the
 > Eclipse-hosted `eclipse-build` endpoint (Streamable HTTP) expose the same `task_*` tool
 > set — one surface, two transports; `graphics` is stdio. None implement `resources`,
 > `prompts`, cancellation, or progress. That is sufficient for opencode tool calls.
@@ -231,10 +236,11 @@ providers.
 cppcheck exports) and runs `verify` (fast) and `verify-full` (strict). The `cpp-tools`
 agent drives it. See [`cpp/README.md`](cpp/README.md) and [`cpp/AGENTS.md`](cpp/AGENTS.md).
 
-Presets ship for two toolchains: `default`/`release`/`analysis` (Ninja + Clang,
-which enable the full AI analysis stack) and **`windows`** (Visual Studio + MSVC,
-which builds and tests but skips the Clang-based analysis by design). On a Windows
-host without Clang/Ninja, use `cmake --preset windows`.
+Presets ship for the Ninja-first toolchains — `default`/`release`/`analysis`
+(Ninja + Clang on PATH, full AI analysis stack), `clang64`/`mingw64` (MSYS2
+environments), `linux` (Ninja + gcc, incl. WSL) — and **`windows`** (Visual Studio +
+MSVC, which builds and tests but skips the Clang-based analysis by design). On a
+Windows host without Clang/Ninja, use `cmake --preset windows`.
 
 ## License
 
@@ -248,4 +254,6 @@ full license texts and copyright notices are in
 [`THIRD-PARTY.md`](THIRD-PARTY.md). The local opencode Node plugin
 (`.opencode/`, git-ignored) and the `cpp/` template's test-only GoogleTest
 (BSD-3-Clause, fetched on demand) are not redistributed and are documented there
-as well.
+as well. The Eclipse chat view additionally vendors **markdown-it**, **mermaid**,
+**KaTeX**, and **highlight.js** into its plugin jar; their notices are also in
+[`THIRD-PARTY.md`](THIRD-PARTY.md).

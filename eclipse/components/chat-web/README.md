@@ -121,16 +121,16 @@ Requires Node.js on PATH (only for the checks — the component itself is
 build-free):
 
 ```
-node renderer-check.mjs   # assets present; markdown-it/KaTeX/hljs really render (50 checks)
+node renderer-check.mjs   # assets present; markdown-it/KaTeX/hljs really render (51 checks)
 node bridge-check.mjs     # executes chat.js in a VM with a DOM shim (move-semantics
                           # appendChild) and drives the bridge exactly as a host
-                          # would (87 checks, incl. tool lines, copy-code and the
+                          # would (94 checks, incl. tool lines, copy-code and the
                           # streaming-cursor stop path)
 node mermaid-check.mjs    # renders real diagrams in headless Edge (8 checks;
                           # SKIPs when Edge/puppeteer-core are absent)
 ```
 
-or `npm run check` for both. Exit code 0 = all checks pass.
+or `npm run check` for all three. Exit code 0 = all checks pass.
 
 `bridge-check.mjs` honours a `WEB_DIR` environment variable to run against an
 alternative copy of the page (used to prove the checks fail when the bridge is

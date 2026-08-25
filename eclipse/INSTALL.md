@@ -47,8 +47,8 @@ Scoped build during iteration (repeat `-pl`, never commas; adjust to the modules
             -pl bundles/com.opencode.ide.mcp -pl bundles/com.opencode.ide.mcp.tests clean verify
 ```
 
-Both run the 470 Java tests (plus 13 in the `opencode-tasks` mojo module); `verify` also runs
-the 145 Node checks (50 renderer + 87 bridge + 8 mermaid against `components/chat-web`) when
+Both run the 1002 Java tests (plus 16 in the `opencode-tasks` mojo module); `verify` also runs
+the 153 Node checks (51 renderer + 94 bridge + 8 mermaid against `components/chat-web`) when
 Node is available (`-DskipNodeChecks=true` to skip). Produces plugin JARs in
 `bundles\<name>\target\` and (full build) a p2 update site in
 `releng\com.opencode.ide.repository\target\repository\`.
@@ -99,7 +99,7 @@ one-time setup:
 2. Restart Eclipse.
 3. *File → Import → Maven → Existing Maven Projects* → select the repo's `eclipse` folder.
 4. **Run → Debug As → Eclipse Application** — launches a 2nd Eclipse with your workspace
-   plugins live. Set breakpoints in `AgentsView`, `ProvidersView`, `HttpOpencodeClient`, etc.
+   plugins live. Set breakpoints in `ServerView`, `ProvidersView`, `HttpOpencodeClient`, etc.
    Relaunch picks up code changes; no restart/copy needed.
 
 ---

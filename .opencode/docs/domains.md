@@ -24,6 +24,7 @@ match its folder name (opencode requirement). Name regex: `^[a-z0-9]+(-[a-z0-9]+
 | `cpp-` | C++ execution utility | methodology for the `cpp-tools` agent | `cpp-tools` |
 | `graphics-` | Graphics utility (thin) | methodology; heavy work is `mcp.graphics` | `graphics-render-comparison` |
 | `code-` | Code analysis | package/namespace dependency map; emits Mermaid block diagram; third-party license audit → compatibility table + remediation; probe-don't-read repository orientation map | `code-dependency`, `code-licenses`, `code-repo-map` |
+| `research-` | Live research utility | methodology for fetching/normalizing external data sources | `research-artificial-analysis-models` |
 
 ## Coordination agents (unprefixed) and domain agents (prefixed)
 

@@ -30,6 +30,7 @@ A ticket is the **hand-off unit**. Its authoritative shape (per project):
 | `labels` | string[] | free tags |
 | `epic` | string | parent ticket id for traceability |
 | `artifacts` | `{kind, ref, note, by, ts}[]` | **where the produced output lives** |
+| `todos` | `{text, done}[]` | checklist items (`task_add_todo`/`task_toggle_todo`/`task_remove_todo`) |
 | `history` | append-only | state transitions |
 | `comments` | append-only | human/agent notes |
 | `created_at` / `updated_at` | timestamp (UTC, ms) | drives claim/backlog ordering |
@@ -58,8 +59,8 @@ surface, two transports. Note: opencode prefixes tools with the server name, so 
 sessions see them as `tasks_task_*`; in-Eclipse agents as `eclipse-build_task_*`.
 
 Plus the H6 readiness/stage pack: `task_readiness` (per-ticket READY / WAIT_UPSTREAM /
-STALE / BLOCKED / RUNNING over the current board), `task_advance`, `task_send_back` — the
-stage-flow tools the V-pipeline dispatcher builds on.
+STALE / BLOCKED / RUNNING / NOT_APPLICABLE over the current board), `task_advance`,
+`task_send_back` — the stage-flow tools the V-pipeline dispatcher builds on.
 
 ### Artifact kinds (the hand-off locator)
 
@@ -96,16 +97,18 @@ to `in-review`, so the next agent needs no questions.
 | role | owns/claims via | verifies via |
 |---|---|---|
 | `architect` | `software-system`, `software-architecture` | `test-software-system`, `test-software-architecture` |
-| `developer` | `software-requirements`/`design`/`implementation` | matching `test-software-*` |
+| `developer` | `software-design`/`software-implementation` | matching `test-software-*` |
 | `tester` | `test-software-*` | (itself) |
-| `pm` | `project-manager-*` skills | — |
+| `pm` | `software-requirements`, `project-manager-*` skills | — |
 | `cpp-engineer` | `cpp-tools` agent | `cpp-tools` agent |
 | `graphics-engineer` | `mcp.graphics` (+ `graphics-expert` for `very-high` work) | `graphics-render-comparison` |
 
 ## Model-tier contract
 
 Agents/docs reference **tiers**, never hard-coded model IDs (except `graphics-expert`, which
-is pinned to the `very-high` model). The authoritative tier→model mapping lives in
-`project-manager-orchestrate-execution`. Tiers: `very-low`, `low` (default executor), `mid`, `high`
+is pinned to the `very-high` model). The authoritative tier **selection rules** live in
+`project-manager-orchestrate-execution`; the concrete tier→model mapping lives in
+`opencode.json` (default `model`) plus per-agent frontmatter overrides (only `graphics-expert`
+overrides). Tiers: `very-low`, `low` (default executor), `mid`, `high`
 (plan/review), `very-high` (run twice & reconcile). Pick the lowest tier that satisfies the
 task; escalate, never de-escalate.

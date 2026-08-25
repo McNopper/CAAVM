@@ -96,5 +96,6 @@ asks "what did this cost so far?". Never runs automatically.
 
 - Estimate needed before a run → `project-manager-estimate-costs` (this skill feeds it).
 - Sprint close / review numbers → the `project-manager` agent consumes the report.
-- Fleet telemetry automation (FleetRunner recording actuals on mergeBack) → ROADMAP
-  "Standing"; until then this skill is the manual path.
+- Fleet telemetry automation (TaskFleet recording `fleet actuals:` comments on mergeBack)
+  has landed (see ROADMAP "Standing"); this skill remains the manual path for ad-hoc
+  queries and calibration.

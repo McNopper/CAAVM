@@ -27,7 +27,8 @@ reviewed decision**, not an accident:
 ## Module organization — the three tiers (verified against manifests/poms 2026-08-20)
 
 Every module sits in exactly one tier. **Tier 1** is plain Java, build-enforced Eclipse/OSGi-free
-(pwsh import ban in each pom, unconditional on every OS, `-DskipEclipseBan=true` skips) — usable
+(pwsh import ban in each Tier-1 bundle pom, unconditional on every OS;
+`-DskipEclipseBan=true` skips it in client/git/fleet — the tools/tasks bans are not skippable) — usable
 as plain libraries (the mojo and the stdio launcher prove it). **Tier 2** is the Eclipse harness.
 **Tier 3** carries the C++-development specifics; everything else is language-agnostic behind
 the `ToolProvider` SPI.
@@ -40,7 +41,7 @@ the `ToolProvider` SPI.
 | `com.opencode.ide.tools` (+ tests) | gson | `ToolProvider` SPI + `McpDispatcher` (JSON-RPC) — language-agnostic; the C++ pack lives beside it (tier 3) |
 | `com.opencode.ide.tasks` (+ tests) | tools, gson | the Markdown task store (`.opencode/tasks/`), the V-pipeline (`VStages`, advance/sendBack), `StageReadiness` (pure dataflow readiness) + `recordInvalidations` (upstream-changed history markers), the `task_*` tool pack (incl. `task_readiness`), `TasksStdioMain` (stdio transport) |
 | `com.opencode.ide.git` (+ tests) | — | `WorktreeManager` + `FleetGit` conventions (branch/worktree naming) over the git CLI; `StoreGitStatus`/`StoreSync` (distributed-fleet store status + pull→commit→push discipline) |
-| `com.opencode.ide.fleet` (+ tests) | client, git, tasks | the fleet engine: `FleetRunner` (submit → optional `/shell` bootstrap → await → mergeBack), `TaskFleet` (V-pipeline launch loop), `RoleAgents` dispatch, `SelfClaimPrompt`, telemetry, `PermissionQueue`/`FleetPermissionBridge` (unattended permission gating), `GlobalEventsAggregator` (merged cross-connection event feed) |
+| `com.opencode.ide.fleet` (+ tests) | client, git, tasks, gson | the fleet engine: `FleetRunner` (submit → optional `/shell` bootstrap → await → mergeBack), `TaskFleet` (V-pipeline launch loop), `RoleAgents` dispatch, `SelfClaimPrompt`, telemetry, `PermissionQueue`/`FleetPermissionBridge` (unattended permission gating), `GlobalEventsAggregator` (merged cross-connection event feed) |
 | `mojo/opencode-tasks` (plain maven-plugin, not OSGi) | tasks (plain jar), gson, maven-api | `opencode-tasks:sync` / `:plan` over the same store — Maven plans, CMake builds |
 
 ### Tier 2 — the Eclipse harness (OSGi bundles, thin adapters + UI)
@@ -49,7 +50,7 @@ the `ToolProvider` SPI.
 |---|---|---|
 | `com.opencode.ide.core` (+ tests) | client, **mcp**, equinox.security, eclipse runtime | the Eclipse adapter: preferences (secure remote credentials), `OpencodeConnection` + `ConnectionsManager` (plural), `ClientLog`/`ProjectContext` service glue, MCP registration, tasksRoot bridge into the endpoint |
 | `com.opencode.ide.mcp` (+ tests) | tools, **tasks**, gson | the `eclipse-build` MCP endpoint (Streamable HTTP, 127.0.0.1) + DS lifecycle only; service-driven activation (activates when core binds `McpInfo`) |
-| `com.opencode.ide.ui` (+ tests) | client, core, workbench | Server (multi-root, virtualized, MCP/skills/sessions) + Providers + Session-details views, perspective, connection preference page; `ViewLoadSupport` |
+| `com.opencode.ide.ui` (+ tests) | client, core, workbench | Server (multi-root, virtualized, MCP/skills/sessions) + Providers + Repo + Session-details views, perspective, connection preference page; `ViewLoadSupport` |
 | `com.opencode.ide.chat` (+ tests) | client, core, workbench, gson | the Browser host for `components/chat-web` (`ChatPage` + SWT-free `ChatSessionController` + embedded web server); does NOT depend on ui |
 | `com.opencode.ide.board` (+ tests) | client, core, tasks, fleet, git, chat, gson, workbench | the PM surface: Board (flat + V-pipeline layouts, stage filter, blocked rendering, cost overview, *Auto ▶* self-draining dispatch via `DispatchScheduler`/`AutoDispatch`/`StageReadiness`, dispatch settings, store git header + *Sync store*) + Fleet views (jobs, server diff, permissions dialog, events dialog, TUI-first take-over); SWT-free model unit-tested |
 | `com.opencode.ide.cdt` (+ tests) | core, CDT bundles | the CDT bridge (tier 3) |
@@ -68,12 +69,12 @@ client → gson
 tools  → gson
 tasks  → tools, gson
 git    → (none)
-fleet  → client, git, tasks
+fleet  → client, git, tasks, gson
 mcp    → tools, tasks, gson
 core   → client, mcp, equinox.security, eclipse.core.runtime
 ui     → client, core, {workbench}
 chat   → client, core, {workbench}, gson        ← no ui edge
-board  → client, core, tasks, fleet, git, gson, {workbench}
+board  → client, core, tasks, fleet, git, chat, gson, {workbench}
 cdt    → core, {cdt.core, resources, ui, ui.ide}
 mojo   → tasks (plain jar), gson, maven-api (provided)
 ```
@@ -119,7 +120,7 @@ view renders `thinking…` / `tool: <name> — <file>` labels and the "Active fi
 ## The web bridge contract (chat-web's public API)
 
 The renderer is hostable anywhere that can (a) serve static files over HTTP and (b) call JS with
-string arguments. Contract (enforced by `bridge-check.mjs`, 87 checks):
+string arguments. Contract (enforced by `bridge-check.mjs`, 94 checks):
 
 - **Host → page** (via `ChatScripts`; payloads are JSON *string literals* — objects tolerated;
   every entry point is guarded, returns `true`/`false`, reports errors via
@@ -144,7 +145,7 @@ string arguments. Contract (enforced by `bridge-check.mjs`, 87 checks):
   visible source, not a gap), highlight.js for code fences with the `#hljs-light`/`#hljs-dark`
   theme pair toggled by `__setTheme` (which also resets mermaid for themed re-init), markdown
   `html:false` + mermaid `securityLevel:strict` (XSS hardening), single scrolling container.
-- **Checks:** `components/chat-web` runs `renderer-check.mjs` (50) + `bridge-check.mjs` (87) +
+- **Checks:** `components/chat-web` runs `renderer-check.mjs` (51) + `bridge-check.mjs` (94) +
   `mermaid-check.mjs` (8 — drives the real page in **headless Microsoft Edge** via
   `puppeteer-core`: diagrams must render to SVG, broken sources degrade visibly, no silent drops;
   SKIPs when Edge/puppeteer-core are absent) — all wired into the chat bundle's `mvn verify`
