@@ -17,7 +17,9 @@ Project management is a concrete, Scrum-like **ticket/sprint** workflow over the
 MCP tools by the Eclipse harness's `eclipse-build` endpoint and the stdio
 `tasks-tools` launcher (opencode prefixes them with the server name — `tasks_task_*`
 in TUI sessions, `eclipse-build_task_*` in Eclipse; the tool/wire names stay `task_*`);
-C++ and graphics are first-class **tools** (an agent and an
+the **fleet** is dispatchable from chat itself via the `fleet` stdio server
+(wire names `fleet_dispatch`/`fleet_jobs`/…, surfaced as `fleet_fleet_*` — chat is the
+primary interface, Board buttons are conveniences); C++ and graphics are first-class **tools** (an agent and an
 MCP server), not a separate lifecycle.
 
 Three ideas hold it together:
@@ -46,7 +48,7 @@ Three ideas hold it together:
 
 | Path | What it is |
 |---|---|
-| `opencode.json` (repo root) | project config — default `model`, `AGENTS.md`, and the `tasks` (stdio launcher) + `graphics` MCP servers. |
+| `opencode.json` (repo root) | project config — default `model`, `AGENTS.md`, and the `tasks` + `fleet` (stdio launchers) + `graphics` MCP servers. |
 | `AGENTS.md` (repo root) | opencode-first workflow conventions and routing. |
 | `.opencode/skills/*/SKILL.md` | the skill library, flat by domain. |
 | `.opencode/agent/*.md` | lean custom agents (coordination + domain). |

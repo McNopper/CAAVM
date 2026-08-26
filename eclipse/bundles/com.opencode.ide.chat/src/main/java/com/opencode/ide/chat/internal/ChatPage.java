@@ -9,6 +9,7 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.SWTError;
+import org.eclipse.swt.SWTException;
 import org.eclipse.swt.browser.Browser;
 import org.eclipse.swt.browser.BrowserFunction;
 import org.eclipse.swt.browser.LocationListener;
@@ -112,8 +113,18 @@ public final class ChatPage implements ChatSessionController.Renderer {
 
     /** Releases the bridge functions (the browser itself dies with its parent composite). */
     public void dispose() {
-        reportFunction.dispose();
-        openExternalFunction.dispose();
+        // At workbench shutdown the parent composite - and with it the browser -
+        // can already be disposed before the view's dispose runs; disposing the
+        // BrowserFunctions would then throw "Widget is disposed" into the log.
+        if (browser.isDisposed()) {
+            return;
+        }
+        try {
+            reportFunction.dispose();
+            openExternalFunction.dispose();
+        } catch (SWTException e) {
+            // browser torn down concurrently - nothing left to release
+        }
     }
 
     // ---------- rendering (ChatSessionController.Renderer) ----------
