@@ -131,6 +131,26 @@ steers dispatch (stage → role → skill) and the prompt the fleet gives the wo
   (pinned to `very-high`) drives them for frontier-level graphics work; `graphics-render-comparison`
   is the thin methodology skill.
 
+## Chat-first control plane (H7)
+
+**Chat is the primary interface — everything is triggerable from an opencode chat session;
+the Eclipse views (Board buttons, dialogs, launchers) are optional conveniences on top.**
+Concretely, a chat agent can already:
+
+- run the whole ticket/sprint workflow via the `tasks` server (`tasks_task_*`);
+- **dispatch the fleet** via the `fleet` server: `fleet_fleet_dispatch` (async launch for
+  one ticket — worktree isolation, role-mapped agent, merge-back, artifacts/actuals on the
+  ticket), `fleet_fleet_jobs` (poll the live job snapshot), `fleet_fleet_sync_store` /
+  `fleet_fleet_status_store` / `fleet_fleet_recover_store` (distributed-fleet store
+  discipline). The fleet spawns its own `opencode serve` on first dispatch and kills it on
+  shutdown; set `OPENCODE_SERVER_PASSWORD` to harden it (a generated password is the
+  planned default — ROADMAP Milestone P).
+- capture/compare renders via `mcp.graphics`.
+
+Not yet chat-triggerable (ROADMAP "Remaining work"): permission answering (unattended
+runs that hit a permission ask stall — do not dispatch blocked/risky tickets unattended),
+the auto-dispatch loop, and board rendering.
+
 ## eclipse/ — the IDE harness
 
 The Eclipse plugin (`eclipse/`) is the **agentic harness**: chat plus Server (agents/sessions/MCP

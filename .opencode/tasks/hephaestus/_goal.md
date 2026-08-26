@@ -23,5 +23,10 @@ toward this goal — they are not the final product:
 | `E-004` | ROADMAP H4 | CDT integration & chat polish |
 | `E-005` | Standing | Engineering health: refactor cadence, cost telemetry → estimation |
 
+*(H5–H7, 2026-08-23 → 2026-08-25, ran as direct session waves **off the board** — see
+ROADMAP.md history; V-001..V-003 + S-03 were reconciled as done on 2026-08-25. From
+ROADMAP **Milestone V** on, new work goes through this board again: seed tickets per
+milestone — V validation run, P permissions & safety, U UI pass, H hygiene.)*
+
 Prime rule (from ROADMAP.md): never build in the plugin what Hephaestus already provides —
 and what it provides moves into the Maven/Eclipse world when we touch it.
