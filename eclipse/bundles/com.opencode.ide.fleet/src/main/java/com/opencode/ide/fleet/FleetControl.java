@@ -2,7 +2,9 @@ package com.opencode.ide.fleet;
 
 import java.net.URI;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -13,8 +15,10 @@ import java.util.function.Function;
 import com.opencode.ide.client.ConnectionConfig;
 import com.opencode.ide.client.OpencodeClient;
 import com.opencode.ide.client.OpencodeClients;
+import com.opencode.ide.client.OpencodeEventStream;
 import com.opencode.ide.client.OpencodeServerLauncher;
 import com.opencode.ide.git.FleetGit;
+import com.opencode.ide.git.StoreSync;
 import com.opencode.ide.tasks.TaskStore;
 
 /**
@@ -29,9 +33,13 @@ import com.opencode.ide.tasks.TaskStore;
  *       repository root (so it loads that repo's agents/skills/MCP config),
  *   <li>builds one {@link TaskFleet} over it (worktree isolation, role
  *       dispatch, polling completion detection, telemetry),
+ *   <li>collects unattended sessions' permission asks in a
+ *       {@link PermissionQueue} fed from the server's global event stream
+ *       (see {@link #permissions()} - the chat answering path), and
  *   <li>runs every {@link #dispatch launch} on a daemon executor because
  *       {@link TaskFleet#launch} blocks end-to-end (submit → await → merge →
- *       bookkeeping; default 30 minutes).
+ *       bookkeeping; default 30 minutes), then best-effort auto-syncs the
+ *       store's git repo so fleet peers see the ticket move.
  * </ul>
  *
  * <p>Lifecycle: {@link #close()} stops accepting launches and kills the
@@ -48,9 +56,24 @@ public final class FleetControl implements AutoCloseable {
     public interface Engine extends AutoCloseable {
         TaskFleet fleet();
 
+        /**
+         * The engine's permission queue: unattended fleet sessions' asks
+         * collect here (fed from the server's global event stream) until the
+         * human answers them.
+         */
+        PermissionQueue permissions();
+
         @Override
         void close();
     }
+
+    /**
+     * Served by {@link #permissions()} while the engine does not exist:
+     * listing pending asks must never spawn a server, and before the first
+     * dispatch there is nothing to answer — nothing feeds this shared
+     * stand-in, so it stays empty and every answer on it fails cleanly.
+     */
+    private static final PermissionQueue IDLE_PERMISSIONS = new PermissionQueue(null);
 
     private final Path storeRoot;
     private final Path repoRoot;
@@ -61,8 +84,10 @@ public final class FleetControl implements AutoCloseable {
 
     /**
      * Real mode: the engine factory spawns its own {@code opencode serve}
-     * (free port on 127.0.0.1, {@code OPENCODE_SERVER_PASSWORD} honored when
-     * set) in the repository that owns the store.
+     * (free port on 127.0.0.1) in the repository that owns the store.
+     * {@code OPENCODE_SERVER_PASSWORD} is honored when set; otherwise a fresh
+     * random password is generated (see {@link #resolvePassword}) so the
+     * spawned server never runs unauthenticated.
      */
     public static FleetControl spawn(Path storeRoot) {
         return new FleetControl(storeRoot, FleetControl::spawnEngine);
@@ -70,7 +95,7 @@ public final class FleetControl implements AutoCloseable {
 
     static Engine spawnEngine(Path root) {
         Path repo = repoRootOf(root);
-        String password = System.getenv("OPENCODE_SERVER_PASSWORD");
+        String password = resolvePassword(System.getenv("OPENCODE_SERVER_PASSWORD"));
         OpencodeServerLauncher server = new OpencodeServerLauncher(
                 null, "127.0.0.1", 0, repo, password);
         URI base;
@@ -82,12 +107,22 @@ public final class FleetControl implements AutoCloseable {
         }
         OpencodeClient client = OpencodeClients.http(
                 new ConnectionConfig(base, "opencode", password));
+        PermissionQueue queue = new PermissionQueue(PermissionQueue.responderOf(client));
+        FleetPermissionBridge bridge = new FleetPermissionBridge(queue);
+        // the runner's client is wrapped so its sessions are watched from
+        // their creation - the blocking prompt call is where unattended asks
+        // wait; the watching client delegates everything, so one wrapped
+        // instance serves the whole engine (runner, polling, telemetry)
+        OpencodeClient watched = bridge.watching(client);
         TaskFleet fleet = new TaskFleet(
-                new FleetRunner(client, FleetGit.defaultManager()),
+                new FleetRunner(watched, FleetGit.defaultManager()),
                 new TaskStore(root),
                 new RoleAgents(),
-                new PollingSessionEvents(client),
-                () -> client);
+                new PollingSessionEvents(watched),
+                () -> watched,
+                bridge);
+        OpencodeEventStream events = client.getGlobalEvents(bridge::onEvent, connected -> { });
+        events.start();
         return new Engine() {
             @Override
             public TaskFleet fleet() {
@@ -95,10 +130,32 @@ public final class FleetControl implements AutoCloseable {
             }
 
             @Override
+            public PermissionQueue permissions() {
+                return queue;
+            }
+
+            @Override
             public void close() {
+                events.stop();
                 server.stop();
             }
         };
+    }
+
+    /**
+     * Resolves the spawned server's password: the given environment value
+     * when usable (non-null, non-blank), else a fresh 64-char lowercase hex
+     * string from a {@link SecureRandom} (32 bytes). The value feeds the
+     * launcher and the connecting client only — it is never logged and never
+     * part of any exception message.
+     */
+    public static String resolvePassword(String envPassword) {
+        if (envPassword != null && !envPassword.isBlank()) {
+            return envPassword;
+        }
+        byte[] random = new byte[32];
+        new SecureRandom().nextBytes(random);
+        return HexFormat.of().formatHex(random);
     }
 
     /**
@@ -143,24 +200,52 @@ public final class FleetControl implements AutoCloseable {
     }
 
     /**
+     * The fleet's permission queue — the chat answering path for unattended
+     * sessions' asks (the {@code fleet_permissions} tools). Serves the
+     * engine's live queue once the engine exists; before that, deliberately
+     * without spawning it (listing pending asks must stay cheap): before the
+     * first dispatch there is nothing to answer, so the shared empty
+     * {@link #IDLE_PERMISSIONS stand-in} is returned instead (every answer on
+     * it fails cleanly — nothing was ever asked).
+     */
+    public PermissionQueue permissions() {
+        Engine e;
+        synchronized (this) {
+            e = engine;
+        }
+        return e == null ? IDLE_PERMISSIONS : e.permissions();
+    }
+
+    /**
      * Launches the fleet for one ticket asynchronously and returns
      * immediately - poll {@link #jobs()} (or the {@code fleet_jobs} tool) for
      * the outcome. Callers pre-validate the ticket (exists, not blocked, not
      * done, not already in flight); {@link TaskFleet} re-checks and marks the
      * ticket {@code blocked} with the reason on failure, so an exception here
-     * never surfaces to the caller after the fact.
+     * never surfaces to the caller after the fact. Once the launch settles —
+     * either way — the store's git repo is auto-synced best-effort
+     * (pull→commit→push, see {@link StoreSync#sync}): the launch's
+     * bookkeeping (claim, in-review, blocked markers) deserves publishing
+     * even when the launch failed. A sync failure is logged and swallowed; it
+     * can never mask the launch outcome ({@code PULL_CONFLICT} is a normal
+     * outcome, recoverable via {@code fleet_recover_store}, not a failure).
      */
     public void dispatch(String project, String ticketId, Duration timeout) {
         Engine e = engine();
         inFlight.add(ticketId);
         executor.execute(() -> {
             try {
-                e.fleet().launch(project, ticketId, repoRoot, timeout);
+                try {
+                    e.fleet().launch(project, ticketId, repoRoot, timeout);
+                } catch (RuntimeException ex) {
+                    // TaskFleet already recorded the failure on the ticket
+                    // (blocked + reason); the jobs snapshot stays authoritative.
+                } finally {
+                    inFlight.remove(ticketId);
+                }
+                StoreSync.sync(storeRoot, "opencode fleet: store sync after " + ticketId);
             } catch (RuntimeException ex) {
-                // TaskFleet already recorded the failure on the ticket
-                // (blocked + reason); the jobs snapshot stays authoritative.
-            } finally {
-                inFlight.remove(ticketId);
+                System.err.println("[fleet] store auto-sync failed for " + ticketId + ": " + ex.getMessage());
             }
         });
     }

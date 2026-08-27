@@ -19,15 +19,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.google.gson.Gson;
+import com.opencode.ide.client.model.HealthStatus;
+
 /**
  * Starts and owns a child {@code opencode serve} process (spawn mode).
  *
  * <p>Resolves the {@code opencode} binary (explicit path, else PATH search with
  * Windows {@code .cmd}/{@code .exe} handling), allocates a free port (unless a
  * fixed one is configured), spawns the server, waits for {@code /global/health}
- * to go healthy, and tears the whole process tree down on {@link #stop()}.</p>
+ * to go healthy, and tears the whole process tree down on {@link #stop()}.
+ * On a successful start it captures the health snapshot
+ * ({@link #getLastHealth()}) and warns when the server's version drifted
+ * from the {@link ServerVersionPin} (H-002 — a warning, never a failed
+ * start).</p>
  */
 public final class OpencodeServerLauncher {
+
+    private static final Gson GSON = new Gson();
 
     private final String configuredBinary;
     private final String hostname;
@@ -38,6 +47,7 @@ public final class OpencodeServerLauncher {
     private Process process;
     private URI baseUrl;
     private Thread outputDrainer;
+    private volatile HealthStatus lastHealth;
 
     public OpencodeServerLauncher(String configuredBinary, String hostname, int port,
             Path workingDirectory, String password) {
@@ -104,6 +114,7 @@ public final class OpencodeServerLauncher {
             stop();
             throw e;
         }
+        warnOnVersionMismatch();
         return baseUrl;
     }
 
@@ -118,6 +129,15 @@ public final class OpencodeServerLauncher {
     /** @return the OS pid of the spawned server process while it is running, else {@code null}. */
     public synchronized Long getProcessId() {
         return (process != null && process.isAlive()) ? process.pid() : null;
+    }
+
+    /**
+     * The health snapshot the readiness poll captured (H-002): the server
+     * version {@link ServerVersionPin} compares against. {@code null} before
+     * the first successful poll or when the body could not be parsed.
+     */
+    public HealthStatus getLastHealth() {
+        return lastHealth;
     }
 
     /** Kills the spawned process and its descendants. */
@@ -184,6 +204,7 @@ public final class OpencodeServerLauncher {
                 if (health.statusCode() == 200 && health.body().contains("\"healthy\":true")) {
                     HttpResponse<String> agent = client.send(agentReq, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                     if (agent.statusCode() == 200) {
+                        lastHealth = parseHealth(health.body()); // captured for getLastHealth() + the version pin
                         return; // health + data layer both ready
                     }
                 }
@@ -203,6 +224,26 @@ public final class OpencodeServerLauncher {
         throw new OpencodeConnectionException(
                 "opencode server did not become ready within " + timeout.toSeconds() + "s"
                         + (last == null ? "" : " (last error: " + last.getMessage() + ")"));
+    }
+
+    /** Deserializes the polled health body; never throws — an unparseable body reads as no snapshot ({@code null}). */
+    private static HealthStatus parseHealth(String body) {
+        if (body == null) {
+            return null;
+        }
+        try {
+            return GSON.fromJson(body, HealthStatus.class);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** H-002: warns through the client log when the started server left the pinned version; never fails the start. */
+    private void warnOnVersionMismatch() {
+        String warning = ServerVersionPin.evaluate(lastHealth).warning();
+        if (warning != null) {
+            ClientLog.warning(warning);
+        }
     }
 
     /** Spawns a daemon thread that keeps the child's stdout drained. */

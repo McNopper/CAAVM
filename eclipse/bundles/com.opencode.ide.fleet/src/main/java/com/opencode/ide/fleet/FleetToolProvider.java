@@ -10,6 +10,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
+import com.opencode.ide.client.activity.PermissionRequest;
 import com.opencode.ide.git.StoreGitStatus;
 import com.opencode.ide.git.StoreSync;
 import com.opencode.ide.tools.McpTool;
@@ -28,7 +29,9 @@ import com.opencode.ide.tools.ToolProvider;
  * <p>Tools: {@code fleet_dispatch} (async launch for one ticket - the engine
  * spawns its own {@code opencode serve} in the repo, isolates the work in a
  * git worktree and merges back), {@code fleet_jobs} (live job snapshot),
- * {@code fleet_sync_store}/{@code fleet_status_store}/{@code fleet_recover_store}
+ * {@code fleet_permissions}/{@code fleet_permissions_answer} (the chat path
+ * of unattended sessions' permission asks - list and answer them without a
+ * Board), {@code fleet_sync_store}/{@code fleet_status_store}/{@code fleet_recover_store}
  * (the distributed-fleet store discipline over the store's git repo).</p>
  *
  * <p>Parameter names keep the {@code ticket_id}/{@code project} spellings of
@@ -89,6 +92,10 @@ public final class FleetToolProvider implements ToolProvider {
                 return dispatchTicket(a);
             case "fleet_jobs":
                 return jobs();
+            case "fleet_permissions":
+                return permissions();
+            case "fleet_permissions_answer":
+                return answerPermission(a);
             case "fleet_sync_store":
             {
                 String message = a.has("message") && !a.get("message").isJsonNull()
@@ -162,6 +169,51 @@ public final class FleetToolProvider implements ToolProvider {
         return json(arr);
     }
 
+    private McpToolResult permissions() {
+        JsonArray arr = new JsonArray();
+        for (PermissionRequest request : control.permissions().pending()) {
+            JsonObject o = new JsonObject();
+            o.addProperty("permission_id", request.permissionId());
+            o.addProperty("session_id", request.sessionId());
+            if (request.permission() != null) {
+                o.addProperty("permission", request.permission());
+            }
+            if (request.title() != null) {
+                o.addProperty("title", request.title());
+            }
+            JsonArray patterns = new JsonArray();
+            for (String pattern : request.patterns()) {
+                patterns.add(pattern);
+            }
+            o.add("patterns", patterns);
+            arr.add(o);
+        }
+        return json(arr);
+    }
+
+    private McpToolResult answerPermission(JsonObject a) {
+        String permissionId = reqStr(a, "permission_id");
+        PermissionQueue.Response response = responseOf(reqStr(a, "response"));
+        if (response == null) {
+            throw new ParamError("response must be one of once|always|reject");
+        }
+        boolean remember = a.has("remember") && a.get("remember").isJsonPrimitive()
+                && a.get("remember").getAsBoolean();
+        PermissionQueue.AnswerResult result =
+                control.permissions().answer(permissionId, response, remember);
+        return text(result.message());
+    }
+
+    /** Maps a wire response word to its enum, case-insensitively; {@code null} when unknown. */
+    private static PermissionQueue.Response responseOf(String value) {
+        for (PermissionQueue.Response response : PermissionQueue.Response.values()) {
+            if (response.wire().equalsIgnoreCase(value)) {
+                return response;
+            }
+        }
+        return null;
+    }
+
     private static McpToolResult json(Object element) {
         return new McpToolResult(PRETTY.toJson(element), false);
     }
@@ -208,6 +260,25 @@ public final class FleetToolProvider implements ToolProvider {
                         + "RUNNING/COMPLETED/MERGED/FAILED plus session id, worktree and failure "
                         + "detail when present. Empty before the first dispatch.",
                 schema(new String[0], obj -> { })));
+        out.add(new McpTool("fleet_permissions",
+                "Pending permission asks of unattended fleet sessions (a launched "
+                        + "session waiting mid-run for human approval): each with "
+                        + "permission_id, session_id, permission, title and patterns. "
+                        + "Empty when no session is waiting; before the first dispatch "
+                        + "there is nothing to answer. Answer via "
+                        + "fleet_permissions_answer.",
+                schema(new String[0], obj -> { })));
+        out.add(new McpTool("fleet_permissions_answer",
+                "Answer one pending permission ask listed by fleet_permissions: "
+                        + "once approves this occurrence, always approves every "
+                        + "matching ask, reject denies it. remember (default false) "
+                        + "persists the decision as a rule. Unknown or already-answered "
+                        + "ids return the failure explanation as plain text.",
+                schema(new String[]{"permission_id", "response"}, obj -> {
+                    obj.add("permission_id", strP("the ask to answer, e.g. per_1 (from fleet_permissions)"));
+                    obj.add("response", strP("once | always | reject"));
+                    obj.add("remember", boolP("persist the decision as a rule, default false"));
+                })));
         out.add(new McpTool("fleet_sync_store",
                 "Sync the task store's git repo (the distributed-fleet discipline): "
                         + "add -A, commit, pull --rebase, push. On PULL_CONFLICT run "
@@ -252,6 +323,13 @@ public final class FleetToolProvider implements ToolProvider {
     private static JsonObject intP(String description) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "integer");
+        o.addProperty("description", description);
+        return o;
+    }
+
+    private static JsonObject boolP(String description) {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "boolean");
         o.addProperty("description", description);
         return o;
     }

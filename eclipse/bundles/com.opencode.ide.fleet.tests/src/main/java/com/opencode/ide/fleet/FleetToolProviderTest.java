@@ -2,12 +2,14 @@ package com.opencode.ide.fleet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Before;
@@ -19,16 +21,20 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import com.opencode.ide.client.activity.PermissionRequest;
 import com.opencode.ide.tasks.Task;
 import com.opencode.ide.tasks.TaskStore;
 import com.opencode.ide.tools.McpToolResult;
+import com.opencode.ide.tools.ParamError;
 
 /**
  * Tests for the {@code fleet_*} tool pack over the chat-first control plane:
  * a {@link FleetToolProvider} wired to a {@link FleetControl} whose engine is
  * a real {@link TaskFleet} on the in-memory client/worktree fakes (the
  * {@link TaskFleetTest} combination), so dispatch → jobs → bookkeeping runs
- * end-to-end without a server spawn.
+ * end-to-end without a server spawn. The engine's {@link PermissionQueue}
+ * sits behind a recording fake responder, covering the chat permission path
+ * (list asks, answer them, malformed arguments).
  */
 public class FleetToolProviderTest {
 
@@ -40,12 +46,28 @@ public class FleetToolProviderTest {
 
     private TaskStore store;
     private FakeClient client;
+    private RecordingResponder responder;
+    private PermissionQueue enginePermissions;
     private FleetToolProvider provider;
+
+    /** Recording fake of the engine queue's answer endpoint. */
+    private static final class RecordingResponder implements PermissionQueue.PermissionResponder {
+
+        final List<String> calls = new CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean respond(String sessionId, String permissionId, String response, boolean remember) {
+            calls.add(sessionId + "|" + permissionId + "|" + response + "|" + remember);
+            return true;
+        }
+    }
 
     @Before
     public void setUp() {
         store = new TaskStore(tmp.getRoot().toPath().resolve("tasks"));
         client = new FakeClient();
+        responder = new RecordingResponder();
+        enginePermissions = new PermissionQueue(responder);
         FleetControl control = new FleetControl(store.root(), root -> new FleetControl.Engine() {
             private final TaskFleet fleet = new TaskFleet(
                     new FleetRunner(client, new FakeWorktreeManager(), () -> { }), store);
@@ -56,11 +78,22 @@ public class FleetToolProviderTest {
             }
 
             @Override
+            public PermissionQueue permissions() {
+                return enginePermissions;
+            }
+
+            @Override
             public void close() {
                 // nothing to release in the fake engine
             }
         });
+        control.engine();
         provider = new FleetToolProvider(store.root(), control);
+    }
+
+    private static PermissionRequest asked(String permissionId) {
+        return new PermissionRequest("ses_1", permissionId, "bash",
+                List.of("git push"), "git push origin main", PermissionRequest.Status.PENDING);
     }
 
     private String sprintTicket() {
@@ -130,6 +163,69 @@ public class FleetToolProviderTest {
         McpToolResult r = provider.call("fleet_jobs", new JsonObject());
         assertOk(r);
         assertEquals(0, JsonParser.parseString(r.text()).getAsJsonArray().size());
+    }
+
+    @Test
+    public void permissionsListIsEmptyWhenNothingIsPending() {
+        McpToolResult r = provider.call("fleet_permissions", new JsonObject());
+        assertOk(r);
+        assertEquals(0, JsonParser.parseString(r.text()).getAsJsonArray().size());
+    }
+
+    @Test
+    public void permissionsListPendingAskWithItsFields() {
+        enginePermissions.offer(asked("per_1"));
+
+        McpToolResult r = provider.call("fleet_permissions", new JsonObject());
+        assertOk(r);
+        JsonArray asks = JsonParser.parseString(r.text()).getAsJsonArray();
+        assertEquals(1, asks.size());
+        JsonObject ask = asks.get(0).getAsJsonObject();
+        assertEquals("per_1", ask.getAsJsonPrimitive("permission_id").getAsString());
+        assertEquals("ses_1", ask.getAsJsonPrimitive("session_id").getAsString());
+        assertEquals("bash", ask.getAsJsonPrimitive("permission").getAsString());
+        assertEquals("git push origin main", ask.getAsJsonPrimitive("title").getAsString());
+        assertEquals("git push", ask.getAsJsonArray("patterns").get(0).getAsString());
+    }
+
+    @Test
+    public void answerOnceSucceedsAndDropsTheAskFromTheList() {
+        enginePermissions.offer(asked("per_1"));
+
+        McpToolResult r = provider.call("fleet_permissions_answer",
+                args("permission_id", "per_1", "response", "once"));
+        assertOk(r);
+        assertTrue(r.text(), r.text().contains("answered per_1"));
+        assertEquals(List.of("ses_1|per_1|once|false"), responder.calls);
+
+        McpToolResult after = provider.call("fleet_permissions", new JsonObject());
+        assertOk(after);
+        assertEquals(0, JsonParser.parseString(after.text()).getAsJsonArray().size());
+    }
+
+    @Test
+    public void answerRejectWithRememberReachesTheResponder() {
+        enginePermissions.offer(asked("per_1"));
+
+        McpToolResult r = provider.call("fleet_permissions_answer",
+                args("permission_id", "per_1", "response", "reject", "remember", "true"));
+        assertOk(r);
+
+        assertEquals(List.of("ses_1|per_1|reject|true"), responder.calls);
+    }
+
+    @Test
+    public void answerUnknownIdReturnsTheFailureMessage() {
+        McpToolResult r = provider.call("fleet_permissions_answer",
+                args("permission_id", "per_nope", "response", "once"));
+        assertOk(r);
+        assertTrue(r.text(), r.text().contains("unknown permission request per_nope"));
+    }
+
+    @Test
+    public void answerMalformedResponseIsAParamError() {
+        assertThrows(ParamError.class, () -> provider.call("fleet_permissions_answer",
+                args("permission_id", "per_1", "response", "maybe")));
     }
 
     @Test

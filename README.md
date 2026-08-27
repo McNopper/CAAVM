@@ -1,5 +1,7 @@
 # 🔱 Hephaestus
 
+[![verify](https://github.com/McNopper/Hephaestus/actions/workflows/verify.yml/badge.svg)](https://github.com/McNopper/Hephaestus/actions/workflows/verify.yml)
+
 ## About this document
 - **Kind:** `doc` / repo README (top-level entry point)
 - **Read by:** humans evaluating/adopting the template; **written by:** maintainers

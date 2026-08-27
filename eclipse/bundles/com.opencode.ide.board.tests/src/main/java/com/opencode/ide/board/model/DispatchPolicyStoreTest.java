@@ -12,12 +12,12 @@ import org.junit.Test;
 
 /**
  * Unit tests for the SWT-free {@link DispatchPolicyStore} against an
- * in-memory fake backend: defaults on empty, the save/load round trip under
- * the stable keys (save flushes), each documented load rule (maxConcurrent
- * below one or corrupt → 4; negative/infinite/corrupt budget → 0;
- * includeStale false only for the exact "false"; blank bootstrap → none),
- * the value record's null normalization, and the total behavior on a
- * failing backend.
+ * in-memory fake backend: the safe defaults on empty, the save/load round
+ * trip under the stable keys (save flushes), each documented load rule
+ * (maxConcurrent below one or corrupt → 4; negative/infinite/corrupt
+ * budget → the default 5; includeStale true only for the exact "true";
+ * blank bootstrap → none), the value record's null normalization, and the
+ * total behavior on a failing backend.
  */
 public class DispatchPolicyStoreTest {
 
@@ -61,9 +61,9 @@ public class DispatchPolicyStoreTest {
     }
 
     @Test
-    public void defaultsAreFourUnlimitedTrueAndNoBootstrap() {
+    public void defaultsAreFourFiveUsdFalseAndNoBootstrap() {
         DispatchPolicyStore.DispatchSettings defaults = DispatchPolicyStore.defaults();
-        assertEquals(AutoDispatch.of(4, 0, true), defaults.policy());
+        assertEquals(AutoDispatch.of(4, 5, false), defaults.policy());
         assertEquals("", defaults.bootstrapAgent());
         assertEquals("", defaults.bootstrapCommand());
     }
@@ -103,12 +103,12 @@ public class DispatchPolicyStoreTest {
     }
 
     @Test
-    public void negativeOrInfiniteBudgetReadsAsUnlimited() {
+    public void negativeOrInfiniteBudgetFallsBackToTheDefault() {
         FakeBackend backend = new FakeBackend();
         backend.values.put(DispatchPolicyStore.KEY_COST_BUDGET_USD, "-1");
-        assertEquals(0, load(backend).policy().costBudgetUsd(), 0);
+        assertEquals(5, load(backend).policy().costBudgetUsd(), 0);
         backend.values.put(DispatchPolicyStore.KEY_COST_BUDGET_USD, "Infinity");
-        assertEquals(0, load(backend).policy().costBudgetUsd(), 0);
+        assertEquals(5, load(backend).policy().costBudgetUsd(), 0);
     }
 
     @Test
@@ -118,21 +118,21 @@ public class DispatchPolicyStoreTest {
         backend.values.put(DispatchPolicyStore.KEY_COST_BUDGET_USD, "cheap");
         DispatchPolicyStore.DispatchSettings loaded = load(backend);
         assertEquals(4, loaded.policy().maxConcurrent());
-        assertEquals(0, loaded.policy().costBudgetUsd(), 0);
+        assertEquals(5, loaded.policy().costBudgetUsd(), 0);
     }
 
     @Test
-    public void includeStaleIsFalseOnlyForTheExactFalse() {
+    public void includeStaleIsTrueOnlyForTheExactTrue() {
         FakeBackend backend = new FakeBackend();
-        backend.values.put(DispatchPolicyStore.KEY_INCLUDE_STALE, "false");
-        assertFalse(load(backend).policy().includeStale());
-        for (String corrupt : new String[] { null, "true", "FALSE", "no", "0" }) {
+        backend.values.put(DispatchPolicyStore.KEY_INCLUDE_STALE, "true");
+        assertTrue(load(backend).policy().includeStale());
+        for (String corrupt : new String[] { null, "false", "TRUE", "yes", "1" }) {
             if (corrupt == null) {
                 backend.values.remove(DispatchPolicyStore.KEY_INCLUDE_STALE);
             } else {
                 backend.values.put(DispatchPolicyStore.KEY_INCLUDE_STALE, corrupt);
             }
-            assertTrue(String.valueOf(corrupt) + " reads as the default true",
+            assertFalse(String.valueOf(corrupt) + " reads as the default false",
                     load(backend).policy().includeStale());
         }
     }

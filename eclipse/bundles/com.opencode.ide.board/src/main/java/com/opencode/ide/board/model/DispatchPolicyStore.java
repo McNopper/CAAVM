@@ -19,11 +19,11 @@ import org.osgi.service.prefs.BackingStoreException;
  * dispatch): {@code maxConcurrent} must parse to an {@code int >= 1}, else
  * the default {@value #DEFAULT_MAX_CONCURRENT} applies (absent, corrupt, or
  * out of range); {@code costBudgetUsd} must parse to a finite
- * {@code double >= 0}, else 0 (unlimited) applies; {@code includeStale} is
- * false only when the stored value is exactly {@code "false"} — absent or
- * corrupt reads as the default true. Bootstrap strings are trimmed; blank
- * means none. {@link #load()} never throws: a failing backend yields
- * {@link #defaults()}.</p>
+ * {@code double >= 0}, else the default {@value #DEFAULT_COST_BUDGET_USD}
+ * applies; {@code includeStale} is true only when the stored value is
+ * exactly {@code "true"} — absent or corrupt reads as the default false.
+ * Bootstrap strings are trimmed; blank means none. {@link #load()} never
+ * throws: a failing backend yields {@link #defaults()}.</p>
  */
 public final class DispatchPolicyStore {
 
@@ -39,6 +39,21 @@ public final class DispatchPolicyStore {
 
     /** The default concurrency (also the fallback of a corrupt {@link #KEY_MAX_CONCURRENT}). */
     public static final int DEFAULT_MAX_CONCURRENT = 4;
+
+    /**
+     * The default cost budget in USD (also the fallback of an absent,
+     * corrupt, or out-of-range {@link #KEY_COST_BUDGET_USD}): bounded on
+     * purpose — {@code 0} means unlimited, and unlimited is not a safe
+     * default (see {@link #defaults()}).
+     */
+    public static final double DEFAULT_COST_BUDGET_USD = 5;
+
+    /**
+     * The default {@code includeStale} (also the fallback of an absent or
+     * corrupt {@link #KEY_INCLUDE_STALE}): STALE re-runs wait for an
+     * explicit opt-in (see {@link #defaults()}).
+     */
+    public static final boolean DEFAULT_INCLUDE_STALE = false;
 
     private final Backend backend;
 
@@ -105,10 +120,20 @@ public final class DispatchPolicyStore {
         });
     }
 
-    /** The defaults: {@code AutoDispatch.of(4, 0, true)} and no bootstrap. */
+    /**
+     * The safe defaults (P-003): {@code AutoDispatch.of(4, 5, false)} —
+     * concurrency {@value #DEFAULT_MAX_CONCURRENT}, an explicit
+     * ${@value #DEFAULT_COST_BUDGET_USD} budget, {@code includeStale} off —
+     * and no bootstrap. Why bounded and stale-off: a zero (unlimited) budget
+     * combined with {@code includeStale} on and a churning STALE ticket is
+     * an unbounded token burn loop — every admitted re-run books the
+     * {@link AutoDispatch#ESTIMATED_COST_USD} placeholder against no cap,
+     * and the next snapshot admits it again — so out of the box spend is
+     * bounded and STALE re-runs need an explicit opt-in.
+     */
     public static DispatchSettings defaults() {
         return new DispatchSettings(
-                AutoDispatch.of(DEFAULT_MAX_CONCURRENT, 0, true), "", "");
+                AutoDispatch.of(DEFAULT_MAX_CONCURRENT, DEFAULT_COST_BUDGET_USD, DEFAULT_INCLUDE_STALE), "", "");
     }
 
     /** Loads and validates (see class doc); never throws — a failing backend yields {@link #defaults()}. */
@@ -117,7 +142,7 @@ public final class DispatchPolicyStore {
             return new DispatchSettings(
                     AutoDispatch.of(maxConcurrentOf(backend.get(KEY_MAX_CONCURRENT)),
                             budgetOf(backend.get(KEY_COST_BUDGET_USD)),
-                            !"false".equals(backend.get(KEY_INCLUDE_STALE))),
+                            "true".equals(backend.get(KEY_INCLUDE_STALE))),
                     backend.get(KEY_BOOTSTRAP_AGENT),
                     backend.get(KEY_BOOTSTRAP_COMMAND));
         } catch (RuntimeException e) {
@@ -149,16 +174,16 @@ public final class DispatchPolicyStore {
         }
     }
 
-    /** A finite {@code double >= 0} or 0 (see class doc). */
+    /** A finite {@code double >= 0} or the default budget (see class doc). */
     private static double budgetOf(String raw) {
         if (raw == null) {
-            return 0;
+            return DEFAULT_COST_BUDGET_USD;
         }
         try {
             double parsed = Double.parseDouble(raw.strip());
-            return Double.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+            return Double.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_COST_BUDGET_USD;
         } catch (NumberFormatException e) {
-            return 0;
+            return DEFAULT_COST_BUDGET_USD;
         }
     }
 }
