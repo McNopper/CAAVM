@@ -671,6 +671,15 @@ public final class HttpOpencodeClient implements OpencodeClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new OpencodeConnectionException("Interrupted while calling " + path, e);
+        } catch (java.net.http.HttpTimeoutException e) {
+            // a timeout is NOT unreachability - the server may be perfectly up,
+            // the call just exceeded its budget (e.g. a long-running agent
+            // reply). Milestone V finding: conflating the two produced
+            // misleading "Cannot reach opencode server" failure details.
+            throw new OpencodeConnectionException(
+                    "opencode " + method + " " + path + " timed out after " + timeout.toSeconds() + "s"
+                            + " (the server itself may still be healthy - raise the budget or check"
+                            + " whether the session is stuck busy)", e);
         } catch (IOException e) {
             throw new OpencodeConnectionException(
                     "Cannot reach opencode server at " + baseUri + " (" + method + " " + path + ")", e);

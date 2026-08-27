@@ -53,6 +53,23 @@ public class PollingSessionEventsTest {
         assertTrue(new PollingSessionEvents(client).awaitIdle("ses_1", Duration.ZERO));
     }
 
+    /**
+     * Regression (Milestone V, opencode 1.18.23): {@code /session/status}
+     * lists BUSY sessions only - a finished session is absent from the map,
+     * and absence IS the idle signal. Requiring an explicit idle entry hung
+     * every fleet run until its timeout.
+     */
+    @Test
+    public void absentFromTheStatusMapIsIdle() throws Exception {
+        FakeClient client = new FakeClient();
+        client.createSession(null, null);
+        client.sessionType = "busy"; // some OTHER session is busy
+        PollingSessionEvents events = new PollingSessionEvents(client, () -> { });
+
+        assertTrue("a session absent from the status map is idle",
+                events.awaitIdle("ses_absent", Duration.ZERO));
+    }
+
     @Test
     public void interruptedThreadReturnsFalseInsteadOfSpinning() throws Exception {
         FakeClient client = new FakeClient();

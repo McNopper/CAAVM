@@ -53,9 +53,16 @@ public final class PollingSessionEvents implements SessionEvents {
         return true;
     }
 
+    /**
+     * Idle when the status map reports {@code idle} for the session — or when
+     * the session is ABSENT from the map: since opencode 1.18.23 the endpoint
+     * lists busy sessions only, so absence IS the idle signal (requiring an
+     * explicit idle entry hung every run until its timeout; found live in
+     * Milestone V). Both spellings accepted — present-idle and absent.
+     */
     private boolean isIdle(String sessionId) throws OpencodeException {
         SessionStatus status = client.getSessionStatus().get(sessionId);
-        return status != null && "idle".equals(status.type());
+        return status == null || "idle".equals(status.type());
     }
 
     private static void sleepPollInterval() {
