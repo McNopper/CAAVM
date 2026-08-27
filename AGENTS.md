@@ -52,11 +52,17 @@ Cross-cutting coordination agents are **unprefixed** (`orchestrator`, `manifest-
 
 The **task store** stores **tickets** and **sprints**, scoped per **project** (one
 subdirectory of `.opencode/tasks/` each, so several independent projects run at once).
-The store is served as `task_*` MCP tools — by the Eclipse harness's `eclipse-build`
-endpoint when Eclipse runs, and by the `tasks` stdio launcher (`eclipse/tasks-tools.ps1`,
-configured in `opencode.json`) for TUI-only sessions; opencode prefixes them with the
-server name (`tasks_task_*` / `eclipse-build_task_*`) — the tool/wire names stay
-`task_*`. States:
+**The store is the ground truth — the single coordination blackboard.** The Eclipse Board
+is a projection of it, and every agent (a user's chat session, a fleet worker, the
+auto-dispatcher) is a *peer* that reads and writes the store; no agent owns or messages
+another. Coordination is store-mediated — claim a ticket, record the artifact, move the
+state — so several agents and several users can work the same project **in parallel
+without blocking each other**: the atomic `task_claim` is the only serialization point,
+and it serializes tickets, not people. The store is served as `task_*` MCP tools — by
+the Eclipse harness's `eclipse-build` endpoint when Eclipse runs, and by the `tasks`
+stdio launcher (`eclipse/tasks-tools.ps1`, configured in `opencode.json`) for TUI-only
+sessions; opencode prefixes them with the server name (`tasks_task_*` /
+`eclipse-build_task_*`) — the tool/wire names stay `task_*`. States:
 
 ```
 product-backlog --plan--> sprint-backlog --claim--> in-progress --verify--> in-review --accept--> done
@@ -135,6 +141,15 @@ steers dispatch (stage → role → skill) and the prompt the fleet gives the wo
 
 **Chat is the primary interface — everything is triggerable from an opencode chat session;
 the Eclipse views (Board buttons, dialogs, launchers) are optional conveniences on top.**
+
+**Chat-first ≠ chat-rooted:** once work is dispatched, the chat session is a *launcher
+and peer*, not the root of a command tree. A running worker reports to its **ticket**
+(status, artifacts, actuals) — never back into the dispatching session, which sees only
+`fleet_fleet_jobs` state until the work lands in the store. To follow dispatched work:
+poll the store (`tasks_task_get`, `fleet_fleet_jobs`), do not wait on or address the
+worker session. This store-mediated coordination is exactly what lets one user run
+several agents in parallel on a project without anyone blocking anyone.
+
 Concretely, a chat agent can already:
 
 - run the whole ticket/sprint workflow via the `tasks` server (`tasks_task_*`);
