@@ -49,6 +49,8 @@ public class LintAndFormatToolsTest {
             assertEquals("cppcheck", payload.get("tool").getAsString());
             assertTrue("at least one file checked: " + result.text(),
                     payload.get("files_checked").getAsInt() >= 1);
+            Assume.assumeFalse("cppcheck install is broken on this machine (library cfg failed to load)",
+                    payload.get("output").getAsString().contains("Failed to load library configuration file"));
             assertTrue("the deliberate bug must be reported: " + result.text(),
                     payload.get("error_count").getAsInt() >= 1);
             assertTrue("output should mention main.c: " + result.text(),
