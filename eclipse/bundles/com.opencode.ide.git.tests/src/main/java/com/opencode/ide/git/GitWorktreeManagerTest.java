@@ -69,6 +69,29 @@ public class GitWorktreeManagerTest {
         assertFalse(git("worktree", "list", "--porcelain").split("\\R")[0].contains("opencode-fleet"));
     }
 
+    /**
+     * Regression (CI 2026-08-27): discovery keys on the fleet BRANCH, not the
+     * path — git reports worktree paths in its own canonical form, which can
+     * differ from the caller's spelling of the same directory (8.3 short
+     * names on Windows runners, symlinks), and the old path match dropped
+     * every worktree on such machines. A fleet branch outside the fleet dir
+     * must still be found; a worktree inside the fleet dir on a foreign
+     * branch must not.
+     */
+    @Test
+    public void listKeysOnTheFleetBranchNotThePath() throws Exception {
+        Path elsewhere = Files.createDirectory(repo.resolve("elsewhere"));
+        git("worktree", "add", "-b", "opencode/t9", elsewhere.resolve("t9").toString(), "HEAD");
+        git("branch", "foreign");
+        git("worktree", "add", repo.resolve(".git").resolve("opencode-fleet").resolve("stray").toString(), "foreign");
+        List<Worktree> found = manager.list(repo);
+        assertTrue(found.toString(), found.stream().anyMatch(w -> w.taskId().equals("t9")));
+        assertFalse(found.toString(), found.stream().anyMatch(w -> w.taskId().equals("stray")));
+        runQuiet("worktree", "remove", "--force", elsewhere.resolve("t9").toString());
+        runQuiet("worktree", "remove", "--force",
+                repo.resolve(".git").resolve("opencode-fleet").resolve("stray").toString());
+    }
+
     @Test
     public void doubleCreateFailsWithClearMessage() {
         manager.create(repo, "t1");

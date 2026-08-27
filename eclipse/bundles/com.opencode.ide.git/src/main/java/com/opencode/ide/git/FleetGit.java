@@ -1,6 +1,7 @@
 package com.opencode.ide.git;
 
 import java.nio.file.Path;
+import java.util.Optional;
 
 import com.opencode.ide.git.internal.GitWorktreeManager;
 
@@ -16,6 +17,7 @@ public final class FleetGit {
 
     private static final String FLEET_DIR = ".git/opencode-fleet";
     private static final String BRANCH_PREFIX = "opencode/";
+    private static final String BRANCH_REF_PREFIX = "refs/heads/" + BRANCH_PREFIX;
 
     private FleetGit() {
     }
@@ -23,6 +25,25 @@ public final class FleetGit {
     /** The fleet branch for a task: {@code opencode/<taskId>}. */
     public static String branchFor(String taskId) {
         return BRANCH_PREFIX + taskId;
+    }
+
+    /**
+     * Inverse of {@link #branchFor} over a porcelain ref line: a full ref
+     * {@code refs/heads/opencode/<taskId>} yields the task id, everything
+     * else (other branches, {@code detached}) is empty. The branch — not the
+     * worktree path — is the stable fleet marker: git reports worktree paths
+     * in its own canonical form, which can differ from the caller's spelling
+     * of the same directory (8.3 short names, symlinks), so path matching
+     * loses worktrees on such machines.
+     */
+    public static Optional<String> taskIdOfRef(String ref) {
+        if (ref == null || !ref.startsWith(BRANCH_REF_PREFIX)) {
+            return Optional.empty();
+        }
+        String taskId = ref.substring(BRANCH_REF_PREFIX.length()).trim();
+        return taskId.isEmpty() || taskId.contains("/") || taskId.contains("\\")
+                ? Optional.empty()
+                : Optional.of(taskId);
     }
 
     /** The fleet worktree root: {@code <repoRoot>/.git/opencode-fleet}. */

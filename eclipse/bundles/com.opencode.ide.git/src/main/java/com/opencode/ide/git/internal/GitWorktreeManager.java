@@ -56,18 +56,21 @@ public final class GitWorktreeManager implements WorktreeManager {
     @Override
     public List<Worktree> list(Path repoRoot) {
         Path repo = repo(repoRoot);
-        Path fleet = fleetRoot(repo);
         GitOutput out = git(repo, "worktree", "list", "--porcelain");
         List<Worktree> result = new ArrayList<>();
-        Path current = null;
+        Path worktreePath = null;
+        String ref = null;
         for (String line : out.stdout().split("\\R")) {
             if (line.startsWith("worktree ")) {
-                current = Path.of(line.substring("worktree ".length()).trim()).toAbsolutePath().normalize();
+                worktreePath = Path.of(line.substring("worktree ".length()).trim()).toAbsolutePath().normalize();
+            } else if (line.startsWith("branch ")) {
+                ref = line.substring("branch ".length()).trim();
             } else if (line.isBlank()) {
-                current = collect(result, fleet, current);
+                worktreePath = collect(result, worktreePath, ref);
+                ref = null;
             }
         }
-        collect(result, fleet, current);
+        collect(result, worktreePath, ref);
         return List.copyOf(result);
     }
 
@@ -141,10 +144,19 @@ public final class GitWorktreeManager implements WorktreeManager {
         return new WorktreeStatus(true, dirty, head.stdout().trim());
     }
 
-    private static Path collect(List<Worktree> into, Path fleet, Path candidate) {
-        if (candidate != null && candidate.startsWith(fleet) && !candidate.equals(fleet)) {
-            String taskId = candidate.getFileName().toString();
-            into.add(new Worktree(taskId, candidate, FleetGit.branchFor(taskId)));
+    /**
+     * Collects one porcelain stanza. The fleet marker is the branch ref
+     * ({@code refs/heads/opencode/<taskId>}), never the path: git reports
+     * worktree paths in its own canonical form, which can differ from the
+     * caller's spelling of the same directory (8.3 short names on Windows,
+     * symlinks), and path matching silently drops worktrees on such machines.
+     *
+     * @return null to reset the stanza accumulator
+     */
+    private static Path collect(List<Worktree> into, Path worktreePath, String ref) {
+        var taskId = FleetGit.taskIdOfRef(ref);
+        if (worktreePath != null && taskId.isPresent()) {
+            into.add(new Worktree(taskId.get(), worktreePath, FleetGit.branchFor(taskId.get())));
         }
         return null;
     }
