@@ -179,21 +179,18 @@ public final class OpencodeServerLauncher {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
-        HttpRequest healthReq = HttpRequest.newBuilder()
-                .uri(base.resolve("/global/health"))
-                .timeout(Duration.ofSeconds(3))
-                .GET()
-                .build();
+        // the readiness probes must authenticate exactly like the real client:
+        // with a password set (always, in fleet spawn mode - possibly generated),
+        // unauthenticated probes would 401 until the timeout and abort the start
+        String auth = com.opencode.ide.client.internal.Auth.basicHeader("opencode", password);
+        HttpRequest healthReq = probe(base, "/global/health", auth, Duration.ofSeconds(3));
         // opencode reports /global/health = healthy before the data endpoints are
         // populated, so also require a 200 from /agent before considering the server ready.
-        HttpRequest agentReq = HttpRequest.newBuilder()
-                .uri(base.resolve("/agent"))
-                .timeout(Duration.ofSeconds(5))
-                .GET()
-                .build();
+        HttpRequest agentReq = probe(base, "/agent", auth, Duration.ofSeconds(5));
 
         long deadline = System.nanoTime() + timeout.toNanos();
         IOException last = null;
+        Integer lastStatus = null;
         while (System.nanoTime() < deadline) {
             if (process != null && !process.isAlive()) {
                 throw new OpencodeConnectionException(
@@ -207,6 +204,9 @@ public final class OpencodeServerLauncher {
                         lastHealth = parseHealth(health.body()); // captured for getLastHealth() + the version pin
                         return; // health + data layer both ready
                     }
+                    lastStatus = agent.statusCode();
+                } else {
+                    lastStatus = health.statusCode();
                 }
             } catch (IOException e) {
                 last = e;
@@ -223,7 +223,21 @@ public final class OpencodeServerLauncher {
         }
         throw new OpencodeConnectionException(
                 "opencode server did not become ready within " + timeout.toSeconds() + "s"
+                        + (lastStatus != null ? " (last HTTP status: " + lastStatus
+                                + (lastStatus == 401 ? " - check the server password" : "") + ")" : "")
                         + (last == null ? "" : " (last error: " + last.getMessage() + ")"));
+    }
+
+    /** A GET probe for the readiness poll, authenticated when a password is set. */
+    private static HttpRequest probe(URI base, String path, String auth, Duration timeout) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(base.resolve(path))
+                .timeout(timeout)
+                .GET();
+        if (auth != null) {
+            builder.header("Authorization", auth);
+        }
+        return builder.build();
     }
 
     /** Deserializes the polled health body; never throws — an unparseable body reads as no snapshot ({@code null}). */
