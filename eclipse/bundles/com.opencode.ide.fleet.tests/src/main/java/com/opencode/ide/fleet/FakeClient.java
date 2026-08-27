@@ -128,6 +128,15 @@ final class FakeClient implements OpencodeClient {
         return entries.get(entries.size() - 1);
     }
 
+    /** The prompt timeout of the last 2-arg send, for budget-wiring assertions. */
+    volatile java.time.Duration lastPromptTimeout;
+
+    @Override
+    public ChatEntry sendMessage(ChatRequest request, java.time.Duration promptTimeout) {
+        lastPromptTimeout = promptTimeout;
+        return sendMessage(request);
+    }
+
     @Override
     public ShellResult runShell(String sessionId, String agent, String command) throws OpencodeException {
         shellCalls.add(sessionId + "|" + agent + "|" + command);

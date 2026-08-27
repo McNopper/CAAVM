@@ -202,10 +202,20 @@ public final class HttpOpencodeClient implements OpencodeClient {
 
     @Override
     public ChatEntry sendMessage(ChatRequest chatRequest) throws OpencodeException {
+        return sendMessage(chatRequest, Duration.ofMinutes(5));
+    }
+
+    @Override
+    public ChatEntry sendMessage(ChatRequest chatRequest, Duration promptTimeout) throws OpencodeException {
         String body = ChatRequests.messageBody(chatRequest);
         String path = "/session/" + chatRequest.sessionId() + "/message";
-        // a chat reply can legitimately take minutes (LLM generation) - allow 5
-        return parseBody("POST", path, request("POST", path, body, Duration.ofMinutes(5)),
+        // the blocking prompt POST waits for the FINAL reply: an agent may
+        // stream for many minutes, so unattended callers pass their whole run
+        // budget; the fixed 5-minute default is only for interactive use
+        Duration timeout = promptTimeout == null || promptTimeout.isNegative() || promptTimeout.isZero()
+                ? Duration.ofMinutes(5)
+                : promptTimeout;
+        return parseBody("POST", path, request("POST", path, body, timeout),
                 ChatEntry.class);
     }
 

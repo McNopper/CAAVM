@@ -123,6 +123,23 @@ public interface OpencodeClient {
     ChatEntry sendMessage(ChatRequest request) throws OpencodeException;
 
     /**
+     * {@link #sendMessage(ChatRequest)} with an explicit HTTP timeout for the
+     * blocking prompt call. The default delegates unchanged (the single-arg
+     * contract); callers that drive unattended runs (the task fleet) pass
+     * their whole run budget - an agent may legitimately stream for many
+     * minutes before the final reply, and a short fixed cap aborts healthy
+     * runs (Milestone V finding: a hard 5-minute cap killed every run that
+     * took longer).
+     *
+     * @param promptTimeout how long the blocking POST may wait for the final
+     *                      reply; implementations clamp only to sane bounds
+     */
+    default ChatEntry sendMessage(ChatRequest request, java.time.Duration promptTimeout)
+            throws OpencodeException {
+        return sendMessage(request);
+    }
+
+    /**
      * {@code POST /session/:id/abort} - abort the running agent in a session.
      * A 4xx reply (typically "session is already idle") is tolerated and
      * logged, not surfaced; server (>= 5xx) and transport errors raise

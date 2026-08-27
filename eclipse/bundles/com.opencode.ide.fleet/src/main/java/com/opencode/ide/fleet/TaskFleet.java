@@ -192,7 +192,9 @@ public final class TaskFleet {
 
         FleetJob job;
         try {
-            job = runner.submit(task);
+            // the prompt POST waits for the final reply - give it the whole
+            // run budget, not the client's 5-minute interactive default
+            job = runner.submit(task, timeout);
         } catch (RuntimeException e) {
             // The ticket is already claimed (in-progress/assignee) at this point.
             // A submit that throws (worktree/branch already exists, git failure)

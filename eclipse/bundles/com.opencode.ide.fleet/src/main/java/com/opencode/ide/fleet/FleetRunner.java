@@ -69,13 +69,23 @@ public class FleetRunner {
      * down (permission watches, telemetry) instead of leaking it.
      */
     public FleetJob submit(FleetTask task) {
+        return submit(task, java.time.Duration.ofMinutes(5));
+    }
+
+    /**
+     * @param promptTimeout the ticket's whole run budget for the blocking
+     *                      prompt POST - the agent may stream for many minutes
+     *                      before the final reply, and a short fixed cap
+     *                      aborts healthy runs (Milestone V finding)
+     */
+    public FleetJob submit(FleetTask task, java.time.Duration promptTimeout) {
         Worktree worktree = worktrees.create(task.baseWorktree(), task.taskId());
         String sessionId = null;
         try {
             Session session = client.createSession(task.title(), worktree.path());
             sessionId = session.id();
             runBootstrap(sessionId, task.bootstrap());
-            client.sendMessage(chatRequest(sessionId, task));
+            client.sendMessage(chatRequest(sessionId, task), promptTimeout);
             tasks.put(task.taskId(), task);
             return new FleetJob(task.taskId(), sessionId, worktree.path(), FleetJob.State.RUNNING, null);
         } catch (OpencodeException e) {

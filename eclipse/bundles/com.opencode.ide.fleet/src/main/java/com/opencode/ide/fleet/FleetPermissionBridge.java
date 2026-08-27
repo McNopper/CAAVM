@@ -224,6 +224,12 @@ public final class FleetPermissionBridge {
         }
 
         @Override
+        public ChatEntry sendMessage(ChatRequest request, java.time.Duration promptTimeout)
+                throws OpencodeException {
+            return delegate.sendMessage(request, promptTimeout);
+        }
+
+        @Override
         public void abortSession(String sessionId) throws OpencodeException {
             delegate.abortSession(sessionId);
         }
