@@ -162,7 +162,9 @@ public class FleetControlTest {
      * carries the expected message - i.e. the auto-sync ran and committed.
      */
     private static boolean storeClean(Path repo, String expectedLastMessage) throws Exception {
-        long deadline = System.currentTimeMillis() + 30_000;
+        // generous deadline: CI runners spawn git ~10x slower than a local dev
+        // box and this poll must not flake there (two CI failures 2026-08-28)
+        long deadline = System.currentTimeMillis() + 90_000;
         while (System.currentTimeMillis() < deadline) {
             if (gitOut(repo, "status", "--porcelain").isBlank()) {
                 return expectedLastMessage.equals(gitOut(repo, "log", "-1", "--format=%s").trim());

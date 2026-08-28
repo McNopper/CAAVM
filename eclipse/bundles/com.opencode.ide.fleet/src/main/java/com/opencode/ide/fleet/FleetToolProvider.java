@@ -138,7 +138,7 @@ public final class FleetToolProvider implements ToolProvider {
                     + " - see fleet_jobs");
         }
         Duration timeout = Duration.ofMinutes(
-                Math.max(1, Math.min(1440, a.has("timeout_minutes")
+                Math.max(1, (int) Math.min(FleetTuning.MAX_TICKET_BUDGET.toMinutes(), a.has("timeout_minutes")
                         ? reqInt(a, "timeout_minutes")
                         : FleetControl.DEFAULT_TIMEOUT.toMinutes())));
         control.dispatch(project, ticketId, timeout);

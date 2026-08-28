@@ -50,7 +50,7 @@ import com.opencode.ide.tasks.TaskStore;
 public final class FleetControl implements AutoCloseable {
 
     /** The default per-ticket run budget, mirroring {@link TaskFleet}'s own default. */
-    public static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(30);
+    public static final Duration DEFAULT_TIMEOUT = FleetTuning.DEFAULT_TICKET_BUDGET;
 
     /** The assembled engine plus whatever resources must be released with it. */
     public interface Engine extends AutoCloseable {
@@ -100,7 +100,7 @@ public final class FleetControl implements AutoCloseable {
                 null, "127.0.0.1", 0, repo, password);
         URI base;
         try {
-            base = server.start(Duration.ofSeconds(60));
+            base = server.start(FleetTuning.SERVER_START_TIMEOUT);
         } catch (com.opencode.ide.client.OpencodeException e) {
             throw new IllegalStateException(
                     "could not start the fleet's opencode server in " + repo + ": " + e.getMessage(), e);

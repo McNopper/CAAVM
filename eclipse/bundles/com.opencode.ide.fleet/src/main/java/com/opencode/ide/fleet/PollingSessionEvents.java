@@ -18,7 +18,7 @@ import com.opencode.ide.client.model.SessionStatus;
  */
 public final class PollingSessionEvents implements SessionEvents {
 
-    private static final long DEFAULT_POLL_MILLIS = 1000;
+    private static final long DEFAULT_POLL_MILLIS = FleetTuning.STATUS_POLL_MILLIS;
 
     private final OpencodeClient client;
     private final Runnable sleeper;

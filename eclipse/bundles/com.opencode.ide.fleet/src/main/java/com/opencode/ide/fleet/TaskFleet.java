@@ -50,7 +50,7 @@ import com.opencode.ide.tasks.TaskStore;
 public final class TaskFleet {
 
     private static final Logger LOG = Logger.getLogger(TaskFleet.class.getName());
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(30);
+    private static final Duration DEFAULT_TIMEOUT = FleetTuning.DEFAULT_TICKET_BUDGET;
     private static final String ASSIGNEE = "fleet";
 
     private final FleetRunner runner;
@@ -301,7 +301,7 @@ public final class TaskFleet {
                         "timeout after " + timeout + " awaiting session " + job.sessionId());
             }
             try {
-                Thread.sleep(1000);
+                Thread.sleep(FleetTuning.IDLE_VERIFY_SLEEP_MILLIS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return withState(job, FleetJob.State.FAILED,

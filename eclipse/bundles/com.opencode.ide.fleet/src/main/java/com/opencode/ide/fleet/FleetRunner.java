@@ -33,7 +33,7 @@ import com.opencode.ide.git.WorktreeManager;
 public class FleetRunner {
 
     private static final Logger LOG = Logger.getLogger(FleetRunner.class.getName());
-    private static final long DEFAULT_POLL_MILLIS = 1000;
+    private static final long DEFAULT_POLL_MILLIS = FleetTuning.STATUS_POLL_MILLIS;
     private static final int BOOTSTRAP_OUTPUT_LIMIT = 200;
 
     private final OpencodeClient client;
@@ -79,7 +79,7 @@ public class FleetRunner {
      * down (permission watches, telemetry) instead of leaking it.
      */
     public FleetJob submit(FleetTask task) {
-        return submit(task, java.time.Duration.ofMinutes(5));
+        return submit(task, FleetTuning.INTERACTIVE_PROMPT_TIMEOUT);
     }
 
     /**
