@@ -37,7 +37,10 @@ public class ArtifactResolverTest {
     public void relativeAndAbsoluteRefsInsideRepoOpen() throws IOException {
         Path repo = repo();
         assertTrue(ArtifactResolver.resolve(repo, "notes.md").openable());
-        assertEquals(repo.resolve("notes.md").normalize(),
+        // expected in CANONICAL form: the resolver real-paths its results and
+        // on some machines (8.3 short names on CI runners) the lexical temp
+        // path differs from the real one (same lesson as B-001)
+        assertEquals(repo.resolve("notes.md").toRealPath().normalize(),
                 ArtifactResolver.resolve(repo, "notes.md").path());
         assertTrue(ArtifactResolver.resolve(repo, repo.resolve("src").toString()).openable());
     }
