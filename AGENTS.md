@@ -14,6 +14,12 @@ first-class agents / MCP tools.
 
 ## Two scopes
 
+*(Positioning, user direction 2026-08-27: this harness is deliberate weight for
+COMPLEX projects — board, tickets, docs, V-pipeline are opt-in structure. For a
+simple project the plain opencode TUI suffices; anyone loading the Eclipse
+plugin has chosen the machinery on purpose. Keep that bar: don't grow structure
+the TUI already covers.)*
+
 - **A whole initiative / project** → the **PM agent** (`project-manager`) runs the Scrum workflow
   over tickets in the task store (one subdirectory per project; multiple projects
   coexist). The human is Product Owner: writes the brief/goal, prioritizes the backlog,
