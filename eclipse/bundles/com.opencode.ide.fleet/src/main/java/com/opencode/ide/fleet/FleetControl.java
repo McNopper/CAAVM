@@ -233,10 +233,16 @@ public final class FleetControl implements AutoCloseable {
     public void dispatch(String project, String ticketId, Duration timeout) {
         Engine e = engine();
         inFlight.add(ticketId);
+        com.opencode.ide.client.ClientLog.info(
+                "fleet dispatch " + ticketId + " accepted (budget " + timeout + ")");
         executor.execute(() -> {
             try {
                 try {
-                    e.fleet().launch(project, ticketId, repoRoot, timeout);
+                    try {
+                        e.fleet().launch(project, ticketId, repoRoot, timeout);
+                    } finally {
+                        com.opencode.ide.client.ClientLog.info("fleet dispatch " + ticketId + " settled");
+                    }
                 } catch (RuntimeException ex) {
                     // TaskFleet already recorded the failure on the ticket
                     // (blocked + reason); the jobs snapshot stays authoritative.

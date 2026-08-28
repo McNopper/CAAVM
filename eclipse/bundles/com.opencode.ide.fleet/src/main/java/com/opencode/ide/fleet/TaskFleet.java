@@ -194,7 +194,12 @@ public final class TaskFleet {
         try {
             // the prompt POST waits for the final reply - give it the whole
             // run budget, not the client's 5-minute interactive default
+            com.opencode.ide.client.ClientLog.info(
+                    "fleet " + taskId + ": submit start (prompt budget " + timeout + ")");
             job = runner.submit(task, timeout);
+            com.opencode.ide.client.ClientLog.info(
+                    "fleet " + taskId + ": submit returned state=" + job.state()
+                            + (job.detail() == null ? "" : " detail=" + job.detail()));
         } catch (RuntimeException e) {
             // The ticket is already claimed (in-progress/assignee) at this point.
             // A submit that throws (worktree/branch already exists, git failure)
@@ -221,6 +226,7 @@ public final class TaskFleet {
             } catch (OpencodeException e) {
                 job = withState(job, FleetJob.State.FAILED, e.getMessage());
             }
+            com.opencode.ide.client.ClientLog.info("fleet " + taskId + ": await returned state=" + job.state());
             jobsByTask.put(taskId, job);
             if (job.state() != FleetJob.State.COMPLETED) {
                 return blocked(job, project, taskId, "fleet: " + job.detail());
@@ -232,6 +238,7 @@ public final class TaskFleet {
             } finally {
                 mergeLock.unlock();
             }
+            com.opencode.ide.client.ClientLog.info("fleet " + taskId + ": merge returned state=" + job.state());
             jobsByTask.put(taskId, job);
             if (job.state() != FleetJob.State.MERGED) {
                 // runner detail is "merge conflicts: <files>"
@@ -254,6 +261,7 @@ public final class TaskFleet {
                         "fleet branch merged back by TaskFleet", ASSIGNEE);
             }
             recordTelemetry(project, taskId, job);
+            com.opencode.ide.client.ClientLog.info("fleet " + taskId + ": launch complete, state=" + job.state());
             return job;
         } finally {
             if (permissions != null && permissionSession != null) {

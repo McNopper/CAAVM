@@ -27,6 +27,11 @@ public interface ClientLog {
         BACKEND.get().log(Level.WARNING, message, null);
     }
 
+    /** Stage-level tracing: JUL's default INFO level prints to the console, so engine progress (e.g. fleet launch stages) is observable without extra config. */
+    static void info(String message) {
+        BACKEND.get().log(Level.INFO, message, null);
+    }
+
     static void error(String message, Throwable cause) {
         BACKEND.get().log(Level.SEVERE, message, cause);
     }
