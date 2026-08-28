@@ -133,11 +133,14 @@ public class FleetRunner {
 
     /**
      * Completion check: the session reports {@code idle} and its last message
-     * is an assistant reply with non-empty text.
+     * is an assistant reply with non-empty text. As everywhere: since
+     * opencode 1.18.23 {@code /session/status} lists busy sessions only, so an
+     * ABSENT session is idle (requiring an explicit idle entry never completed
+     * - Milestone V); only a present non-idle entry means busy.
      */
     public boolean isComplete(FleetJob job) throws OpencodeException {
         SessionStatus status = client.getSessionStatus().get(job.sessionId());
-        if (status == null || !"idle".equals(status.type())) {
+        if (status != null && !"idle".equals(status.type())) {
             return false;
         }
         List<ChatEntry> messages = client.getMessages(job.sessionId());

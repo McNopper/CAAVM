@@ -280,6 +280,9 @@ public final class TaskFleet {
      * authoritative assistant-reply check ({@link FleetRunner#isComplete}).
      * An idle without a reply waits for the NEXT idle event within the
      * remaining timeout; after that the normal timeout/FAILED path applies.
+     * Idle-but-incomplete iterations sleep: with absence-means-idle semantics
+     * awaitIdle returns instantly, and without the sleep this loop would
+     * hammer the message endpoint in a tight spin (Milestone V finding).
      */
     private FleetJob awaitIdleThenVerify(FleetJob job, Duration timeout) throws OpencodeException {
         long deadline = System.nanoTime() + timeout.toNanos();
@@ -293,6 +296,13 @@ public final class TaskFleet {
             if (!idle || remaining <= 0) {
                 return withState(job, FleetJob.State.FAILED,
                         "timeout after " + timeout + " awaiting session " + job.sessionId());
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return withState(job, FleetJob.State.FAILED,
+                        "interrupted awaiting session " + job.sessionId());
             }
         }
     }
