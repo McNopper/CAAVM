@@ -173,13 +173,16 @@ public final class TaskFleet {
             throw new IllegalStateException("ticket " + taskId + " is already done");
         }
 
-        // Pre-claim in the MAIN store BEFORE the worktree exists, so the
-        // claim is already recorded on the branch created next.
+        // Pre-claim in the MAIN store BEFORE the worktree exists and COMMIT
+        // it, so the claim is recorded on the branch created next and the
+        // later merge-back is never refused over the dirty ticket file
+        // (Milestone V finding: the merge failed with zero conflicts).
         store.update(project, taskId, Map.of(
                 "status", "in-progress",
                 "assignee", ASSIGNEE));
         store.addComment(project, taskId,
                 "launched into worktree opencode/" + taskId + " by the fleet", ASSIGNEE);
+        runner.commitMain(baseWorktree, "fleet: pre-claim " + taskId);
 
         FleetTask task = new FleetTask(
                 ticket.id,

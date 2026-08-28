@@ -20,10 +20,16 @@ final class FakeWorktreeManager implements WorktreeManager {
     final List<String> createdTaskIds = new ArrayList<>();
     final List<String> mergedTaskIds = new ArrayList<>();
     final List<Path> mergedRepoRoots = new ArrayList<>();
+    final List<String> commitMessages = new ArrayList<>();
     MergeResult nextMergeResult = new MergeResult(true, List.of(), "merged");
 
     /** Optional hook, invoked inside {@link #mergeBack} before the result is returned. */
     Runnable onMergeBack;
+
+    @Override
+    public void commitAll(Path repoRoot, String message) {
+        commitMessages.add(message);
+    }
 
     @Override
     public Worktree create(Path repoRoot, String taskId) {

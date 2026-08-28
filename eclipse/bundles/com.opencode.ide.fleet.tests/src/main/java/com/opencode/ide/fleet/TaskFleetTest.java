@@ -89,6 +89,12 @@ public class TaskFleetTest {
         // final ticket state: in-review, launch comment, git artifact
         Task after = store.get(PROJECT, id);
         assertEquals("in-review", after.status);
+        // the pre-claim is committed in main BEFORE the worktree/branch exists,
+        // so merge-back is never refused over the dirty ticket file
+        assertEquals(1, worktrees.commitMessages.size());
+        assertTrue(worktrees.commitMessages.get(0), worktrees.commitMessages.get(0).contains(id));
+        assertTrue("commit must precede the worktree create",
+                worktrees.createdTaskIds.contains(id));
         assertFalse(after.blocked);
         assertTrue(after.comments.stream().anyMatch(c ->
                 "fleet".equals(c.by()) && c.text().contains("opencode/" + id)));

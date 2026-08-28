@@ -153,6 +153,18 @@ public final class GitWorktreeManager implements WorktreeManager {
      *
      * @return null to reset the stanza accumulator
      */
+    @Override
+    public void commitAll(Path repoRoot, String message) {
+        Path repo = repo(repoRoot);
+        git(repo, "add", "-A");
+        GitOutput commit = run(repo, DEFAULT_TIMEOUT, "commit", "-m", message);
+        if (commit.exitCode() != 0
+                && !(commit.stdout() + commit.stderr()).contains("nothing to commit")) {
+            throw new WorktreeException("git commit failed (exit " + commit.exitCode() + "): "
+                    + commit.stderr().trim());
+        }
+    }
+
     private static Path collect(List<Worktree> into, Path worktreePath, String ref) {
         var taskId = FleetGit.taskIdOfRef(ref);
         if (worktreePath != null && taskId.isPresent()) {

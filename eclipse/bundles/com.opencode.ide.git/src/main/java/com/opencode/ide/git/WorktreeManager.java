@@ -36,4 +36,15 @@ public interface WorktreeManager {
 
     /** Reports branch existence, dirty file count and short HEAD sha of the task's worktree. */
     WorktreeStatus status(Path repoRoot, String taskId);
+
+    /**
+     * Commits every pending change in the main worktree ({@code add -A} +
+     * {@code commit}). The fleet commits its own store bookkeeping (the
+     * pre-claim) BEFORE creating the task branch, so the branch starts from
+     * the claim and the later merge-back is never refused over a dirty ticket
+     * file (Milestone V finding). A tree with nothing staged is not an error.
+     */
+    default void commitAll(Path repoRoot, String message) {
+        throw new UnsupportedOperationException("commitAll not implemented");
+    }
 }

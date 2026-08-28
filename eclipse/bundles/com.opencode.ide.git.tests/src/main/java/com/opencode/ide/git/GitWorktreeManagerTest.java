@@ -163,6 +163,16 @@ public class GitWorktreeManagerTest {
         assertTrue(gitOk("rev-parse", "--verify", "--quiet", "refs/heads/opencode/t1"));
     }
 
+    @Test
+    public void commitAllCommitsPendingChangesAndToleratesCleanTree() throws Exception {
+        Files.writeString(repo.resolve("scratch.txt"), "fleet pre-claim\n", StandardCharsets.UTF_8);
+        manager.commitAll(repo, "fleet: pre-claim t1");
+        assertEquals("", git("status", "--porcelain").trim());
+        // nothing staged is fine (idempotent bookkeeping step)
+        manager.commitAll(repo, "fleet: pre-claim t1 again");
+        assertEquals("", git("status", "--porcelain").trim());
+    }
+
     private void commitIn(Path worktree, String message) throws Exception {
         git(worktree, "add", ".");
         git(worktree, "commit", "-m", message);

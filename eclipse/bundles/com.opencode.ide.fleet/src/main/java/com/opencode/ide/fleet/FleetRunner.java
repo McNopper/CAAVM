@@ -1,5 +1,6 @@
 package com.opencode.ide.fleet;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
@@ -56,6 +57,15 @@ public class FleetRunner {
         this.client = client;
         this.worktrees = worktrees;
         this.sleeper = sleeper;
+    }
+
+    /**
+     * Delegates to {@link WorktreeManager#commitAll}: commits the fleet's own
+     * main-worktree bookkeeping (the pre-claim) so the task branch starts from
+     * it and merge-back is never refused over a dirty ticket file.
+     */
+    public void commitMain(Path repoRoot, String message) {
+        worktrees.commitAll(repoRoot, message);
     }
 
     /**
