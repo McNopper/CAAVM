@@ -188,6 +188,9 @@ resolve a tier; the `orchestrator` dispatches parallel subagents. Skills auto-lo
    resolves gson from the local Tycho cache).
 5. Run `opencode` from this repo. Skills, agents, and `AGENTS.md` auto-load; the `tasks`
    stdio launcher and the `graphics` MCP server start from `opencode.json`.
+6. Your first headless fleet dispatch: see **`docs/fleet-quickstart.md`** (seed
+   ticket → `fleet_dispatch` → poll → merge → actuals — the whole engine works
+   without Eclipse).
 
 > **MCP scope:** the bundled servers implement a deliberately minimal JSON-RPC surface
 > (`initialize`, `tools/list`, `tools/call`, plus `ping` on the Java `tasks`/`eclipse-build`
