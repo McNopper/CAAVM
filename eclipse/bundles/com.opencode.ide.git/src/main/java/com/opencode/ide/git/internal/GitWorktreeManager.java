@@ -101,9 +101,33 @@ public final class GitWorktreeManager implements WorktreeManager {
     public MergeResult mergeBack(Path repoRoot, String taskId) {
         requireTaskId(taskId);
         Path repo = repo(repoRoot);
-        String branch = find(repo, taskId)
-                .orElseThrow(() -> new WorktreeException("No fleet worktree for task '" + taskId + "'"))
-                .branch();
+        Worktree task = find(repo, taskId)
+                .orElseThrow(() -> new WorktreeException("No fleet worktree for task '" + taskId + "'"));
+        String branch = task.branch();
+        Path worktree = task.path();
+        // Milestone V finding #8: a worker that finishes WITHOUT committing
+        // leaves a zero-commit branch, and `git merge` then exits 0 "already
+        // up to date" - a MERGED + in-review + git artifact for NOTHING. So:
+        // (a) pending worktree changes are auto-committed on the branch (the
+        // worktree is the unit of work), then (b) a branch with no commits
+        // beyond the merge base fails the merge explicitly.
+        GitOutput pending = git(worktree, "status", "--porcelain");
+        if (!pending.stdout().isBlank()) {
+            git(worktree, "add", "-A");
+            GitOutput workerCommit = run(worktree, DEFAULT_TIMEOUT, "commit", "-m",
+                    "fleet: worker changes (auto-committed at merge-back)");
+            if (workerCommit.exitCode() != 0) {
+                throw new WorktreeException("auto-committing worker changes in " + worktree
+                        + " failed (exit " + workerCommit.exitCode() + "): "
+                        + workerCommit.stderr().trim());
+            }
+        }
+        GitOutput ahead = run(repo, DEFAULT_TIMEOUT, "rev-list", "--count", "HEAD.." + branch);
+        if (ahead.exitCode() == 0 && "0".equals(ahead.stdout().trim())) {
+            return new MergeResult(false, List.of(),
+                    "worker produced no changes (no commits on " + branch
+                            + " and no pending worktree edits)");
+        }
         GitOutput merge = run(repo, MERGE_TIMEOUT, "merge", branch);
         String output = (merge.stdout() + merge.stderr()).trim();
         if (merge.exitCode() == 0) {

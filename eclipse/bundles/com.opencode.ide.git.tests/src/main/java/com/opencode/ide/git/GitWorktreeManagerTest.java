@@ -173,6 +173,36 @@ public class GitWorktreeManagerTest {
         assertEquals("", git("status", "--porcelain").trim());
     }
 
+    /**
+     * Milestone V finding #8: a worker that finishes without committing must
+     * not produce a fake MERGED - its pending worktree changes are
+     * auto-committed on the branch and then merged for real.
+     */
+    @Test
+    public void mergeBackAutoCommitsPendingWorkerChanges() throws Exception {
+        Worktree wt = manager.create(repo, "t1");
+        Files.writeString(wt.path().resolve("file.txt"), "line1\nline2\nline3\n", StandardCharsets.UTF_8);
+        MergeResult result = manager.mergeBack(repo, "t1");
+        assertTrue(result.output(), result.merged());
+        assertTrue(Files.readString(repo.resolve("file.txt")).contains("line3"));
+        assertTrue("worktree clean after the auto-commit",
+                git("-C", wt.path().toString(), "status", "--porcelain").isBlank());
+    }
+
+    /**
+     * Milestone V finding #8, the empty case: no commits AND no pending edits
+     * means the worker produced nothing - the merge fails explicitly instead
+     * of exiting 0 "already up to date" and faking completion.
+     */
+    @Test
+    public void mergeBackFailsWhenTheWorkerProducedNothing() throws Exception {
+        manager.create(repo, "t1");
+        MergeResult result = manager.mergeBack(repo, "t1");
+        assertFalse(result.merged());
+        assertTrue(result.output(), result.output().contains("no changes"));
+        assertEquals("main untouched", "", git("status", "--porcelain").trim());
+    }
+
     private void commitIn(Path worktree, String message) throws Exception {
         git(worktree, "add", ".");
         git(worktree, "commit", "-m", message);
