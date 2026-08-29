@@ -29,32 +29,33 @@ import com.opencode.ide.client.model.ShellResult;
  */
 final class FakeClient implements OpencodeClient {
 
-    final List<String> createdTitles = new ArrayList<>();
-    final List<Path> sessionDirectories = new ArrayList<>();
-    final List<ChatRequest> sentRequests = new ArrayList<>();
+    final List<String> createdTitles = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final List<Path> sessionDirectories = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final List<ChatRequest> sentRequests = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** {@code sessionId|agent|command} of every {@link #runShell} attempt, failing ones included. */
-    final List<String> shellCalls = new ArrayList<>();
+    final List<String> shellCalls = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Cross-call order log ({@code shell <sid>} / {@code message <sid>}) - pins the bootstrap before the prompt. */
-    final List<String> callLog = new ArrayList<>();
-    final Map<String, List<ChatEntry>> messagesBySession = new HashMap<>();
+    final List<String> callLog = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final Map<String, List<ChatEntry>> messagesBySession = new java.util.concurrent.ConcurrentHashMap<>();
     /** Served by {@link #getSessionTodos(String)} for every session (settable). */
-    final List<SessionTodo> sessionTodos = new ArrayList<>();
+    final List<SessionTodo> sessionTodos = new java.util.concurrent.CopyOnWriteArrayList<>();
 
-    String sessionType = "busy";
-    String replyOnSend;
-    boolean failSessionCreation;
+    /** Thread-safe since the 2026-08-28 watchdog redesign: the prompt runs on its own thread while the watchdog probes. */
+    volatile String sessionType = "busy";
+    volatile String replyOnSend;
+    volatile boolean failSessionCreation;
     /** When set, {@link #getMessages(String)} fails - used to prove telemetry is best-effort. */
-    boolean failGetMessages;
+    volatile boolean failGetMessages;
     /** Served by {@link #runShell} (settable). */
-    ShellResult shellResult = new ShellResult("msg_shell", null, null, "completed", "bootstrap output");
+    volatile ShellResult shellResult = new ShellResult("msg_shell", null, null, "completed", "bootstrap output");
     /** When set, {@link #runShell} throws {@link OpencodeException} - proves the bootstrap is best-effort. */
-    boolean failRunShell;
+    volatile boolean failRunShell;
     /** When set, {@link #runShell} throws {@link IllegalStateException} - a runtime failure must not gate either. */
-    boolean failRunShellRuntime;
+    volatile boolean failRunShellRuntime;
     /** Optional hook, invoked after each successful session creation. */
-    Runnable onSessionCreated;
+    volatile Runnable onSessionCreated;
     /** Optional hook, invoked inside sendMessage (blocks the send while it runs). */
-    Runnable blockOnSend;
+    volatile Runnable blockOnSend;
 
     private int sessionCounter;
     private int messageCounter;
@@ -66,6 +67,15 @@ final class FakeClient implements OpencodeClient {
     void completeSession(String sessionId, String reply) {
         sessionType = "idle";
         addEntry(sessionId, "assistant", reply);
+    }
+
+    /** Sessions aborted via POST /session/:id/abort (the watchdog's stall kill). */
+    final java.util.List<String> aborted = new java.util.ArrayList<>();
+
+    @Override
+    public void abortSession(String sessionId) {
+        aborted.add(sessionId);
+        sessionType = "idle";
     }
 
     private ChatEntry entry(String sessionId, String role, String text) {
@@ -84,7 +94,7 @@ final class FakeClient implements OpencodeClient {
         String id = "ses_" + (++sessionCounter);
         createdTitles.add(title);
         sessionDirectories.add(directory);
-        messagesBySession.put(id, new ArrayList<>());
+        messagesBySession.put(id, java.util.Collections.synchronizedList(new ArrayList<>()));
         if (onSessionCreated != null) {
             onSessionCreated.run();
         }

@@ -59,6 +59,101 @@ public class FleetRunner {
         this.sleeper = sleeper;
     }
 
+    /** One watchdog probe: message count + completion flag + busy flag (2 REST calls). */
+    public record Activity(int messages, boolean complete, boolean busy) {
+    }
+
+    /**
+     * A launch whose blocking prompt POST runs on its OWN daemon thread: the
+     * returned job is RUNNING as soon as the session exists, and completion
+     * is judged by polling (see {@link TaskFleet}'s watchdog) - a slow or
+     * stuck HTTP response can never hold the launch hostage again (the old
+     * blocking {@link #submit(FleetTask, Duration)} died with the POST).
+     */
+    public record Submission(FleetJob job, java.util.concurrent.CompletableFuture<ChatEntry> prompt) {
+
+        /** @return the failure message when the prompt call already failed, else null */
+        String promptFailure() {
+            if (!prompt.isCompletedExceptionally()) {
+                return null;
+            }
+            try {
+                prompt.get();
+                return null;
+            } catch (Exception e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                return cause.getMessage() != null ? cause.getMessage() : cause.toString();
+            }
+        }
+    }
+
+    /**
+     * Starts a task: creates the worktree and session (and runs the optional
+     * bootstrap) synchronously, then sends the prompt asynchronously with the
+     * MAXIMUM budget - the watchdog, not the POST timeout, decides when a
+     * run is done or stalled. Transport failures before the session exists
+     * surface as a FAILED job exactly like the legacy submit.
+     */
+    public Submission begin(FleetTask task) {
+        Worktree worktree = worktrees.create(task.baseWorktree(), task.taskId());
+        String sessionId = null;
+        try {
+            Session session = client.createSession(task.title(), worktree.path());
+            final String sid = session.id();
+            sessionId = sid;
+            runBootstrap(sid, task.bootstrap());
+            tasks.put(task.taskId(), task);
+            java.util.concurrent.CompletableFuture<ChatEntry> prompt = new java.util.concurrent.CompletableFuture<>();
+            Thread t = new Thread(() -> {
+                try {
+                    prompt.complete(client.sendMessage(
+                            chatRequest(sid, task), FleetTuning.MAX_TICKET_BUDGET));
+                } catch (Throwable e) {
+                    prompt.completeExceptionally(e);
+                }
+            }, "fleet-prompt-" + task.taskId());
+            t.setDaemon(true);
+            t.start();
+            return new Submission(
+                    new FleetJob(task.taskId(), sid, worktree.path(), FleetJob.State.RUNNING, null),
+                    prompt);
+        } catch (OpencodeException e) {
+            return new Submission(
+                    new FleetJob(task.taskId(), sessionId, worktree.path(), FleetJob.State.FAILED, e.getMessage()),
+                    java.util.concurrent.CompletableFuture.failedFuture(e));
+        }
+    }
+
+    /**
+     * One watchdog probe of a running session: message count (progress
+     * signal), the completion flag (idle + last message is an assistant reply
+     * with text - the same contract as {@link #isComplete}) and the busy flag
+     * (a session present as non-idle in the busy-only status map).
+     */
+    public Activity probe(String sessionId) throws OpencodeException {
+        SessionStatus status = client.getSessionStatus().get(sessionId);
+        boolean busy = status != null && !"idle".equals(status.type());
+        List<ChatEntry> messages = client.getMessages(sessionId);
+        ChatEntry last = messages.isEmpty() ? null : messages.get(messages.size() - 1);
+        boolean complete = !busy && last != null && last.info() != null
+                && "assistant".equals(last.info().role()) && !last.text().isBlank();
+        return new Activity(messages.size(), complete, busy);
+    }
+
+    /** Best-effort abort of a session; tolerance for already-idle is the client's. */
+    public void abort(String sessionId) {
+        try {
+            client.abortSession(sessionId);
+        } catch (OpencodeException | RuntimeException e) {
+            LOG.log(Level.WARNING, "aborting session " + sessionId + " failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** The pause between watchdog probes; the runner's test sleeper seam. */
+    void pauseBetweenProbes() {
+        sleeper.run();
+    }
+
     /**
      * Delegates to {@link WorktreeManager#commitAll}: commits the fleet's own
      * main-worktree bookkeeping (the pre-claim) so the task branch starts from

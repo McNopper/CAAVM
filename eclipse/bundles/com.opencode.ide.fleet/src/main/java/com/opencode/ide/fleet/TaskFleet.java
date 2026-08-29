@@ -63,6 +63,16 @@ public final class TaskFleet {
     private final Map<String, FleetJob> jobsByTask = new ConcurrentHashMap<>();
     /** Tickets with a launch currently running; guards against double launches (one set-add is atomic). */
     private final java.util.Set<String> inFlight = ConcurrentHashMap.newKeySet();
+    /** A running session with no new messages for this long is aborted by the watchdog (test seam). */
+    private Duration stallTimeout = FleetTuning.STALL_TIMEOUT;
+
+    /** @param stallTimeout the watchdog's no-progress threshold; returns this for chaining */
+    public TaskFleet withStallTimeout(Duration stallTimeout) {
+        this.stallTimeout = stallTimeout == null || stallTimeout.isNegative() || stallTimeout.isZero()
+                ? FleetTuning.STALL_TIMEOUT
+                : stallTimeout;
+        return this;
+    }
 
     /** Creates its own {@link FleetRunner} over the given client and worktrees; the client also serves telemetry. */
     public TaskFleet(OpencodeClient client, WorktreeManager worktrees, TaskStore store) {
@@ -194,12 +204,14 @@ public final class TaskFleet {
                 baseWorktree);
 
         FleetJob job;
+        FleetRunner.Submission submission;
         try {
-            // the prompt POST waits for the final reply - give it the whole
-            // run budget, not the client's 5-minute interactive default
+            // the prompt POST runs on its OWN thread with the maximum budget;
+            // the watchdog below - not the POST timeout - decides completion
             com.opencode.ide.client.ClientLog.info(
-                    "fleet " + taskId + ": submit start (prompt budget " + timeout + ")");
-            job = runner.submit(task, timeout);
+                    "fleet " + taskId + ": submit start (watchdog budget " + timeout + ")");
+            submission = runner.begin(task);
+            job = submission.job();
             com.opencode.ide.client.ClientLog.info(
                     "fleet " + taskId + ": submit returned state=" + job.state()
                             + (job.detail() == null ? "" : " detail=" + job.detail()));
@@ -223,9 +235,7 @@ public final class TaskFleet {
             }
 
             try {
-                job = events == null
-                        ? runner.awaitCompletion(job, timeout)
-                        : awaitIdleThenVerify(job, timeout);
+                job = watchdog(submission, timeout);
             } catch (OpencodeException e) {
                 job = withState(job, FleetJob.State.FAILED, e.getMessage());
             }
@@ -279,34 +289,53 @@ public final class TaskFleet {
     }
 
     /**
-     * Event-driven completion: {@link SessionEvents#awaitIdle} first, then the
-     * authoritative assistant-reply check ({@link FleetRunner#isComplete}).
-     * An idle without a reply waits for the NEXT idle event within the
-     * remaining timeout; after that the normal timeout/FAILED path applies.
-     * Idle-but-incomplete iterations sleep: with absence-means-idle semantics
-     * awaitIdle returns instantly, and without the sleep this loop would
-     * hammer the message endpoint in a tight spin (Milestone V finding).
+     * The watchdog: polls the session until it completes, the budget ends or
+     * it STALLS. Completion is judged purely by probing (busy flag + last
+     * assistant reply) - the prompt POST's own fate is irrelevant except for
+     * immediate failures, so a stuck HTTP response can never hold a finished
+     * run hostage. A session with no new messages for {@link #stallTimeout}
+     * is aborted ({@code POST /session/:id/abort}) and fails cleanly instead
+     * of burning the whole budget on a hang. Slow-but-progressing workers are
+     * never killed by a guessed wall clock.
      */
-    private FleetJob awaitIdleThenVerify(FleetJob job, Duration timeout) throws OpencodeException {
+    private FleetJob watchdog(FleetRunner.Submission submission, Duration timeout) throws OpencodeException {
+        FleetJob job = submission.job();
         long deadline = System.nanoTime() + timeout.toNanos();
+        long stallNanos = stallTimeout.toNanos();
+        int lastMessages = -1;
+        long lastProgress = System.nanoTime();
         while (true) {
-            long remaining = deadline - System.nanoTime();
-            boolean idle = events.awaitIdle(job.sessionId(),
-                    Duration.ofNanos(Math.max(0, remaining)));
-            if (idle && runner.isComplete(job)) {
-                return withState(job, FleetJob.State.COMPLETED, null);
+            String promptFailure = submission.promptFailure();
+            if (promptFailure != null) {
+                return withState(job, FleetJob.State.FAILED, "prompt: " + promptFailure);
             }
-            if (!idle || remaining <= 0) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
                 return withState(job, FleetJob.State.FAILED,
                         "timeout after " + timeout + " awaiting session " + job.sessionId());
             }
+            FleetRunner.Activity activity = null;
             try {
-                Thread.sleep(FleetTuning.IDLE_VERIFY_SLEEP_MILLIS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return withState(job, FleetJob.State.FAILED,
-                        "interrupted awaiting session " + job.sessionId());
+                activity = runner.probe(job.sessionId());
+            } catch (OpencodeException | RuntimeException e) {
+                // probe failed: keep watching, do NOT reset the progress clock
             }
+            if (activity != null) {
+                if (activity.messages() != lastMessages) {
+                    lastMessages = activity.messages();
+                    lastProgress = System.nanoTime();
+                }
+                if (activity.complete()) {
+                    return withState(job, FleetJob.State.COMPLETED, null);
+                }
+            }
+            if (System.nanoTime() - lastProgress >= stallNanos) {
+                runner.abort(job.sessionId());
+                return withState(job, FleetJob.State.FAILED,
+                        "stalled: no session activity for " + stallTimeout
+                                + ", session aborted (the prompt was delivered; the worker hung)");
+            }
+            runner.pauseBetweenProbes();
         }
     }
 

@@ -31,8 +31,13 @@ public final class FleetTuning {
     /** Idle-poll interval for the stream-less completion detection. */
     public static final long STATUS_POLL_MILLIS = 1000;
 
-    /** Sleep between idle-but-incomplete verify iterations (anti tight-spin). */
-    public static final long IDLE_VERIFY_SLEEP_MILLIS = 1000;
+    /**
+     * A running session with no new messages for this long is considered
+     * STALLED: the watchdog aborts it ({@code POST /session/:id/abort}) and
+     * the job fails cleanly - instead of burning the whole budget on a hang
+     * or killing slow-but-healthy workers with a guessed wall clock.
+     */
+    public static final Duration STALL_TIMEOUT = Duration.ofMinutes(5);
 
     private FleetTuning() {
     }

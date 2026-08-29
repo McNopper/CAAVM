@@ -70,12 +70,12 @@ public class TaskFleetPermissionsTest {
         return task.id;
     }
 
-    private TaskFleet fleet(SessionEvents events) {
+    private TaskFleet fleet() {
         // the runner's client is wrapped so the session is watched from its
-        // creation - BEFORE the blocking prompt call (mirrors TaskFleetLauncher)
+        // creation - BEFORE the prompt call (mirrors TaskFleetLauncher)
         return new TaskFleet(
                 new FleetRunner(bridge.watching(client), worktrees, () -> { }),
-                store, new RoleAgents(), events, null, bridge);
+                store, new RoleAgents(), null, null, bridge);
     }
 
     @Test
@@ -83,19 +83,17 @@ public class TaskFleetPermissionsTest {
         String id = sprintTicket("developer");
         client.replyOnSend = "done";
         client.sessionType = "idle";
-        // the ask is delivered while the launch is between submit and merge
-        SessionEvents events = new SessionEvents() {
-            @Override
-            public boolean awaitIdle(String sessionId, Duration timeout) {
-                bridge.onEvent(askedEvent(sessionId, "per_1"));
-                askedDuringLaunch = queue.pending().isEmpty()
-                        ? "(not queued!)"
-                        : queue.pending().get(0).permissionId();
-                return true;
-            }
+        // the ask is delivered while the launch is between session creation
+        // and merge - blockOnSend runs on the prompt thread, deterministically
+        // before the reply exists (so before the watchdog can complete)
+        client.blockOnSend = () -> {
+            bridge.onEvent(askedEvent("ses_1", "per_1"));
+            askedDuringLaunch = queue.pending().isEmpty()
+                    ? "(not queued!)"
+                    : queue.pending().get(0).permissionId();
         };
 
-        FleetJob job = fleet(events).launch(PROJECT, id, REPO, TIMEOUT);
+        FleetJob job = fleet().launch(PROJECT, id, REPO, TIMEOUT);
 
         assertEquals(FleetJob.State.MERGED, job.state());
         assertEquals("the ask was visible while the job ran", "per_1", askedDuringLaunch);
@@ -105,15 +103,10 @@ public class TaskFleetPermissionsTest {
     @Test
     public void failedLaunchAlsoDropsPendingEntries() {
         String id = sprintTicket("developer");
-        SessionEvents events = new SessionEvents() {
-            @Override
-            public boolean awaitIdle(String sessionId, Duration timeout) {
-                bridge.onEvent(askedEvent(sessionId, "per_1"));
-                return false; // never idle -> timeout/failed path
-            }
-        };
+        client.sessionType = "busy"; // never completes -> watchdog timeout
+        client.blockOnSend = () -> bridge.onEvent(askedEvent("ses_1", "per_1"));
 
-        FleetJob job = fleet(events).launch(PROJECT, id, REPO, TIMEOUT);
+        FleetJob job = fleet().launch(PROJECT, id, REPO, TIMEOUT);
 
         assertEquals(FleetJob.State.FAILED, job.state());
         assertTrue("failed launch drops the session's pending asks", queue.pending().isEmpty());

@@ -83,9 +83,10 @@ public class TaskFleetTest {
         assertEquals("executor", client.sentRequests.get(0).agent());
         assertFalse(client.sentRequests.get(0).hasModel());
         assertTrue(client.sentRequests.get(0).text().contains("task_get(\"" + id + "\")"));
-        // the blocking prompt POST carries the WHOLE run budget (Milestone V
-        // finding: the fixed 5-minute client default killed healthy runs)
-        assertEquals(TIMEOUT, client.lastPromptTimeout);
+        // the prompt POST runs on its own thread with the MAXIMUM budget -
+        // the watchdog, not a POST deadline, bounds the run (2026-08-28
+        // redesign: slow workers are never budget-killed, hung ones abort)
+        assertTrue("prompt recorded", !client.sentRequests.isEmpty());
         // final ticket state: in-review, launch comment, git artifact
         Task after = store.get(PROJECT, id);
         assertEquals("in-review", after.status);

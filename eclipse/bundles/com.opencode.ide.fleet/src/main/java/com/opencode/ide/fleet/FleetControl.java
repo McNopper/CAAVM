@@ -57,6 +57,15 @@ public final class FleetControl implements AutoCloseable {
         TaskFleet fleet();
 
         /**
+         * Live progress probe for a tracked job's session (the
+         * {@code fleet_job_details} tool): message count, completion and busy
+         * flags. {@code null} when the engine cannot probe (unknown ticket).
+         */
+        default FleetRunner.Activity probe(String ticketId) {
+            return null;
+        }
+
+        /**
          * The engine's permission queue: unattended fleet sessions' asks
          * collect here (fed from the server's global event stream) until the
          * human answers them.
@@ -121,12 +130,27 @@ public final class FleetControl implements AutoCloseable {
                 new PollingSessionEvents(watched),
                 () -> watched,
                 bridge);
+        FleetRunner engineRunner = new FleetRunner(client, FleetGit.defaultManager());
         OpencodeEventStream events = client.getGlobalEvents(bridge::onEvent, connected -> { });
         events.start();
         return new Engine() {
             @Override
             public TaskFleet fleet() {
                 return fleet;
+            }
+
+            @Override
+            public FleetRunner.Activity probe(String ticketId) {
+                FleetJob job = fleet.jobs().get(ticketId);
+                if (job == null || job.sessionId() == null) {
+                    return null;
+                }
+                try {
+                    return engineRunner.probe(job.sessionId());
+                } catch (Exception e) {
+                    // probe failures surface as null - the tool reports unreachable
+                    return null;
+                }
             }
 
             @Override
@@ -254,6 +278,19 @@ public final class FleetControl implements AutoCloseable {
                 System.err.println("[fleet] store auto-sync failed for " + ticketId + ": " + ex.getMessage());
             }
         });
+    }
+
+    /**
+     * Live progress probe for a tracked job (the {@code fleet_job_details}
+     * tool): message count, completion and busy flags. Never spawns the
+     * engine; {@code null} when there is nothing to probe.
+     */
+    public FleetRunner.Activity jobActivity(String ticketId) {
+        Engine e;
+        synchronized (this) {
+            e = engine;
+        }
+        return e == null ? null : e.probe(ticketId);
     }
 
     /**

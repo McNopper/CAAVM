@@ -92,6 +92,8 @@ public final class FleetToolProvider implements ToolProvider {
                 return dispatchTicket(a);
             case "fleet_jobs":
                 return jobs();
+            case "fleet_job_details":
+                return jobDetails(a);
             case "fleet_permissions":
                 return permissions();
             case "fleet_permissions_answer":
@@ -214,6 +216,38 @@ public final class FleetToolProvider implements ToolProvider {
         return null;
     }
 
+    private McpToolResult jobDetails(JsonObject a) {
+        String ticketId = reqStr(a, "ticket_id");
+        FleetJob job = control.jobs().get(ticketId);
+        JsonObject o = new JsonObject();
+        o.addProperty("ticket_id", ticketId);
+        if (job == null) {
+            o.addProperty("state", "unknown");
+            o.addProperty("hint", "no job in this engine - never dispatched here, or settled;"
+                    + " the ticket itself is the source of truth");
+            return json(o);
+        }
+        o.addProperty("state", job.state().name());
+        if (job.sessionId() != null) {
+            o.addProperty("session_id", job.sessionId());
+        }
+        if (job.worktree() != null) {
+            o.addProperty("worktree", job.worktree().toString());
+        }
+        if (job.detail() != null) {
+            o.addProperty("detail", job.detail());
+        }
+        FleetRunner.Activity activity = control.jobActivity(ticketId);
+        if (activity == null) {
+            o.addProperty("probe", "unreachable");
+        } else {
+            o.addProperty("busy", activity.busy());
+            o.addProperty("messages", activity.messages());
+            o.addProperty("complete", activity.complete());
+        }
+        return json(o);
+    }
+
     private static McpToolResult json(Object element) {
         return new McpToolResult(PRETTY.toJson(element), false);
     }
@@ -260,6 +294,14 @@ public final class FleetToolProvider implements ToolProvider {
                         + "RUNNING/COMPLETED/MERGED/FAILED plus session id, worktree and failure "
                         + "detail when present. Empty before the first dispatch.",
                 schema(new String[0], obj -> { })));
+        out.add(new McpTool("fleet_job_details",
+                "In-flight PROGRESS for one job - are we moving or hung? Reports the job's state"
+                        + " plus a live probe of its session: busy flag, message count (grows while"
+                        + " the worker streams) and the completion flag. The engine's watchdog"
+                        + " aborts a session after ~5 minutes without new messages, so a hung"
+                        + " worker fails fast while slow-but-working ones are never killed.",
+                schema(new String[]{"ticket_id"},
+                        obj -> obj.add("ticket_id", strP("the ticket to inspect, e.g. W-004")))));
         out.add(new McpTool("fleet_permissions",
                 "Pending permission asks of unattended fleet sessions (a launched "
                         + "session waiting mid-run for human approval): each with "

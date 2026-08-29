@@ -6,27 +6,25 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
-import com.opencode.ide.client.OpencodeException;
 import com.opencode.ide.tasks.Task;
 import com.opencode.ide.tasks.TaskStore;
 
 /**
- * {@link TaskFleet} with an injected {@link SessionEvents} (SSE-style
- * completion instead of the runner's polling): idle + assistant reply merges
- * and bookkeeps, an idle without a reply waits for the NEXT idle, a
- * timeout/failing seam blocks the ticket, and the default client constructor
- * keeps the polling behavior. Reuses the in-memory fakes and the
- * {@link TaskFleetTest} fixtures.
+ * {@link TaskFleet}'s WATCHDOG completion (2026-08-28 redesign): the prompt
+ * POST runs on its own thread and completion is judged by probing (busy flag
+ * + last assistant reply) - so a finished session merges even if the POST
+ * response is stuck, a prompt failure surfaces fast, and a session with no
+ * new messages for the stall threshold is aborted and fails cleanly instead
+ * of burning the whole budget. Reuses the in-memory fakes and TaskFleetTest
+ * fixtures.
  */
 public class TaskFleetSessionEventsTest {
 
@@ -48,41 +46,10 @@ public class TaskFleetSessionEventsTest {
         worktrees = new FakeWorktreeManager();
     }
 
-    /** Scriptable fake of the seam: polls scripted results, then fallback. */
-    private static final class FakeSessionEvents implements SessionEvents {
-        final List<String> awaitedSessions = new ArrayList<>();
-        private final ArrayDeque<Boolean> scripted = new ArrayDeque<>();
-        private final boolean fallback;
-        /** Optional hook, invoked on each awaitIdle after recording the session. */
-        Runnable onAwait;
-
-        FakeSessionEvents(boolean fallback, Boolean... scripted) {
-            this.fallback = fallback;
-            Collections.addAll(this.scripted, scripted);
-        }
-
-        @Override
-        public boolean awaitIdle(String sessionId, Duration timeout) {
-            awaitedSessions.add(sessionId);
-            if (onAwait != null) {
-                onAwait.run();
-            }
-            Boolean result = scripted.poll();
-            return result != null ? result : fallback;
-        }
-    }
-
-    private static final class ThrowingSessionEvents implements SessionEvents {
-        @Override
-        public boolean awaitIdle(String sessionId, Duration timeout) throws OpencodeException {
-            throw new OpencodeException("event stream broken");
-        }
-    }
-
     private String sprintTicket(String role) {
         Task t = store.create(PROJECT, new TaskStore.CreateSpec(
                 "Fix the widget", "Do the thing.", "task", role, "high", 3,
-                List.of("ac one", "ac two"), List.of(), null, "H1"));
+                List.of("ac one"), List.of(), null, "H1"));
         store.planSprint(PROJECT, "S-01", List.of(t.id), "goal");
         return t.id;
     }
@@ -92,23 +59,20 @@ public class TaskFleetSessionEventsTest {
         client.sessionType = "idle";
     }
 
-    private TaskFleet fleet(SessionEvents events) {
+    private TaskFleet fleet() {
         return new TaskFleet(new FleetRunner(client, worktrees, () -> { }),
-                store, new RoleAgents(), events);
+                store, new RoleAgents(), null);
     }
 
     @Test
-    public void idleSignalDrivesCompletionAndStoreBookkeeping() {
+    public void probeCompletionDrivesMergeAndBookkeeping() {
         String id = sprintTicket("developer");
         sessionCompletes();
-        FakeSessionEvents events = new FakeSessionEvents(true);
-        TaskFleet fleet = fleet(events);
+        TaskFleet fleet = fleet();
 
         FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
 
         assertEquals(FleetJob.State.MERGED, job.state());
-        assertEquals("the seam was asked for the job's session",
-                List.of("ses_1"), events.awaitedSessions);
         Task after = store.get(PROJECT, id);
         assertEquals("in-review", after.status);
         assertFalse("no blocker on success", after.blocked);
@@ -118,29 +82,27 @@ public class TaskFleetSessionEventsTest {
     }
 
     @Test
-    public void idleWithoutAssistantReplyWaitsForTheNextIdle() {
+    public void idleWithoutAssistantReplyWaitsUntilTheReplyAppears() {
         String id = sprintTicket("developer");
         client.sessionType = "idle"; // idle status, but no assistant reply yet
-        FakeSessionEvents events = new FakeSessionEvents(false, true, true);
-        events.onAwait = () -> {
-            if (events.awaitedSessions.size() == 2) {
-                client.completeSession(events.awaitedSessions.get(0), "done");
+        AtomicInteger probes = new AtomicInteger();
+        FleetRunner runner = new FleetRunner(client, worktrees, () -> {
+            if (probes.incrementAndGet() == 1) {
+                client.completeSession("ses_1", "done");
             }
-        };
-        TaskFleet fleet = fleet(events);
+        });
+        TaskFleet fleet = new TaskFleet(runner, store, new RoleAgents(), null);
 
         FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
 
         assertEquals(FleetJob.State.MERGED, job.state());
-        assertEquals("first idle had no reply, so a second idle was awaited",
-                2, events.awaitedSessions.size());
         assertEquals("in-review", store.get(PROJECT, id).status);
     }
 
     @Test
-    public void seamTimeoutBlocksTheTicket() {
+    public void busySessionTimesOutAndBlocksTheTicket() {
         String id = sprintTicket("pm");
-        TaskFleet fleet = fleet(new FakeSessionEvents(false));
+        TaskFleet fleet = fleet();
 
         FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
 
@@ -153,9 +115,12 @@ public class TaskFleetSessionEventsTest {
     }
 
     @Test
-    public void seamFailureBlocksTheTicket() {
+    public void promptFailureBlocksTheTicket() {
         String id = sprintTicket("developer");
-        TaskFleet fleet = fleet(new ThrowingSessionEvents());
+        client.blockOnSend = () -> {
+            throw new IllegalStateException("event stream broken");
+        };
+        TaskFleet fleet = fleet();
 
         FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
 
@@ -164,6 +129,48 @@ public class TaskFleetSessionEventsTest {
         Task after = store.get(PROJECT, id);
         assertTrue(after.blocked);
         assertTrue(after.blocker, after.blocker.contains("event stream broken"));
+    }
+
+    /**
+     * The watchdog's reason to exist: a session that streams nothing new for
+     * the stall threshold is ABORTED and fails within the threshold - not
+     * after the whole budget. Progress resets the clock, so slow workers
+     * survive (see {@link #progressResetsTheStallClock()}).
+     */
+    @Test
+    public void stalledSessionIsAbortedAndBlocksTheTicket() {
+        String id = sprintTicket("developer");
+        client.sessionType = "busy"; // stays busy, messages stay static
+        TaskFleet fleet = fleet().withStallTimeout(Duration.ofMillis(50));
+
+        FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
+
+        assertEquals(FleetJob.State.FAILED, job.state());
+        assertTrue(job.detail(), job.detail().contains("stalled"));
+        assertTrue("the hung session was aborted", client.aborted.contains("ses_1"));
+        Task after = store.get(PROJECT, id);
+        assertTrue(after.blocked);
+        assertTrue(after.blocker, after.blocker.contains("stalled"));
+    }
+
+    @Test
+    public void progressResetsTheStallClock() {
+        String id = sprintTicket("developer");
+        client.sessionType = "busy"; // busy the whole time, never completes
+        AtomicInteger probes = new AtomicInteger();
+        FleetRunner runner = new FleetRunner(client, worktrees, () -> {
+            // a new message arrives on every probe: the worker is progressing
+            client.addEntry("ses_1", "assistant", "progress " + probes.incrementAndGet());
+        });
+        TaskFleet fleet = new TaskFleet(runner, store, new RoleAgents(), null)
+                .withStallTimeout(Duration.ofMillis(200));
+
+        FleetJob job = fleet.launch(PROJECT, id, REPO, TIMEOUT);
+
+        assertEquals("busy but progressing workers are never stall-killed -"
+                + " they run to the budget", FleetJob.State.FAILED, job.state());
+        assertTrue(job.detail(), job.detail().contains("timeout"));
+        assertTrue("never aborted", client.aborted.isEmpty());
     }
 
     @Test
