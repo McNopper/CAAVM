@@ -297,8 +297,13 @@ public class FleetRunner {
         if (result.merged()) {
             return withState(job, FleetJob.State.MERGED, null);
         }
-        return withState(job, FleetJob.State.FAILED,
-                "merge conflicts: " + String.join(", ", result.conflictedFiles()));
+        if (!result.conflictedFiles().isEmpty()) {
+            return withState(job, FleetJob.State.FAILED,
+                    "merge conflicts: " + String.join(", ", result.conflictedFiles()));
+        }
+        // no conflicts and still not merged: the guard's refusal (e.g.
+        // "worker produced no changes") - carry its message, don't mislabel
+        return withState(job, FleetJob.State.FAILED, result.output());
     }
 
     private static ChatRequest chatRequest(String sessionId, FleetTask task) {
